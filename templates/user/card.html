@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your Voter ID Card</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #c62828; }
+    body {
+      background: linear-gradient(135deg, #fce4ec 0%, #ffcdd2 40%, #ef9a9a 100%);
+      min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 0;
+    }
+    .navbar-custom {
+      background: linear-gradient(135deg, #b71c1c 0%, #c62828 100%);
+      padding: 0.8rem 0;
+    }
+    .navbar-custom .navbar-brand { color: #fff; font-weight: 800; font-size: 1.3rem; }
+    .navbar-custom .navbar-brand i { margin-right: 8px; }
+
+    .result-card {
+      background: #fff; border-radius: 20px;
+      box-shadow: 0 10px 50px rgba(0,0,0,0.12);
+      max-width: 640px; width: 100%; margin: 2rem auto;
+      overflow: hidden;
+    }
+    .result-header {
+      background: linear-gradient(135deg, #2e7d32, #43a047);
+      color: #fff; text-align: center; padding: 1.2rem 1.5rem;
+    }
+    .result-header i { font-size: 2.2rem; display: block; margin-bottom: 0.3rem; }
+    .result-header h2 { font-size: 1.3rem; font-weight: 700; margin: 0; }
+    .result-header p { opacity: 0.85; font-size: 0.85rem; margin: 0.3rem 0 0; }
+    .result-body { padding: 1.5rem; text-align: center; }
+
+    .card-preview {
+      max-width: 100%; border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-bottom: 1.2rem;
+    }
+
+    .voter-details {
+      background: #f5f5f5; border-radius: 12px;
+      padding: 0.8rem 1.2rem; margin-bottom: 1.2rem; text-align: left;
+    }
+    .voter-details .d-item {
+      display: flex; justify-content: space-between;
+      padding: 0.35rem 0; border-bottom: 1px solid #eee;
+    }
+    .voter-details .d-item:last-child { border-bottom: none; }
+    .voter-details .d-label {
+      color: #888; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .voter-details .d-value { font-weight: 600; color: #333; }
+
+    .gen-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #fff3e0; color: #e65100; padding: 4px 12px;
+      border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    .btn-download {
+      background: #2e7d32; border: none; color: #fff;
+      font-weight: 700; padding: 0.7rem 2rem; border-radius: 12px;
+      font-size: 1rem;
+    }
+    .btn-download:hover { background: #1b5e20; color: #fff; }
+    .btn-home {
+      border: 2px solid #ccc; color: #555;
+      font-weight: 600; padding: 0.7rem 2rem; border-radius: 12px;
+      font-size: 1rem; background: #fff;
+    }
+    .btn-home:hover { border-color: var(--brand); color: var(--brand); }
+
+    .footer-text { text-align: center; padding: 1rem; color: #999; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar navbar-custom">
+    <div class="container">
+      <a href="{{ url_for('user_home') }}" class="navbar-brand text-decoration-none">
+        <i class="bi bi-person-vcard-fill"></i>Voter ID Card Generator
+      </a>
+    </div>
+  </nav>
+
+  <div class="result-card">
+    <div class="result-header">
+      <i class="bi bi-check-circle-fill"></i>
+      <h2>Card Generated Successfully!</h2>
+      <p>Your Voter ID card is ready to download</p>
+    </div>
+    <div class="result-body">
+
+      <!-- Flash Messages -->
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+      <div class="mb-3">
+        {% for cat, msg in msgs %}
+        <div class="alert alert-{{ cat }} py-2" style="font-size:0.9rem;">{{ msg }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <!-- Generation count badge -->
+      <div class="gen-badge">
+        <i class="bi bi-arrow-repeat"></i> Generated {{ gen_count }} time{{ 's' if gen_count != 1 }}
+      </div>
+
+      <!-- Card Image -->
+      <div>
+        <img src="{{ card_url }}"
+             alt="Voter ID Card — {{ epic_no }}" class="card-preview">
+      </div>
+
+      <!-- Voter Details -->
+      <div class="voter-details">
+        <div class="d-item">
+          <span class="d-label">Name</span>
+          <span class="d-value">{{ voter.name }}</span>
+        </div>
+        <div class="d-item">
+          <span class="d-label">Epic Number</span>
+          <span class="d-value">{{ epic_no }}</span>
+        </div>
+        {% if voter.assembly %}
+        <div class="d-item">
+          <span class="d-label">Assembly</span>
+          <span class="d-value">{{ voter.assembly }}</span>
+        </div>
+        {% endif %}
+        {% if voter.district %}
+        <div class="d-item">
+          <span class="d-label">District</span>
+          <span class="d-value">{{ voter.district }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Buttons -->
+      <div class="d-flex gap-2 justify-content-center flex-wrap">
+        <a href="{{ url_for('user_download_card', epic_no=epic_no) }}" class="btn btn-download">
+          <i class="bi bi-download me-1"></i> Download Card
+        </a>
+        <a href="{{ url_for('user_home') }}" class="btn btn-home">
+          <i class="bi bi-arrow-left me-1"></i> Generate Another
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-text">Card generated successfully &bull; Save your card for offline use</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

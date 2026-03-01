@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#e3f2fd; color:#1565c0;">
+        <i class="bi bi-people-fill"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.total_voters }}</div>
+        <div class="stat-label">Total Voters</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#e8f5e9; color:#2e7d32;">
+        <i class="bi bi-person-check-fill"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.total_generated }}</div>
+        <div class="stat-label">Users Who Generated</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#fff3e0; color:#e65100;">
+        <i class="bi bi-arrow-repeat"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.total_generations }}</div>
+        <div class="stat-label">Total Generations</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#fce4ec; color:#c62828;">
+        <i class="bi bi-file-image"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.cards_on_cloud }}</div>
+        <div class="stat-label">Cards on Cloud</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Status -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm" style="border-radius:14px;">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-info-circle text-primary me-1"></i> System Status</h6>
+        <table class="table table-sm mb-0" style="font-size:0.9rem;">
+          <tbody>
+            <tr>
+              <td class="text-muted" style="width:180px;">Database</td>
+              <td>
+                {% if stats.db_connected %}
+                <span class="badge bg-success"><i class="bi bi-check-circle"></i> MongoDB Connected</span>
+                — {{ stats.total_voters }} records
+                {% else %}
+                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Disconnected</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-muted">Photos</td>
+              <td><span class="badge bg-info text-dark">Cloudinary</span></td>
+            </tr>
+            <tr>
+              <td class="text-muted">Card Storage</td>
+              <td><span class="badge bg-info text-dark">Cloudinary</span> — {{ stats.cards_on_cloud }} card{{ 's' if stats.cards_on_cloud != 1 }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Generation Rate</td>
+              <td>
+                {% if stats.total_voters > 0 %}
+                {{ ((stats.total_generated / stats.total_voters) * 100) | round(1) }}% of voters generated
+                {% else %}
+                N/A
+                {% endif %}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm" style="border-radius:14px;">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-lightning-fill text-warning me-1"></i> Quick Actions</h6>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ url_for('admin.import_xlsx') }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-upload me-1"></i> Import XLSX
+          </a>
+          <a href="{{ url_for('admin.voters_list') }}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-people me-1"></i> View Voters
+          </a>
+          <a href="{{ url_for('user_home') }}" target="_blank" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-box-arrow-up-right me-1"></i> Open User Site
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

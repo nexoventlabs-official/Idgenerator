@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Import XLSX{% endblock %}
+{% block page_title %}Import Voter Data{% endblock %}
+
+{% block extra_css %}
+  .upload-zone {
+    border: 2px dashed #ccc; border-radius: 16px; padding: 2.5rem 1.5rem;
+    text-align: center; background: #fafafa; transition: all 0.2s; cursor: pointer;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: #1565c0; background: #e3f2fd; }
+  .upload-zone i.icon { font-size: 3rem; color: #90caf9; display: block; margin-bottom: 0.5rem; }
+  .upload-zone .hint { font-size: 0.85rem; color: #999; }
+  .upload-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  #file-name { font-size: 0.88rem; color: #1565c0; font-weight: 600; }
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-4">
+  <!-- Upload Card -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm" style="border-radius:14px;">
+      <div class="card-body p-4">
+        <h6 class="fw-bold mb-1"><i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i> Upload Voter Data</h6>
+        <p class="text-muted mb-3" style="font-size:0.85rem;">
+          Upload an Excel or CSV file containing voter data. Duplicate EPIC numbers are automatically skipped.
+        </p>
+
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.import_xlsx') }}" id="importForm">
+          <div class="upload-zone" id="dropZone">
+            <i class="bi bi-file-earmark-arrow-up icon"></i>
+            <div class="fw-semibold mb-1">Drop your file here</div>
+            <div class="hint">or click to browse &nbsp;·&nbsp; .xlsx, .xls, .csv</div>
+            <div id="file-name" class="mt-2" style="display:none;"></div>
+            <input type="file" name="file" accept=".xlsx,.xls,.csv" id="fileInput" required>
+          </div>
+
+          <!-- Import Mode -->
+          <div class="mt-3 p-3" style="background:#f8f9fa; border-radius:12px;">
+            <div class="fw-semibold mb-2" style="font-size:0.85rem;"><i class="bi bi-gear me-1"></i> Import Mode</div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="radio" name="import_mode" id="modeMerge" value="merge" checked>
+              <label class="form-check-label" for="modeMerge" style="font-size:0.85rem;">
+                <strong>Merge</strong> — Add new voters, update existing (no duplicates)
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="import_mode" id="modeReplace" value="replace">
+              <label class="form-check-label" for="modeReplace" style="font-size:0.85rem;">
+                <strong>Replace All</strong> — Delete all existing data and import fresh
+              </label>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary mt-3 px-4" id="submitBtn" disabled>
+            <i class="bi bi-upload me-1"></i> Import Data
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info Panel -->
+  <div class="col-lg-5">
+    <!-- Current Status -->
+    <div class="card border-0 shadow-sm mb-3" style="border-radius:14px;">
+      <div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-database-fill text-success me-1"></i> Current Database</h6>
+        {% if voters_count > 0 %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-success fs-6 px-3 py-2">{{ voters_count }}</span>
+          <span class="text-muted" style="font-size:0.88rem;">voter records loaded</span>
+        </div>
+        <p class="text-muted mb-0" style="font-size:0.82rem;">
+          Use <strong>Merge</strong> to add new data without losing existing records,
+          or <strong>Replace All</strong> to start fresh.
+        </p>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:0.88rem;">
+          <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+          No data loaded yet. Upload a file to get started.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Format Guide -->
+    <div class="card border-0 shadow-sm" style="border-radius:14px;">
+      <div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-table text-info me-1"></i> Expected Format</h6>
+        <p class="text-muted mb-2" style="font-size:0.82rem;">
+          Your file (Excel or CSV) should have a header row with these columns:
+        </p>
+        <table class="table table-sm table-bordered mb-2" style="font-size:0.8rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Column</th>
+              <th>Required</th>
+              <th>Accepted Headers</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="fw-semibold">Epic Number</td>
+              <td><span class="badge bg-danger">Yes</span></td>
+              <td><code>Epic Number</code>, <code>Epic No</code>, <code>EPIC</code></td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Name</td>
+              <td><span class="badge bg-danger">Yes</span></td>
+              <td><code>Name</code>, <code>Voter Name</code>, <code>Full Name</code></td>
+            </tr>
+            <tr>
+              <td>Assembly</td>
+              <td><span class="badge bg-secondary">Optional</span></td>
+              <td><code>Assembly</code>, <code>Constituency</code>, <code>AC Name</code></td>
+            </tr>
+            <tr>
+              <td>District</td>
+              <td><span class="badge bg-secondary">Optional</span></td>
+              <td><code>District</code>, <code>Dist</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-muted mb-0" style="font-size:0.78rem;">
+          Column headers are matched case-insensitively. For Excel files, the first sheet is used.
+          CSV files should use comma separators and UTF-8 encoding.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const dropZone  = document.getElementById('dropZone');
+  const fileName  = document.getElementById('file-name');
+  const submitBtn = document.getElementById('submitBtn');
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      fileName.textContent = fileInput.files[0].name;
+      fileName.style.display = 'block';
+      submitBtn.disabled = false;
+    }
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      fileInput.dispatchEvent(new Event('change'));
+    }
+  });
+</script>
+{% endblock %}

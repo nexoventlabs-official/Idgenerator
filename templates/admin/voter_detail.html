@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}{{ voter.name }} — Voter Detail{% endblock %}
+{% block page_title %}Voter Detail{% endblock %}
+
+{% block extra_css %}
+  .voter-detail-card {
+    border-radius: 16px; overflow: hidden;
+    border: none; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  .voter-header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff; padding: 2rem; text-align: center;
+  }
+  .voter-photo {
+    width: 100px; height: 100px; border-radius: 50%; object-fit: cover;
+    border: 4px solid rgba(255,255,255,0.3); margin-bottom: 0.8rem;
+  }
+  .voter-photo-placeholder {
+    width: 100px; height: 100px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.5);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; margin-bottom: 0.8rem;
+    border: 4px solid rgba(255,255,255,0.2);
+  }
+  .voter-name { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.2rem; }
+  .voter-epic { font-size: 0.9rem; opacity: 0.7; font-family: monospace; letter-spacing: 1px; }
+  .detail-table th {
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #888; font-weight: 600; width: 200px; background: #fafafa;
+    white-space: nowrap;
+  }
+  .detail-table td { font-size: 0.9rem; }
+  .section-label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px;
+    color: #aaa; font-weight: 700; padding: 0.8rem 1rem 0.3rem;
+    background: #f8f9fa;
+  }
+  .stat-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 12px; border-radius: 20px; font-size: 0.82rem; font-weight: 600;
+  }
+  .stat-badge-active { background: #e8f5e9; color: #2e7d32; }
+  .stat-badge-zero { background: #f5f5f5; color: #bbb; }
+  .card-preview {
+    max-width: 360px; border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+  .back-link { font-size: 0.88rem; }
+{% endblock %}
+
+{% block content %}
+
+<!-- Back button -->
+<a href="{{ url_for('admin.voters_list') }}" class="back-link text-decoration-none d-inline-flex align-items-center gap-1 mb-3">
+  <i class="bi bi-arrow-left"></i> Back to Voters
+</a>
+
+<div class="row g-4">
+  <!-- Left Column: Voter Info -->
+  <div class="col-lg-8">
+    <div class="card voter-detail-card">
+      <!-- Header with photo + name -->
+      <div class="voter-header">
+        {% if voter.photo_url %}
+        <img src="{{ voter.photo_url }}" alt="{{ voter.name }}" class="voter-photo d-block mx-auto">
+        {% else %}
+        <div class="voter-photo-placeholder mx-auto"><i class="bi bi-person-fill"></i></div>
+        {% endif %}
+        <div class="voter-name">{{ voter.name }}</div>
+        <div class="voter-epic">{{ voter.epic_no }}</div>
+      </div>
+
+      <!-- Core Details -->
+      <div class="section-label">Core Information</div>
+      <table class="table detail-table mb-0">
+        <tbody>
+          <tr><th>Epic Number</th><td><code>{{ voter.epic_no }}</code></td></tr>
+          <tr><th>Name</th><td class="fw-semibold">{{ voter.name }}</td></tr>
+          <tr><th>Assembly</th><td>{{ voter.assembly or '—' }}</td></tr>
+          <tr><th>District</th><td>{{ voter.district or '—' }}</td></tr>
+        </tbody>
+      </table>
+
+      <!-- Extra Fields from CSV/XLSX -->
+      {% if extra_fields %}
+      <div class="section-label">Additional Details (from imported file)</div>
+      <table class="table detail-table mb-0">
+        <tbody>
+          {% for key, val in extra_fields.items() %}
+          <tr>
+            <th>{{ key.replace('_', ' ').title() }}</th>
+            <td>{{ val }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      <!-- Generation Stats -->
+      <div class="section-label">Generation Stats</div>
+      <table class="table detail-table mb-0">
+        <tbody>
+          <tr>
+            <th>Times Generated</th>
+            <td>
+              {% if voter.gen_count > 0 %}
+              <span class="stat-badge stat-badge-active">
+                <i class="bi bi-check-circle-fill"></i> {{ voter.gen_count }}
+              </span>
+              {% else %}
+              <span class="stat-badge stat-badge-zero">0</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Last Generated</th>
+            <td>
+              {% if voter.last_generated %}
+              {{ voter.last_generated[:19] | replace('T', ' ') }}
+              {% else %}
+              —
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Photo</th>
+            <td>
+              {% if voter.photo_url %}
+              <a href="{{ voter.photo_url }}" target="_blank" class="text-decoration-none">
+                <i class="bi bi-cloud-check-fill text-success"></i> Uploaded to Cloudinary
+              </a>
+              {% else %}
+              <span class="text-muted">No photo uploaded</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Right Column: Card Preview -->
+  <div class="col-lg-4">
+    <div class="card voter-detail-card">
+      <div class="card-body text-center p-3">
+        <h6 class="text-muted mb-3" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px;">
+          Generated Card
+        </h6>
+        {% if voter.card_url %}
+        <img src="{{ voter.card_url }}"
+             class="card-preview img-fluid mb-3" alt="Voter ID Card">
+        <a href="{{ url_for('user_download_card', epic_no=voter.epic_no) }}"
+           class="btn btn-sm btn-dark d-block">
+          <i class="bi bi-download"></i> Download Card
+        </a>
+        {% else %}
+        <div class="py-5 text-muted">
+          <i class="bi bi-credit-card-2-front" style="font-size: 3rem; opacity: 0.3;"></i>
+          <p class="mt-2 mb-0" style="font-size: 0.85rem;">No card generated yet</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

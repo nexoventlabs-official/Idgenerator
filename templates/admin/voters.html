@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}Voters{% endblock %}
+{% block page_title %}Voters (<span id="countLabel">{{ total }}</span>){% endblock %}
+
+{% block extra_css %}
+  .voters-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
+  .voters-table td { font-size: 0.88rem; vertical-align: middle; }
+  .voters-table tbody tr.voter-row { cursor: pointer; transition: background 0.15s; }
+  .voters-table tbody tr.voter-row:hover { background: #f0f4ff !important; }
+  .gen-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
+  }
+  .gen-pill-zero { background: #f5f5f5; color: #bbb; }
+  .gen-pill-active { background: #e8f5e9; color: #2e7d32; }
+  .voter-avatar {
+    width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #e0e0e0;
+  }
+  .voter-avatar-placeholder {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: #f0f0f0; color: #bbb;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; border: 2px solid #e0e0e0;
+  }
+  .filter-bar {
+    background: #f8f9fa; border-radius: 12px; padding: 0.75rem 1rem;
+  }
+  .filter-bar select, .filter-bar input { font-size: 0.85rem; border-radius: 8px; }
+  .filter-bar .form-select { min-width: 160px; }
+  .active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 0.5rem; }
+  .active-filter {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #e3f2fd; color: #1565c0; padding: 3px 10px; border-radius: 16px;
+    font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: background 0.15s;
+  }
+  .active-filter:hover { background: #bbdefb; }
+  .active-filter .x { font-weight: 700; margin-left: 2px; }
+  .no-results { padding: 3rem 1rem; text-align: center; color: #999; }
+  .no-results i { font-size: 2.5rem; opacity: 0.3; }
+  .loading-spinner {
+    display: none; text-align: center; padding: 2rem;
+    color: #aaa; font-size: 0.88rem;
+  }
+  .loading-spinner.active { display: block; }
+  .loading-spinner .spinner-border { width: 1.2rem; height: 1.2rem; border-width: 2px; }
+  mark { background: #fff3cd; padding: 0 2px; border-radius: 2px; }
+{% endblock %}
+
+{% block content %}
+
+<!-- Filter & Search Bar -->
+<div class="filter-bar mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-lg-4 col-md-6">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+        <input type="text" id="searchInput" class="form-control border-start-0"
+               placeholder="Search by name, epic number..." autocomplete="off">
+        <button id="clearSearch" class="btn btn-outline-secondary border-start-0 d-none"
+                type="button" title="Clear"><i class="bi bi-x-lg"></i></button>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-3">
+      <select id="filterAssembly" class="form-select form-select-sm">
+        <option value="">All Assemblies</option>
+        {% for a in assemblies %}
+        <option value="{{ a }}">{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-3 col-md-3">
+      <select id="filterDistrict" class="form-select form-select-sm">
+        <option value="">All Districts</option>
+        {% for d in districts %}
+        <option value="{{ d }}">{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-2 col-md-12">
+      <div class="d-flex align-items-center justify-content-end gap-2" style="font-size:0.82rem;">
+        <span class="text-muted">Show</span>
+        {% for pp in [20, 50, 100] %}
+        <button class="btn btn-sm pp-btn {{ 'btn-dark' if per_page == pp else 'btn-outline-secondary' }}"
+                data-pp="{{ pp }}">{{ pp }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div id="activeFilters" class="active-filters" style="display:none;"></div>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-hover voters-table mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="width:40px">#</th>
+          <th style="width:50px">Photo</th>
+          <th>Epic Number</th>
+          <th>Name</th>
+          <th>Assembly</th>
+          <th>District</th>
+          <th class="text-center" style="width:95px">Generated</th>
+          <th style="width:145px">Last Generated</th>
+        </tr>
+      </thead>
+      <tbody id="votersBody">
+        <!-- rows rendered by JS -->
+      </tbody>
+    </table>
+  </div>
+  <div id="loadingSpinner" class="loading-spinner">
+    <span class="spinner-border text-secondary"></span> Loading...
+  </div>
+</div>
+
+<!-- Pagination -->
+<nav class="mt-3 d-flex justify-content-center" id="paginationNav" style="display:none !important;"></nav>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var API_URL       = '{{ url_for("admin.api_voters") }}';
+  var DETAIL_URL    = '{{ url_for("admin.voter_detail", epic_no="__EPIC__") }}';
+  var searchInput   = document.getElementById('searchInput');
+  var clearBtn      = document.getElementById('clearSearch');
+  var filterAsm     = document.getElementById('filterAssembly');
+  var filterDist    = document.getElementById('filterDistrict');
+  var tbody         = document.getElementById('votersBody');
+  var countLabel    = document.getElementById('countLabel');
+  var paginationNav = document.getElementById('paginationNav');
+  var activeFilters = document.getElementById('activeFilters');
+  var spinner       = document.getElementById('loadingSpinner');
+
+  var currentPage   = 1;
+  var perPage       = {{ per_page }};
+  var debounceTimer = null;
+  var fetchController = null; // AbortController for cancelling in-flight requests
+
+  /* ── Fetch voters from API ── */
+  function fetchVoters() {
+    // Cancel any in-flight request
+    if (fetchController) fetchController.abort();
+    fetchController = new AbortController();
+
+    var q   = searchInput.value.trim();
+    var asm = filterAsm.value;
+    var dst = filterDist.value;
+
+    var params = new URLSearchParams();
+    if (q)   params.set('search', q);
+    if (asm) params.set('assembly', asm);
+    if (dst) params.set('district', dst);
+    params.set('page', currentPage);
+    params.set('per_page', perPage);
+
+    spinner.classList.add('active');
+
+    fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        renderTable(data.voters, data.page, data.per_page, data.total, q);
+        renderPagination(data.page, data.total_pages);
+        countLabel.textContent = data.total;
+        spinner.classList.remove('active');
+      })
+      .catch(function(err) {
+        if (err.name !== 'AbortError') {
+          spinner.classList.remove('active');
+          console.error('Fetch error:', err);
+        }
+      });
+
+    updateActiveFilters(q, asm, dst);
+    updateClearBtn(q);
+  }
+
+  /* ── Render table rows ── */
+  function renderTable(voters, page, pp, total, query) {
+    if (!voters.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="no-results">' +
+        '<i class="bi bi-inbox d-block mb-2"></i>No voters match your search.</td></tr>';
+      return;
+    }
+
+    var hl = query ? query.toLowerCase() : '';
+    var html = '';
+    voters.forEach(function(v, i) {
+      var num = (page - 1) * pp + i + 1;
+      var url = DETAIL_URL.replace('__EPIC__', v.epic_no);
+
+      var photoCell;
+      if (v.photo_url) {
+        photoCell = '<img src="' + escHtml(v.photo_url) + '" class="voter-avatar">';
+      } else {
+        photoCell = '<span class="voter-avatar-placeholder"><i class="bi bi-person-fill"></i></span>';
+      }
+
+      var genCell;
+      if (v.gen_count > 0) {
+        genCell = '<span class="gen-pill gen-pill-active"><i class="bi bi-check-circle-fill"></i> ' + v.gen_count + '</span>';
+      } else {
+        genCell = '<span class="gen-pill gen-pill-zero">0</span>';
+      }
+
+      var lastGen = v.last_generated ? v.last_generated.substring(0, 19).replace('T', ' ') : '—';
+
+      html += '<tr class="voter-row" onclick="window.location=\'' + url + '\'" title="Click to view details">' +
+        '<td class="text-muted">' + num + '</td>' +
+        '<td>' + photoCell + '</td>' +
+        '<td><code>' + highlight(v.epic_no, hl) + '</code></td>' +
+        '<td class="fw-semibold">' + highlight(v.name, hl) + '</td>' +
+        '<td>' + highlight(v.assembly || '—', hl) + '</td>' +
+        '<td>' + highlight(v.district || '—', hl) + '</td>' +
+        '<td class="text-center">' + genCell + '</td>' +
+        '<td style="font-size:0.8rem;color:#888;">' + lastGen + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  /* ── Highlight matching text ── */
+  function highlight(text, query) {
+    if (!query || !text) return escHtml(text);
+    var safe = escHtml(text);
+    var idx = safe.toLowerCase().indexOf(query);
+    if (idx === -1) return safe;
+    return safe.substring(0, idx) + '<mark>' + safe.substring(idx, idx + query.length) + '</mark>' + safe.substring(idx + query.length);
+  }
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  /* ── Render pagination ── */
+  function renderPagination(page, totalPages) {
+    if (totalPages <= 1) {
+      paginationNav.style.display = 'none';
+      return;
+    }
+    paginationNav.style.cssText = '';
+
+    var start = Math.max(1, page - 3);
+    var end   = Math.min(totalPages, page + 3);
+    var html  = '<ul class="pagination pagination-sm mb-0">';
+
+    // Prev
+    html += '<li class="page-item ' + (page <= 1 ? 'disabled' : '') + '">' +
+      '<a class="page-link" href="#" data-page="' + (page - 1) + '"><i class="bi bi-chevron-left"></i></a></li>';
+
+    if (start > 1) {
+      html += '<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>';
+      if (start > 2) html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
+    }
+    for (var p = start; p <= end; p++) {
+      html += '<li class="page-item ' + (p === page ? 'active' : '') + '">' +
+        '<a class="page-link" href="#" data-page="' + p + '">' + p + '</a></li>';
+    }
+    if (end < totalPages) {
+      if (end < totalPages - 1) html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
+      html += '<li class="page-item"><a class="page-link" href="#" data-page="' + totalPages + '">' + totalPages + '</a></li>';
+    }
+
+    // Next
+    html += '<li class="page-item ' + (page >= totalPages ? 'disabled' : '') + '">' +
+      '<a class="page-link" href="#" data-page="' + (page + 1) + '"><i class="bi bi-chevron-right"></i></a></li>';
+    html += '</ul>';
+
+    paginationNav.innerHTML = html;
+
+    // Bind clicks
+    paginationNav.querySelectorAll('a[data-page]').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        var pg = parseInt(this.dataset.page);
+        if (pg >= 1 && pg <= totalPages && pg !== page) {
+          currentPage = pg;
+          fetchVoters();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+    });
+  }
+
+  /* ── Active filter badges ── */
+  function updateActiveFilters(q, asm, dst) {
+    var badges = '';
+    if (q) {
+      badges += '<span class="active-filter" onclick="clearF(\'search\')">' +
+        '<i class="bi bi-search"></i> "' + escHtml(q) + '" <span class="x">×</span></span>';
+    }
+    if (asm) {
+      badges += '<span class="active-filter" onclick="clearF(\'assembly\')">' +
+        '<i class="bi bi-building"></i> ' + escHtml(asm) + ' <span class="x">×</span></span>';
+    }
+    if (dst) {
+      badges += '<span class="active-filter" onclick="clearF(\'district\')">' +
+        '<i class="bi bi-geo-alt"></i> ' + escHtml(dst) + ' <span class="x">×</span></span>';
+    }
+    if (badges) {
+      activeFilters.style.display = '';
+      activeFilters.innerHTML = badges;
+    } else {
+      activeFilters.style.display = 'none';
+      activeFilters.innerHTML = '';
+    }
+  }
+
+  function updateClearBtn(q) {
+    clearBtn.classList.toggle('d-none', !q);
+  }
+
+  /* ── Trigger search with debounce ── */
+  function triggerSearch(delay) {
+    currentPage = 1;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchVoters, delay);
+  }
+
+  /* ── Event Listeners ── */
+  searchInput.addEventListener('input', function() {
+    updateClearBtn(this.value.trim());
+    triggerSearch(250);
+  });
+
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      currentPage = 1;
+      clearTimeout(debounceTimer);
+      fetchVoters();
+    }
+  });
+
+  clearBtn.addEventListener('click', function() {
+    searchInput.value = '';
+    updateClearBtn('');
+    currentPage = 1;
+    clearTimeout(debounceTimer);
+    fetchVoters();
+    searchInput.focus();
+  });
+
+  filterAsm.addEventListener('change', function() {
+    triggerSearch(0);
+  });
+
+  filterDist.addEventListener('change', function() {
+    triggerSearch(0);
+  });
+
+  document.querySelectorAll('.pp-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.pp-btn').forEach(function(b) {
+        b.classList.remove('btn-dark');
+        b.classList.add('btn-outline-secondary');
+      });
+      this.classList.remove('btn-outline-secondary');
+      this.classList.add('btn-dark');
+      perPage = parseInt(this.dataset.pp);
+      currentPage = 1;
+      fetchVoters();
+    });
+  });
+
+  /* ── Global clear helper ── */
+  window.clearF = function(type) {
+    if (type === 'search')   searchInput.value = '';
+    if (type === 'assembly') filterAsm.value = '';
+    if (type === 'district') filterDist.value = '';
+    currentPage = 1;
+    fetchVoters();
+  };
+
+  /* ── Initial load ── */
+  searchInput.focus();
+  fetchVoters();
+})();
+</script>
+{% endblock %}
