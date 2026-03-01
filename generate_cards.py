@@ -36,7 +36,8 @@ logger = setup_logging()
 # ══════════════════════════════════════════════════════════════════
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in [config.FONT_FALLBACK]:
+    paths = getattr(config, 'FONT_PATHS', [config.FONT_FALLBACK])
+    for path in paths:
         if os.path.isfile(path):
             try:
                 return ImageFont.truetype(path, size)
@@ -46,7 +47,8 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
 
 
 def load_bold_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in [config.FONT_BOLD_FALLBACK, config.FONT_FALLBACK]:
+    paths = getattr(config, 'FONT_BOLD_PATHS', [config.FONT_BOLD_FALLBACK, config.FONT_FALLBACK])
+    for path in paths:
         if path and os.path.isfile(path):
             try:
                 return ImageFont.truetype(path, size)
@@ -190,6 +192,7 @@ def generate_card(voter: dict, template: Image.Image,
         text = voter.get(field_key, '')
         if not text:
             continue
+        text = text.upper()  # ALL CAPS
         font = auto_fit_font(text, max_width, config.FONT_SIZE, bold=True)
         text_w = get_text_width(text, font)
         cx = label_end_x + (end_x - label_end_x - text_w) // 2

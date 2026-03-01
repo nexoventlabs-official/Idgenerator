@@ -35,9 +35,22 @@ CLOUDINARY_PHOTO_FOLDER = os.getenv("CLOUDINARY_PHOTO_FOLDER", "member_photos")
 CLOUDINARY_CARDS_FOLDER = os.getenv("CLOUDINARY_CARDS_FOLDER", "generated_cards")
 
 # ── Font Settings ─────────────────────────────────────────────────
-FONT_SIZE = 22
-FONT_MIN_SIZE = 12
+FONT_SIZE = 30
+FONT_MIN_SIZE = 14
 FONT_COLOR = (0, 0, 0)
+
+# Sans-serif font paths — tried in order (Windows → Linux → bundled)
+FONT_PATHS = [
+    'C:/Windows/Fonts/arial.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+]
+FONT_BOLD_PATHS = [
+    'C:/Windows/Fonts/arialbd.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+]
+# Legacy single-path fallbacks (kept for backwards compat)
 FONT_FALLBACK = 'C:/Windows/Fonts/arial.ttf'
 FONT_BOLD_FALLBACK = 'C:/Windows/Fonts/arialbd.ttf'
 
