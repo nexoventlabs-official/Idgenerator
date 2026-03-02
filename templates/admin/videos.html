@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Videos{% endblock %}
+{% block page_title %}Videos Management{% endblock %}
+
+{% block content %}
+<!-- Add Video -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong><i class="bi bi-plus-circle me-1"></i> Add Video</strong></div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('admin.admin_videos_add') }}">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label">Title</label>
+          <input type="text" name="title" class="form-control" placeholder="Video title (optional)">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Video URL <span class="text-danger">*</span></label>
+          <input type="url" name="url" class="form-control" placeholder="https://youtube.com/watch?v=..." required>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-danger w-100"><i class="bi bi-plus-lg me-1"></i> Add</button>
+        </div>
+      </div>
+      <small class="text-muted mt-2 d-block">Supports YouTube, Facebook, or direct video URLs.</small>
+    </form>
+  </div>
+</div>
+
+<!-- Videos List -->
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-camera-video-fill me-1"></i> All Videos</strong>
+    <div class="d-flex align-items-center gap-2">
+      <form method="POST" action="{{ url_for('admin.admin_videos_refresh') }}" class="d-inline">
+        <button class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise me-1"></i> Refresh YouTube Data</button>
+      </form>
+      <span class="badge bg-secondary">{{ items|length }}</span>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if items %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>URL</th>
+            <th>Added</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          {% set vid_id = '' %}
+          {% if 'youtube.com/watch' in item.url and 'v=' in item.url %}
+            {% set vid_id = item.url.split('v=')[1].split('&')[0] %}
+          {% elif 'youtu.be/' in item.url %}
+            {% set vid_id = item.url.split('youtu.be/')[1].split('?')[0] %}
+          {% endif %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td class="fw-bold">
+              <div class="d-flex align-items-center gap-2">
+                {% if vid_id %}
+                <img src="https://img.youtube.com/vi/{{ vid_id }}/default.jpg" alt="" style="width:80px;height:45px;object-fit:cover;border-radius:6px;">
+                {% else %}
+                <div style="width:80px;height:45px;background:#ddd;border-radius:6px;" class="d-flex align-items-center justify-content-center"><i class="bi bi-camera-video text-muted"></i></div>
+                {% endif %}
+                <span>{{ item.title or 'Untitled' }}</span>
+              </div>
+            </td>
+            <td><a href="{{ item.url }}" target="_blank" class="text-truncate d-inline-block" style="max-width:300px;">{{ item.url }}</a></td>
+            <td class="text-muted" style="font-size:0.8rem;">{{ item.created_at[:10] if item.created_at else '-' }}</td>
+            <td class="text-end">
+              <form method="POST" action="{{ url_for('admin.admin_videos_delete') }}" class="d-inline" onsubmit="return confirm('Delete this video?')">
+                <input type="hidden" name="url" value="{{ item.url }}">
+                <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-camera-video fs-1 d-block mb-2"></i>
+      No videos added yet. Use the form above to add video URLs.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

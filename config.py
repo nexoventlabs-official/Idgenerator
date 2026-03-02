@@ -34,6 +34,9 @@ CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_PHOTO_FOLDER = os.getenv("CLOUDINARY_PHOTO_FOLDER", "member_photos")
 CLOUDINARY_CARDS_FOLDER = os.getenv("CLOUDINARY_CARDS_FOLDER", "generated_cards")
 
+# ── YouTube Data API ─────────────────────────────────────────────
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+
 # ── Font Settings ─────────────────────────────────────────────────
 FONT_SIZE = 30
 FONT_MIN_SIZE = 14

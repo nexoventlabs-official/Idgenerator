@@ -23,6 +23,7 @@ from flask import (
 from PIL import Image
 from werkzeug.utils import secure_filename
 
+import requests as http_requests
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -54,6 +55,9 @@ mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
 stats_col = db[config.MONGO_STATS_COLLECTION]
+photos_col = db['photos']
+videos_col = db['videos']
+announcements_col = db['announcements']
 
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
@@ -387,7 +391,49 @@ def get_dashboard_stats():
 
 @app.route('/')
 def user_home():
-    return render_template('user/home.html')
+    # Fetch latest content for home page sections
+    latest_photos = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1).limit(6))
+    latest_videos = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1).limit(3))
+    latest_announcements = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1).limit(3))
+    member_count = stats_col.count_documents({})
+    return render_template('user/home.html',
+                           latest_photos=latest_photos,
+                           latest_videos=latest_videos,
+                           latest_announcements=latest_announcements,
+                           member_count=member_count)
+
+
+@app.route('/photos')
+def user_photos():
+    """Public photos gallery page."""
+    photos = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('user/photos.html', photos=photos)
+
+
+@app.route('/videos')
+def user_videos():
+    """Public videos page."""
+    videos = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('user/videos.html', videos=videos)
+
+
+@app.route('/announcements')
+def user_announcements():
+    """Public announcements page."""
+    announcements = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('user/announcements.html', announcements=announcements)
+
+
+@app.route('/registration')
+def user_registration():
+    """Registration page (placeholder)."""
+    return render_template('user/registration.html')
+
+
+@app.route('/generate-id')
+def user_generate_page():
+    """Dedicated page for generating ID card."""
+    return render_template('user/generate.html')
 
 
 @app.route('/generate', methods=['POST'])
@@ -397,13 +443,13 @@ def user_generate():
 
     if not epic_no:
         flash('Please enter your Epic Number.', 'danger')
-        return redirect(url_for('user_home'))
+        return redirect(url_for('user_generate_page'))
 
     # Look up in MongoDB
     voter = find_voter_by_epic(epic_no)
     if not voter:
         flash('Epic Number not found. Please check and try again.', 'danger')
-        return redirect(url_for('user_home'))
+        return redirect(url_for('user_generate_page'))
 
     # Handle optional photo upload
     photo_image = None
@@ -452,7 +498,7 @@ def user_generate():
     except Exception as e:
         logger.error(f"Card generation error for {epic_no}: {e}")
         flash('Something went wrong generating the card. Please try again.', 'danger')
-        return redirect(url_for('user_home'))
+        return redirect(url_for('user_generate_page'))
 
 
 @app.route('/card/<epic_no>')
@@ -690,6 +736,185 @@ def voter_detail(epic_no):
     return render_template('admin/voter_detail.html',
                            voter=voter, extra_fields=extra_fields)
 
+# ── Admin: Photos Management ─────────────────────────────────────
+
+@admin_bp.route('/photos')
+def admin_photos():
+    items = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('admin/photos.html', items=items)
+
+
+@admin_bp.route('/photos/add', methods=['POST'])
+def admin_photos_add():
+    title = request.form.get('title', '').strip()
+    url = request.form.get('url', '').strip()
+    if not url:
+        flash('Image URL is required.', 'danger')
+        return redirect(url_for('admin.admin_photos'))
+    photos_col.insert_one({
+        'title': title,
+        'url': url,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    })
+    flash('Photo added successfully!', 'success')
+    return redirect(url_for('admin.admin_photos'))
+
+
+@admin_bp.route('/photos/delete', methods=['POST'])
+def admin_photos_delete():
+    url = request.form.get('url', '').strip()
+    if url:
+        photos_col.delete_one({'url': url})
+        flash('Photo deleted.', 'success')
+    return redirect(url_for('admin.admin_photos'))
+
+
+# ── Admin: Videos Management ─────────────────────────────────────
+
+@admin_bp.route('/videos')
+def admin_videos():
+    items = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('admin/videos.html', items=items)
+
+
+def _extract_youtube_id(url):
+    """Extract YouTube video ID from various URL formats."""
+    yt_id = ''
+    if 'youtube.com/watch' in url and 'v=' in url:
+        yt_id = url.split('v=')[1].split('&')[0]
+    elif 'youtu.be/' in url:
+        yt_id = url.split('youtu.be/')[1].split('?')[0]
+    elif 'youtube.com/embed/' in url:
+        yt_id = url.split('youtube.com/embed/')[1].split('?')[0]
+    return yt_id
+
+
+def _fetch_youtube_details(yt_id):
+    """Fetch title & description from YouTube.
+    Uses oEmbed (no key needed) for title, Data API v3 for description."""
+    title, description = None, None
+
+    # 1) oEmbed — always works, no API key needed, returns title
+    try:
+        oembed = http_requests.get(
+            'https://www.youtube.com/oembed',
+            params={'url': f'https://www.youtube.com/watch?v={yt_id}', 'format': 'json'},
+            timeout=8,
+        )
+        if oembed.status_code == 200:
+            title = oembed.json().get('title', '')
+    except Exception:
+        pass
+
+    # 2) Data API v3 — for description (requires API key)
+    api_key = config.YOUTUBE_API_KEY
+    if api_key and yt_id:
+        try:
+            resp = http_requests.get(
+                'https://www.googleapis.com/youtube/v3/videos',
+                params={'id': yt_id, 'part': 'snippet', 'key': api_key},
+                timeout=8,
+            )
+            data = resp.json()
+            if data.get('items'):
+                snippet = data['items'][0]['snippet']
+                if not title:
+                    title = snippet.get('title', '')
+                description = snippet.get('description', '')
+        except Exception:
+            pass
+
+    return title, description
+
+
+@admin_bp.route('/videos/add', methods=['POST'])
+def admin_videos_add():
+    title = request.form.get('title', '').strip()
+    url = request.form.get('url', '').strip()
+    if not url:
+        flash('Video URL is required.', 'danger')
+        return redirect(url_for('admin.admin_videos'))
+
+    description = ''
+    yt_id = _extract_youtube_id(url)
+    if yt_id:
+        yt_title, yt_desc = _fetch_youtube_details(yt_id)
+        if yt_title and not title:
+            title = yt_title
+        if yt_desc:
+            description = yt_desc
+
+    videos_col.insert_one({
+        'title': title,
+        'description': description,
+        'url': url,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    })
+    flash('Video added successfully!', 'success')
+    return redirect(url_for('admin.admin_videos'))
+
+
+@admin_bp.route('/videos/delete', methods=['POST'])
+def admin_videos_delete():
+    url = request.form.get('url', '').strip()
+    if url:
+        videos_col.delete_one({'url': url})
+        flash('Video deleted.', 'success')
+    return redirect(url_for('admin.admin_videos'))
+
+@admin_bp.route('/videos/refresh', methods=['POST'])
+def admin_videos_refresh():
+    """Re-fetch YouTube title & description for all videos."""
+    updated = 0
+    for video in videos_col.find():
+        yt_id = _extract_youtube_id(video.get('url', ''))
+        if yt_id:
+            yt_title, yt_desc = _fetch_youtube_details(yt_id)
+            update_fields = {}
+            if yt_title:
+                update_fields['title'] = yt_title
+            if yt_desc:
+                update_fields['description'] = yt_desc
+            if update_fields:
+                videos_col.update_one({'_id': video['_id']}, {'$set': update_fields})
+                updated += 1
+    flash(f'Refreshed {updated} video(s) with YouTube details.', 'success')
+    return redirect(url_for('admin.admin_videos'))
+
+# ── Admin: Announcements Management ──────────────────────────────
+
+@admin_bp.route('/announcements')
+def admin_announcements():
+    items = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1))
+    return render_template('admin/announcements.html', items=items)
+
+
+@admin_bp.route('/announcements/add', methods=['POST'])
+def admin_announcements_add():
+    title = request.form.get('title', '').strip()
+    content = request.form.get('content', '').strip()
+    image_url = request.form.get('image_url', '').strip()
+    if not title:
+        flash('Title is required.', 'danger')
+        return redirect(url_for('admin.admin_announcements'))
+    announcements_col.insert_one({
+        'title': title,
+        'content': content,
+        'image_url': image_url,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    })
+    flash('Announcement added successfully!', 'success')
+    return redirect(url_for('admin.admin_announcements'))
+
+
+@admin_bp.route('/announcements/delete', methods=['POST'])
+def admin_announcements_delete():
+    title = request.form.get('title', '').strip()
+    created_at = request.form.get('created_at', '').strip()
+    if title and created_at:
+        announcements_col.delete_one({'title': title, 'created_at': created_at})
+        flash('Announcement deleted.', 'success')
+    return redirect(url_for('admin.admin_announcements'))
 
 @admin_bp.route('/api/voters')
 def api_voters():
