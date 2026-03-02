@@ -467,8 +467,8 @@
           <div class="d-flex align-items-center mb-2">
             <span class="step-badge">2</span>
             <div>
-              <div class="step-label">Your Photo</div>
-              <div class="step-sublabel">Upload a clear face photo for your ID card</div>
+              <div class="step-label">Your Photo <span class="text-danger">*</span></div>
+              <div class="step-sublabel">Upload a clear face photo for your ID card (required)</div>
             </div>
           </div>
           <div class="photo-upload-area" id="photoArea">
@@ -556,6 +556,8 @@
         uploadHint.style.display = 'none';
         uploadLabel.textContent = file.name;
         hasImage = true;
+        photoArea.style.borderColor = '';
+        photoArea.style.background = '';
 
         if (cropper) cropper.destroy();
 
@@ -593,8 +595,14 @@
     });
 
     genForm.addEventListener('submit', function (e) {
-      if (!hasImage || !cropper) return;
       e.preventDefault();
+      if (!hasImage || !cropper) {
+        photoArea.style.borderColor = '#c62828';
+        photoArea.style.background = 'linear-gradient(180deg, #fff5f5, #ffebee)';
+        alert('Please upload your photo. It is required to generate your ID card.');
+        photoArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       submitBtn.disabled = true;
       submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
 

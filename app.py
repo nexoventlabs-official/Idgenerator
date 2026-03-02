@@ -438,11 +438,23 @@ def user_generate_page():
 
 @app.route('/generate', methods=['POST'])
 def user_generate():
-    """User enters Epic Number + optional photo → generate card."""
+    """User enters Epic Number + photo → generate card."""
     epic_no = request.form.get('epic_no', '').strip().upper()
 
     if not epic_no:
         flash('Please enter your Epic Number.', 'danger')
+        return redirect(url_for('user_generate_page'))
+
+    # Photo is required
+    photo_image = None
+    photo_url = ''
+    if 'photo' not in request.files or not request.files['photo'].filename:
+        flash('Please upload your photo. It is required.', 'danger')
+        return redirect(url_for('user_generate_page'))
+
+    file = request.files['photo']
+    if not allowed_file(file.filename, ALLOWED_IMG):
+        flash('Invalid photo format. Please upload a JPG or PNG image.', 'danger')
         return redirect(url_for('user_generate_page'))
 
     # Look up in MongoDB
@@ -451,33 +463,15 @@ def user_generate():
         flash('Epic Number not found. Please check and try again.', 'danger')
         return redirect(url_for('user_generate_page'))
 
-    # Handle optional photo upload
-    photo_image = None
-    photo_url = ''
-    if 'photo' in request.files:
-        file = request.files['photo']
-        if file and file.filename and allowed_file(file.filename, ALLOWED_IMG):
-            try:
-                photo_image = Image.open(file.stream).convert('RGB')
-                # Upload to Cloudinary
-                photo_url = upload_photo_to_cloudinary(photo_image, epic_no)
-            except Exception as e:
-                logger.warning(f"Photo upload error for {epic_no}: {e}")
-                flash('Could not process the uploaded photo. Generating without it.', 'warning')
-                photo_image = None
-
-    # If no new photo uploaded, check if there's an existing one on Cloudinary
-    if not photo_image:
-        existing_url = get_voter_photo_url(epic_no)
-        if existing_url:
-            photo_url = existing_url
-            # Download from Cloudinary for card generation
-            try:
-                import urllib.request
-                resp = urllib.request.urlopen(existing_url)
-                photo_image = Image.open(io.BytesIO(resp.read())).convert('RGB')
-            except Exception:
-                photo_image = None
+    # Process photo upload
+    try:
+        photo_image = Image.open(file.stream).convert('RGB')
+        # Upload to Cloudinary
+        photo_url = upload_photo_to_cloudinary(photo_image, epic_no)
+    except Exception as e:
+        logger.warning(f"Photo upload error for {epic_no}: {e}")
+        flash('Could not process the uploaded photo. Please try again.', 'danger')
+        return redirect(url_for('user_generate_page'))
 
     # Generate card
     try:
