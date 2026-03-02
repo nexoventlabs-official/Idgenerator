@@ -436,6 +436,24 @@ def user_generate_page():
     return render_template('user/generate.html')
 
 
+@app.route('/lookup-voter', methods=['POST'])
+def lookup_voter():
+    """AJAX endpoint: return voter details for confirmation before generating."""
+    epic_no = request.form.get('epic_no', '').strip().upper()
+    if not epic_no:
+        return jsonify({'success': False, 'message': 'Please enter your Epic Number.'}), 400
+    voter = find_voter_by_epic(epic_no)
+    if not voter:
+        return jsonify({'success': False, 'message': 'Epic Number not found. Please check and try again.'}), 404
+    # Return only safe display fields
+    display_fields = {}
+    for key, val in voter.items():
+        if key.startswith('_'):
+            continue
+        display_fields[key] = str(val) if val else ''
+    return jsonify({'success': True, 'voter': display_fields})
+
+
 @app.route('/generate', methods=['POST'])
 def user_generate():
     """User enters Epic Number + photo → generate card."""
