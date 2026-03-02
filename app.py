@@ -575,6 +575,42 @@ def verify_voter(epic_no):
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 
+# ── Admin Authentication ─────────────────────────────────────────
+@admin_bp.before_request
+def require_admin_login():
+    """Guard all /admin routes — redirect to login if not authenticated."""
+    if request.endpoint == 'admin.login':
+        return  # allow access to the login page itself
+    if not session.get('admin_logged_in'):
+        flash('Please log in to access the admin panel.', 'warning')
+        return redirect(url_for('admin.login', next=request.url))
+
+
+@admin_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('admin_logged_in'):
+        return redirect(url_for('admin.dashboard'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        if username == config.ADMIN_USERNAME and password == config.ADMIN_PASSWORD:
+            session['admin_logged_in'] = True
+            session.permanent = True
+            flash('Welcome back, Admin!', 'success')
+            next_url = request.args.get('next') or url_for('admin.dashboard')
+            return redirect(next_url)
+        else:
+            flash('Invalid username or password.', 'danger')
+    return render_template('admin/login.html')
+
+
+@admin_bp.route('/logout')
+def logout():
+    session.pop('admin_logged_in', None)
+    flash('Logged out successfully.', 'info')
+    return redirect(url_for('admin.login'))
+
+
 @admin_bp.route('/')
 def dashboard():
     stats = get_dashboard_stats()
