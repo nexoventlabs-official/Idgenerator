@@ -1,248 +1,799 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>PuratchiThaai — ID Card Generator</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; overflow: hidden; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #111b21;
-      display: flex; justify-content: center; align-items: center;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #e9ebee;
+      /* Telegram Web typical background */
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
     /* ── Chat App Container ── */
     .chat-app {
-      width: 100%; max-width: 520px; height: 100vh;
-      display: flex; flex-direction: column;
-      position: relative; overflow: hidden;
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      background: #e9ebee;
     }
 
     /* ── Chat Wallpaper ── */
     .chat-wallpaper {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #efeae2;
-      background-image:
-        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8c3ba' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e9ebee;
       z-index: 0;
     }
 
     /* ── Header ── */
     .chat-header {
-      background: #075e54;
-      color: #fff;
-      padding: 10px 16px;
-      display: flex; align-items: center; gap: 12px;
+      background: #ffffff;
+      color: #000000;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
       z-index: 10;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       flex-shrink: 0;
+      border-bottom: 1px solid #dfe1e5;
     }
+
     .chat-header .avatar {
-      width: 42px; height: 42px; border-radius: 50%;
-      background: #128c7e;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.3rem; flex-shrink: 0;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #f0f2f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+      border: 1px solid #e0e0e0;
+      overflow: hidden;
     }
+
+    .chat-header .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .chat-header .info {
+      flex: 1;
+    }
+
     .chat-header .info h4 {
-      font-size: 1.05rem; font-weight: 600; margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 0;
+      color: #222;
     }
+
     .chat-header .info .status {
-      font-size: 0.75rem; opacity: 0.85;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #3390ec;
+      margin-top: 2px;
+    }
+
+    .chat-header .actions {
+      display: flex;
+      gap: 16px;
+      color: #888;
+      font-size: 1.3rem;
     }
 
     /* ── Messages Area ── */
     .chat-messages {
-      flex: 1; overflow-y: auto; padding: 12px 14px;
-      z-index: 1; position: relative;
-      display: flex; flex-direction: column;
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 10%;
+      z-index: 1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
     }
 
     /* ── Date chip ── */
     .date-chip {
       align-self: center;
-      background: #e1f2fb;
-      color: #475b68;
-      font-size: 0.72rem; font-weight: 600;
-      padding: 4px 14px; border-radius: 8px;
-      margin: 8px 0; box-shadow: 0 1px 1px rgba(0,0,0,0.06);
+      background: rgba(0, 0, 0, 0.15);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 12px;
+      margin: 12px 0;
+      letter-spacing: 0.3px;
     }
 
     /* ── Message Bubbles ── */
-    .message { margin-bottom: 4px; display: flex; animation: fadeIn 0.3s ease; }
-    .message.bot { justify-content: flex-start; }
-    .message.user { justify-content: flex-end; }
+    .message {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      animation: fadeIn 0.3s ease;
+      max-width: 100%;
+    }
+
+    .bot-avatar-img {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .message.bot {
+      justify-content: flex-start;
+    }
+
+    .message.user {
+      justify-content: flex-end;
+    }
 
     .message .bubble {
-      max-width: 82%; padding: 6px 10px 6px 10px;
-      border-radius: 8px; font-size: 0.88rem;
-      line-height: 1.45; position: relative;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+      max-width: 600px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      position: relative;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
       word-wrap: break-word;
+      color: #000;
     }
+
     .message.bot .bubble {
-      background: #fff; color: #111b21;
-      border-top-left-radius: 0;
+      background: #ffffff;
+      border-bottom-left-radius: 4px;
     }
+
     .message.user .bubble {
-      background: #d9fdd3; color: #111b21;
-      border-top-right-radius: 0;
+      background: #eef2f5;
+      border-bottom-right-radius: 4px;
     }
+
     .bubble .time {
-      font-size: 0.62rem; color: #667781;
-      float: right; margin: 6px 0 -2px 10px;
+      font-size: 0.68rem;
+      color: #999;
+      float: right;
+      margin: 8px 0 -4px 12px;
     }
-    .message.user .bubble .time { color: #5e8b6c; }
+
+    .message.user .bubble .time {
+      color: #888;
+    }
 
     /* ── Banner Message ── */
     .banner-message .bubble {
-      padding: 0; border-radius: 8px; overflow: hidden; max-width: 92%;
+      padding: 0;
+      overflow: hidden;
+      max-width: 600px;
     }
+
     .banner-message .bubble img {
-      width: 100%; display: block; border-radius: 8px 8px 0 0;
-      max-height: 280px; object-fit: cover;
+      width: 100%;
+      display: block;
+      aspect-ratio: 3 / 1;
+      object-fit: cover;
     }
+
     .banner-message .bubble .banner-text {
-      padding: 8px 10px; font-size: 0.88rem; line-height: 1.4;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .banner-action {
+      display: flex;
+      padding: 0 14px 14px 14px;
+    }
+
+    .btn-reply {
+      background: #f0f4f9;
+      color: #3390ec;
+      border: 1px solid rgba(51, 144, 236, 0.3);
+      border-radius: 12px;
+      padding: 10px 0;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .btn-reply:hover:not([disabled]) {
+      background: #e6eef6;
+    }
+
+    .btn-reply[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     /* ── Typing Indicator ── */
-    .typing-indicator .bubble { padding: 10px 16px; }
-    .typing-dots { display: flex; gap: 5px; }
-    .typing-dots span {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #8696a0; animation: typing 1.4s infinite;
+    .typing-indicator .bubble {
+      padding: 12px 18px;
     }
-    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    .typing-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .typing-dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #b0b4b8;
+      animation: typing 1.4s infinite;
+    }
+
+    .typing-dots span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dots span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
 
     @keyframes typing {
-      0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-      30% { opacity: 1; transform: translateY(-5px); }
+
+      0%,
+      60%,
+      100% {
+        opacity: 0.4;
+        transform: translateY(0);
+      }
+
+      30% {
+        opacity: 1;
+        transform: translateY(-4px);
+      }
     }
+
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     /* ── Voter Details Card ── */
     .voter-details-card {
-      background: #f0f2f5; border-radius: 8px;
-      padding: 10px 12px; margin-top: 8px;
+      background: #f7f9fa;
+      border-radius: 8px;
+      border: 1px solid #eef0f2;
+      padding: 12px 14px;
+      margin-top: 10px;
     }
+
     .voter-details-card .detail-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 5px 0; font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 0.85rem;
       border-bottom: 1px solid #e1e5e8;
     }
-    .voter-details-card .detail-row:last-child { border-bottom: none; }
-    .voter-details-card .detail-label { color: #667781; }
-    .voter-details-card .detail-value { font-weight: 600; color: #111b21; text-align: right; max-width: 60%; }
+
+    .voter-details-card .detail-row:last-child {
+      border-bottom: none;
+      border-bottom-width: 0;
+      padding-bottom: 0;
+    }
+
+    .voter-details-card .detail-label {
+      color: #7f8b94;
+    }
+
+    .voter-details-card .detail-value {
+      font-weight: 600;
+      color: #222;
+      text-align: right;
+      max-width: 65%;
+    }
 
     /* ── Action Buttons ── */
-    .action-buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    .action-btn {
-      border: none; padding: 9px 22px; border-radius: 22px;
-      font-size: 0.84rem; font-weight: 600; cursor: pointer;
-      transition: all 0.2s; display: inline-flex; align-items: center; gap: 5px;
+    .action-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
     }
-    .action-btn.confirm { background: #00a884; color: #fff; }
-    .action-btn.confirm:hover { background: #008f72; }
-    .action-btn.cancel { background: #e9edef; color: #3b4a54; }
-    .action-btn.cancel:hover { background: #d1d7db; }
+
+    .action-btn {
+      border: none;
+      padding: 10px 24px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn.confirm {
+      background: #3390ec;
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(51, 144, 236, 0.25);
+    }
+
+    .action-btn.confirm:hover {
+      background: #2a81d6;
+      box-shadow: 0 4px 10px rgba(51, 144, 236, 0.35);
+    }
+
+    .action-btn.cancel {
+      background: #f0f2f5;
+      color: #444;
+    }
+
+    .action-btn.cancel:hover {
+      background: #e0e3e6;
+    }
 
     /* ── Upload Area ── */
     .upload-area {
-      margin-top: 10px; border: 2px dashed #00a884;
-      border-radius: 12px; padding: 18px; text-align: center;
-      cursor: pointer; transition: all 0.2s;
+      margin-top: 10px;
+      border: 2px dashed #3390ec;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(51, 144, 236, 0.03);
     }
-    .upload-area:hover { background: rgba(0,168,132,0.06); }
-    .upload-area i { font-size: 2rem; color: #00a884; }
-    .upload-area p { margin: 6px 0 0; font-size: 0.8rem; color: #667781; }
+
+    .upload-area:hover {
+      background: rgba(51, 144, 236, 0.08);
+    }
+
+    .upload-area i {
+      font-size: 2.2rem;
+      color: #3390ec;
+    }
+
+    .upload-area p {
+      margin: 8px 0 0;
+      font-size: 0.85rem;
+      color: #666;
+    }
 
     /* ── Card Preview ── */
     .card-preview img {
-      width: 100%; border-radius: 8px; margin-top: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      width: 100%;
+      max-width: 300px;
+      border-radius: 8px;
+      margin-top: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      display: block;
     }
+
     .download-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: #00a884; color: #fff; border: none;
-      padding: 10px 24px; border-radius: 24px;
-      font-size: 0.88rem; font-weight: 600; cursor: pointer;
-      margin-top: 10px; text-decoration: none; transition: background 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #3390ec;
+      color: #fff;
+      border: none;
+      padding: 12px 26px;
+      border-radius: 24px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 14px;
+      text-decoration: none;
+      transition: background 0.2s, box-shadow 0.2s;
     }
-    .download-btn:hover { background: #008f72; color: #fff; }
+
+    .download-btn:hover {
+      background: #2a81d6;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(51, 144, 236, 0.3);
+    }
 
     /* ── Input Area ── */
     .chat-input-area {
-      background: #f0f2f5;
-      padding: 8px 10px;
-      display: flex; align-items: center; gap: 6px;
-      z-index: 10; flex-shrink: 0;
+      background: #ffffff;
+      padding: 12px 10%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+      flex-shrink: 0;
+      box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.03);
     }
-    .chat-input-area .attach-btn {
-      width: 42px; height: 42px; border: none; background: none;
-      color: #54656f; font-size: 1.35rem; cursor: pointer;
-      border-radius: 50%; display: none;
-      align-items: center; justify-content: center;
-      transition: background 0.15s;
-    }
-    .chat-input-area .attach-btn:hover { background: #e0e3e6; }
-    .chat-input-area .attach-btn.visible { display: flex; }
 
-    .chat-input-area input {
-      flex: 1; border: none; background: #fff;
-      border-radius: 8px; padding: 10px 14px;
-      font-size: 0.9rem; outline: none;
+    .chat-input-area .attach-btn {
+      width: 48px;
+      height: 48px;
+      border: none;
+      background: #f0f2f5;
+      color: #777;
+      font-size: 1.4rem;
+      cursor: pointer;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
     }
-    .chat-input-area input::placeholder { color: #8b9da7; }
+
+    .chat-input-area .attach-btn:hover {
+      background: #e0e3e6;
+      color: #3390ec;
+    }
+
+    .chat-input-area .attach-btn.visible {
+      display: flex;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-wrapper input {
+      width: 100%;
+      border: 1px solid #dfe1e5;
+      background: #ffffff;
+      border-radius: 24px;
+      padding: 14px 20px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-wrapper input:focus {
+      border-color: #3390ec;
+    }
+
+    .input-wrapper input::placeholder {
+      color: #999;
+    }
 
     .chat-input-area .send-btn {
-      width: 44px; height: 44px; border: none;
-      background: #00a884; color: #fff;
-      border-radius: 50%; display: flex;
-      align-items: center; justify-content: center;
-      font-size: 1.2rem; cursor: pointer;
-      transition: background 0.2s; flex-shrink: 0;
+      width: 48px;
+      height: 48px;
+      border: none;
+      background: #3390ec;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(51, 144, 236, 0.3);
     }
-    .chat-input-area .send-btn:hover { background: #008f72; }
-    .chat-input-area .send-btn:disabled { background: #8696a0; cursor: not-allowed; }
+
+    .chat-input-area .send-btn:hover {
+      background: #2a81d6;
+      transform: scale(1.05);
+    }
+
+    .chat-input-area .send-btn:active {
+      transform: scale(0.95);
+    }
+
+    .chat-input-area .send-btn:disabled {
+      background: #b0c9df;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
 
     /* ── Photo preview in bubble ── */
     .photo-thumb {
-      max-width: 160px; border-radius: 8px;
-      margin-bottom: 4px; display: block;
+      max-width: 200px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      display: block;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
 
     /* ── Scrollbar ── */
-    .chat-messages::-webkit-scrollbar { width: 5px; }
-    .chat-messages::-webkit-scrollbar-track { background: transparent; }
-    .chat-messages::-webkit-scrollbar-thumb { background: #b8c2c9; border-radius: 3px; }
+    .chat-messages::-webkit-scrollbar {
+      width: 6px;
+    }
 
-    /* ── Mobile ── */
-    @media (max-width: 520px) {
-      body { background: #efeae2; }
-      .chat-app { max-width: 100%; }
+    .chat-messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    /* ── Mobile & Tablet responsive ── */
+    @media (max-width: 900px) {
+      .chat-messages {
+        padding: 15px 5%;
+      }
+
+      .chat-input-area {
+        padding: 10px 5%;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .chat-messages {
+        padding: 12px;
+      }
+
+      .chat-input-area {
+        padding: 8px 12px;
+        gap: 8px;
+      }
+
+      .message .bubble {
+        max-width: 85%;
+        font-size: 0.9rem;
+      }
+
+      .banner-message .bubble {
+        max-width: 95%;
+      }
+
+      .chat-header {
+        padding: 10px 14px;
+        gap: 10px;
+      }
+
+      .chat-header .avatar {
+        width: 40px;
+        height: 40px;
+      }
+
+      .chat-header .info h4 {
+        font-size: 1rem;
+      }
+
+      .chat-input-area .send-btn,
+      .chat-input-area .attach-btn {
+        width: 42px;
+        height: 42px;
+        font-size: 1.15rem;
+      }
+
+      .input-wrapper input {
+        padding: 12px 16px;
+        font-size: 0.9rem;
+      }
+
+      .bot-avatar-img {
+        width: 32px;
+        height: 32px;
+      }
     }
 
     /* ── Hidden ── */
-    #photoInput { display: none; }
+    #photoInput {
+      display: none;
+    }
 
     /* ── Loading spinner ── */
     .gen-spinner {
-      display: inline-block; width: 18px; height: 18px;
-      border: 3px solid rgba(0,168,132,0.3);
-      border-top-color: #00a884; border-radius: 50%;
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(51, 144, 236, 0.3);
+      border-top-color: #3390ec;
+      border-radius: 50%;
       animation: spin 0.8s linear infinite;
-      vertical-align: middle; margin-right: 6px;
+      vertical-align: middle;
+      margin-right: 6px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* ── Language Toggle ── */
+    .lang-toggle-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #666;
+      cursor: pointer;
+    }
+
+    .lang-toggle {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .lang-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ced4da;
+      transition: .3s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked+.slider {
+      background-color: #3390ec;
+    }
+
+    input:checked+.slider:before {
+      transform: translateX(20px);
+    }
+
+    body.dark-mode .lang-toggle-wrapper {
+      color: #ccc !important;
+    }
+
+    body.dark-mode .slider {
+      background-color: #444;
+    }
+
+    body.dark-mode input:checked+.slider {
+      background-color: #3390ec;
+    }
+
+    /* ── Dark Mode ── */
+    body.dark-mode,
+    body.dark-mode .chat-app,
+    body.dark-mode .chat-wallpaper {
+      background: #0f0f0f !important;
+    }
+
+    body.dark-mode .chat-header {
+      background: #1a1a1a !important;
+      border-bottom: 1px solid #333 !important;
+      color: #fff !important;
+    }
+
+    body.dark-mode .chat-header .info h4 {
+      color: #fff !important;
+    }
+
+    body.dark-mode .chat-header .actions i {
+      color: #ccc !important;
+    }
+
+    body.dark-mode .message.bot .bubble {
+      background: #262626 !important;
+      color: #fff !important;
+    }
+
+    body.dark-mode .message.user .bubble {
+      background: #1a3c5a !important;
+      color: #fff !important;
+    }
+
+    body.dark-mode .chat-input-area {
+      background: #1a1a1a !important;
+      border-top: 1px solid #333 !important;
+    }
+
+    body.dark-mode .input-wrapper {
+      background: #262626 !important;
+    }
+
+    body.dark-mode input#messageInput {
+      color: #fff !important;
+      background: transparent;
+    }
+
+    body.dark-mode .voter-details-card {
+      background: #262626 !important;
+      border-color: #333 !important;
+      color: #ccc !important;
+    }
+
+    body.dark-mode .voter-details-card .detail-row {
+      border-bottom-color: #444 !important;
+    }
+
+    body.dark-mode .voter-details-card .detail-value {
+      color: #fff !important;
+    }
+
+    body.dark-mode .date-chip {
+      background: rgba(255, 255, 255, 0.15) !important;
+      color: #fff !important;
+    }
+
+    body.dark-mode .btn-reply {
+      background: #262626 !important;
+      border-color: #444 !important;
+      color: #3390ec !important;
+    }
+
+    body.dark-mode .btn-reply:hover:not([disabled]) {
+      background: #333 !important;
+    }
+
+    body.dark-mode .bubble .time {
+      color: #aaa !important;
+    }
+
+    body.dark-mode .banner-message .bubble {
+      background: transparent !important;
+    }
   </style>
 </head>
+
 <body>
 
   <div class="chat-app">
@@ -250,10 +801,23 @@
 
     <!-- Header -->
     <div class="chat-header">
-      <div class="avatar"><i class="bi bi-robot"></i></div>
-      <div class="info">
-        <h4>PuratchiThaai</h4>
-        <div class="status">&#x1F7E2; Online</div>
+      <div class="avatar"><img
+          src="https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg"
+          alt="Logo"></div>
+      <div class="info" style="display: flex; align-items: center;">
+        <img src="{{ url_for('static', filename='name-logo.png') }}" alt="PuratchiThaai"
+          style="height: 46px; width: auto;">
+      </div>
+      <div class="actions" style="display: flex; align-items: center; gap: 12px;">
+        <label class="lang-toggle-wrapper" title="Toggle English/Tamil">
+          <span>EN</span>
+          <div class="lang-toggle">
+            <input type="checkbox" id="langToggle">
+            <span class="slider"></span>
+          </div>
+          <span>TA</span>
+        </label>
+        <i class="bi bi-lightbulb" id="themeToggle" style="cursor: pointer;" title="Toggle Dark/Light Mode"></i>
       </div>
     </div>
 
@@ -265,7 +829,9 @@
       <button class="attach-btn" id="attachBtn" title="Upload Photo">
         <i class="bi bi-paperclip"></i>
       </button>
-      <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+      <div class="input-wrapper">
+        <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+      </div>
       <button class="send-btn" id="sendBtn">
         <i class="bi bi-send-fill"></i>
       </button>
@@ -274,346 +840,497 @@
     <input type="file" id="photoInput" accept="image/png,image/jpeg,image/jpg,image/bmp" capture="user">
   </div>
 
-<script>
-(function() {
-  /* ── State Machine ── */
-  const S = {
-    WELCOME: 0, AWAIT_MOBILE: 1, AWAIT_OTP: 2,
-    AWAIT_EPIC: 3, AWAIT_PHOTO: 4, CONFIRM: 5,
-    GENERATING: 6, DONE: 7
-  };
-  let state = S.WELCOME;
-  let mobile = '', epic = '', voter = null, photoFile = null;
+  <script>
+    (function () {
+      /* ── Localization ── */
+      const i18n = {
+        en: {
+          banner: '<strong>Welcome to PuratchiThaai!</strong><br>Your Digital Member ID Card Generator<br><br>\u{1F44B} Hello! Welcome to <strong>PuratchiThaai</strong> ID Card Generator.',
+          start_btn: '<i class="bi bi-play-circle-fill me-1"></i> Start',
+          starting: '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Starting...',
+          ask_mobile: '\u{1F4F1} Please enter your <strong>10-digit mobile number</strong> to verify:',
+          invalid_mobile: '\u274C Please enter a valid <strong>10-digit mobile number</strong>.',
+          ask_otp: '\u{1F4DE} You will receive an <strong>OTP call</strong> on <strong>+91 {m}</strong>.<br><br>Please enter the <strong>6-digit OTP</strong> you hear on the call:',
+          otp_fail: '\u274C Could not send OTP. Please try again.',
+          invalid_otp: '\u274C Please enter a valid <strong>6-digit OTP</strong>.',
+          otp_verified_exists: '\u2705 Mobile verified! Your <strong>ID Card</strong> was already generated.',
+          download_btn: '<i class="bi bi-download"></i> Download Card',
+          type_anything: '<em style="color:#667781">Type anything to generate another card.</em>',
+          ask_epic: '\u2705 Mobile number verified!<br><br>Please enter your <strong>EPIC Number</strong> (Voter ID):',
+          invalid_otp_res: 'Invalid OTP. Please try again.',
+          verif_fail: '\u274C Verification failed. Please try again.',
+          voter_found: '\u2705 <strong>Voter Found!</strong>',
+          upload_photo: '\u{1F4F7} Now please <strong>upload your photo</strong> by clicking the \u{1F4CE} button below.',
+          epic_not_found: 'EPIC Number not found. Please check and try again.',
+          valid_fail: '\u274C Could not validate. Please try again.',
+          start_over: 'Okay! Let\'s start over.<br><br>Please enter your <strong>EPIC Number</strong>:',
+          yes_or_no: 'Please type <strong>Yes</strong> to generate or <strong>No</strong> to cancel.',
+          ready_another: '\u{1F44B} Ready for another card?<br><br>\u{1F4F1} Please enter your <strong>10-digit mobile number</strong>:',
+          card_generated: '\u{1F389} <strong>Your ID Card has been generated!</strong>',
+          gen_failed: 'Generation failed. Please try again.',
+          went_wrong: '\u274C Something went wrong. Please try again.',
+          cancelled: 'Cancelled. Please enter your <strong>EPIC Number</strong> to try again:',
+          photo_received: '\u{1F4F8} Photo received!<br><br>Ready to generate your <strong>ID Card</strong>?<br>',
+          gen_card_btn: '\u2705 Generate Card',
+          cancel_btn: '\u274C Cancel',
+          photo_uploaded: 'Photo uploaded',
+          placeholder_type: 'Type a message...',
+          placeholder_mobile: 'Enter 10-digit mobile number...',
+          placeholder_otp: 'Enter 6-digit OTP...',
+          placeholder_epic: 'Enter EPIC Number...',
+          placeholder_upload: 'Click \u{1F4CE} to upload photo...',
+          placeholder_yes: 'Type "yes" to confirm...'
+        },
+        ta: {
+          banner: '<strong>புரட்சித்தாய்க்கு வரவேற்கிறோம்!</strong><br>உங்கள் டிஜிட்டல் உறுப்பினர் அடையாள அட்டை உருவாக்கி<br><br>\u{1F44B} வணக்கம்! <strong>புரட்சித்தாய்</strong> அடையாள அட்டை உருவாக்கிக்கு வரவேற்கிறோம்.',
+          start_btn: '<i class="bi bi-play-circle-fill me-1"></i> தொடங்குக (Start)',
+          starting: '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> தொடங்குகிறது...',
+          ask_mobile: '\u{1F4F1} சரிபார்க்க உங்கள் <strong>10 இலக்க மொபைல் எண்ணை</strong> உள்ளிடவும்:',
+          invalid_mobile: '\u274C சரியான <strong>10 இலக்க மொபைல் எண்ணை</strong> உள்ளிடவும்.',
+          ask_otp: '\u{1F4DE} <strong>+91 {m}</strong> எண்ணிற்கு <strong>OTP அழைப்பு</strong> வரும்.<br><br>அழைப்பில் கேட்கும் <strong>6 இலக்க OTP</strong> யை உள்ளிடவும்:',
+          otp_fail: '\u274C OTP அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          invalid_otp: '\u274C சரியான <strong>6 இலக்க OTP</strong> யை உள்ளிடவும்.',
+          otp_verified_exists: '\u2705 மொபைல் எண் சரிபார்க்கப்பட்டது! உங்கள் <strong>அடையாள அட்டை</strong> முன்பே உருவாக்கப்பட்டுள்ளது.',
+          download_btn: '<i class="bi bi-download"></i> அட்டையை பதிவிறக்கு',
+          type_anything: '<em style="color:#667781">புதிய அட்டை உருவாக்க எதையாவது தட்டச்சு செய்யவும்.</em>',
+          ask_epic: '\u2705 மொபைல் எண் சரிபார்க்கப்பட்டது!<br><br>உங்கள் <strong>வாக்காளர் எண்ணை (EPIC)</strong> உள்ளிடவும்:',
+          invalid_otp_res: 'தவறான OTP. மீண்டும் முயற்சிக்கவும்.',
+          verif_fail: '\u274C சரிபார்க்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          voter_found: '\u2705 <strong>வாக்காளர் விபரம் கிடைத்தது!</strong>',
+          upload_photo: '\u{1F4F7} இப்போது கீழே உள்ள \u{1F4CE} பட்டனை கிளிக் செய்து <strong>உங்கள் புகைப்படத்தை பதிவேற்றவும்</strong>.',
+          epic_not_found: 'வாக்காளர் எண் கிடைக்கவில்லை. சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
+          valid_fail: '\u274C உறுதிப்படுத்த முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          start_over: 'சரி! மீண்டும் தொடங்குவோம்.<br><br>உங்கள் <strong>வாக்காளர் எண்ணை</strong> உள்ளிடவும்:',
+          yes_or_no: 'உருவாக்க <strong>Yes</strong> அல்லது ரத்து செய்ய <strong>No</strong> என தட்டச்சு செய்யவும்.',
+          ready_another: '\u{1F44B} மற்றொரு அட்டை உருவாக்க தயாரா?<br><br>\u{1F4F1} உங்கள் <strong>10 இலக்க மொபைல் எண்ணை</strong> உள்ளிடவும்:',
+          card_generated: '\u{1F389} <strong>உங்கள் அடையாள அட்டை உருவாக்கப்பட்டது!</strong>',
+          gen_failed: 'அட்டை உருவாக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          went_wrong: '\u274C ஏதோ தவறு நடந்துவிட்டது. மீண்டும் முயற்சிக்கவும்.',
+          cancelled: 'ரத்து செய்யப்பட்டது. மீண்டும் முயற்சிக்க உங்கள் <strong>வாக்காளர் எண்ணை</strong> உள்ளிடவும்:',
+          photo_received: '\u{1F4F8} புகைப்படம் பெறப்பட்டது!<br><br>உங்கள் <strong>அடையாள அட்டையை</strong> உருவாக்கலாமா?<br>',
+          gen_card_btn: '\u2705 அட்டையை உருவாக்கு',
+          cancel_btn: '\u274C ரத்து செய்',
+          photo_uploaded: 'புகைப்படம் பதிவேற்றப்பட்டது',
+          placeholder_type: 'செய்தியை தட்டச்சு செய்யவும்...',
+          placeholder_mobile: '10 இலக்க மொபைல் எண்ணை உள்ளிடவும்...',
+          placeholder_otp: '6 இலக்க OTPஐ உள்ளிடவும்...',
+          placeholder_epic: 'வாக்காளர் எண்ணை உள்ளிடவும்...',
+          placeholder_upload: 'Photo பதிவேற்ற \u{1F4CE} கிளிக் செய்யவும்...',
+          placeholder_yes: 'உறுதிப்படுத்த "yes" என தட்டச்சு செய்யவும்...'
+        }
+      };
 
-  /* ── DOM ── */
-  const chatEl   = document.getElementById('chatMessages');
-  const input    = document.getElementById('messageInput');
-  const sendBtn  = document.getElementById('sendBtn');
-  const attachBtn = document.getElementById('attachBtn');
-  const photoInput = document.getElementById('photoInput');
+      let lang = 'en';
+      const t = (k, vars = {}) => {
+        let str = i18n[lang][k] || k;
+        for (let [vk, vv] of Object.entries(vars)) { str = str.replace('{' + vk + '}', vv); }
+        return str;
+      };
 
-  /* ── Helpers ── */
-  const now = () => new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  const scroll = () => setTimeout(() => chatEl.scrollTop = chatEl.scrollHeight, 50);
+      /* ── State Machine ── */
+      const S = {
+        WELCOME: 0, AWAIT_MOBILE: 1, AWAIT_OTP: 2,
+        AWAIT_EPIC: 3, AWAIT_PHOTO: 4, CONFIRM: 5,
+        GENERATING: 6, DONE: 7
+      };
+      let state = S.WELCOME;
+      let mobile = '', epic = '', voter = null, photoFile = null;
 
-  function addBubble(html, type, extraClass) {
-    const div = document.createElement('div');
-    div.className = 'message ' + type + (extraClass ? ' ' + extraClass : '');
-    const b = document.createElement('div');
-    b.className = 'bubble';
-    b.innerHTML = html + '<span class="time">' + now() + '</span>';
-    div.appendChild(b);
-    chatEl.appendChild(div);
-    scroll();
-  }
-  const botMsg  = (h, cls) => addBubble(h, 'bot', cls);
-  const userMsg = (h, cls) => addBubble(h, 'user', cls);
+      /* ── DOM ── */
+      const chatEl = document.getElementById('chatMessages');
+      const input = document.getElementById('messageInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const attachBtn = document.getElementById('attachBtn');
+      const photoInput = document.getElementById('photoInput');
+      const langToggleBtn = document.getElementById('langToggle');
 
-  function addBanner(imgUrl, html) {
-    const div = document.createElement('div');
-    div.className = 'message bot banner-message';
-    div.innerHTML =
-      '<div class="bubble">' +
-        '<img src="' + imgUrl + '" alt="Banner" onerror="this.style.display=\'none\'">' +
-        '<div class="banner-text">' + html + '<span class="time">' + now() + '</span></div>' +
-      '</div>';
-    chatEl.appendChild(div);
-    scroll();
-  }
+      /* ── Helpers ── */
+      const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const scroll = () => setTimeout(() => chatEl.scrollTop = chatEl.scrollHeight, 50);
 
-  function addDateChip() {
-    const d = document.createElement('div');
-    d.className = 'date-chip';
-    d.textContent = new Date().toLocaleDateString('en-IN', {day:'numeric', month:'long', year:'numeric'});
-    chatEl.appendChild(d);
-  }
+      function addBubble(html, type, extraClass) {
+        const div = document.createElement('div');
+        div.className = 'message ' + type + (extraClass ? ' ' + extraClass : '');
 
-  let typingEl = null;
-  function showTyping() {
-    if (typingEl) return;
-    typingEl = document.createElement('div');
-    typingEl.className = 'message bot typing-indicator';
-    typingEl.innerHTML = '<div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
-    chatEl.appendChild(typingEl);
-    scroll();
-  }
-  function hideTyping() {
-    if (typingEl) { typingEl.remove(); typingEl = null; }
-  }
+        if (type === 'bot') {
+          const img = document.createElement('img');
+          img.src = 'https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg';
+          img.className = 'bot-avatar-img';
+          div.appendChild(img);
+        }
 
-  function botReply(html, delay) {
-    return new Promise(resolve => {
-      showTyping();
-      setTimeout(() => { hideTyping(); botMsg(html); resolve(); }, delay || 800);
-    });
-  }
-
-  function setNumeric(placeholder) {
-    input.type = 'tel';
-    input.inputMode = 'numeric';
-    input.pattern = '[0-9]*';
-    input.placeholder = placeholder || '';
-  }
-  function setText(placeholder) {
-    input.type = 'text';
-    input.inputMode = 'text';
-    input.removeAttribute('pattern');
-    input.placeholder = placeholder || '';
-  }
-  function showAttach() { attachBtn.classList.add('visible'); }
-  function hideAttach() { attachBtn.classList.remove('visible'); }
-  function lockInput()  { input.disabled = true; sendBtn.disabled = true; }
-  function unlockInput(){ input.disabled = false; sendBtn.disabled = false; input.focus(); }
-
-  /* ── Banner URL ── */
-  const BANNER = "https://lh3.googleusercontent.com/rd-gg-dl/AOI_d_-WQsb9l8SgH0XD7NMBAsFVDHONSGiriS9nPHlNqgK5RBdT3AoOsG8C8A6OU9kmLiSOSew3zabWT4zgU3twTpI4FyHdR-2Xqgkde4UYAKh5LuvLXqTNomPdDwvntP6lbaHg0KgLMfYQqUl9Z12AzzzRNJLtnZxcTowipxjQ1Rb6NWaQKu9cMeckZA5CoxWGT8ZuvyChQCJexvZVtfZq18OyYgBYi6pdkVTDfArZZtAYrL77h8jk-1nDiwzG1SFSAqhODJ1iE8W0PWyV-73NaHhi2CEVWnPRIstDW6Bd4M-Im51cdR8_C7BqcFWGQjPEQE1aKMv8sCoqoKTNOUKTJYdMGqiLNnotlzQ4_GaaOqJRdCVsz-sTbseQo9vuoM7OuMhurrv7cYT2_As__nJPi5FkdnfT6OBCWz9HwcnyvtBIn5mZhhZ3drr4xyOyw5sOKUfGKDTc951qUTmjpUU_wzmwusK7l9VcBg5-c-drAR75eykZfuqYyNGQB_YUUP0eF693gMtflqLjO0Iz3z4YLPZ4W3e4nYoU8_kekcdTAWcaAOX76KV8jbHMJwmaYe9UcXgKiyecxomah8AkxX1hA4NqGrjrMkRg2muaF4MMdxeqObYO_Yhu5kYGpf4BH8-EruVfRIAXfnIaGCWqQ7wEWZcl2svdenJk8fzeiagbwcAa-H38cCwyp9u2Q6EEr8i-zvMXJUBR2JmdBxNDxlh551XJVgCMkKK4rC-pk67EiOM6Hbh9kdUKcIHLSwW4Q1IAHdElbqKknE_fe5QXWh1zqnmJknI9AjHD0VB5tItiwgYjHtf6139IwuJKy2AaVgHLc6nCIREYbh272vybkQttQLxAp-QIHcIdPVE091HojJskO3COmLkcu3luNbJI5_e1r_zx3oAYHJ89oRtleTa1_-6j4uzMTe0eiqiJWrTfWLlMRDKKYZcbirdXiSXCu7yNWBGgqduKwezaHJa1d3sQjEresx_-K3FDFFWbmsyVQDssZq8wZIInF45Q4izhM0FtP5BIhd8KgbOD7hffT_SlRvvOcKGwdvAlDAnnHpUIh6Wctb2J5ImrLnvrLcw71RSjqo7Q6-tPpj1EZl9ZNz1r6SrT1asePTSQlCnVT_bDlRhMvtDP2IkcNR9tzgpicH5Biu5arO4AJLehOYaWCoQGyb79d3ErCQFb06I14x38Z1dX9JTKiQ7tB16Uc-FuudCHkSfDI-bfjI5RZgCIAnKafWuKWKrxEpJsdem-E6bjUltO7P6yUdvO-4zdTUWIMSThIwc=s1024-rj?authuser=2";
-
-  /* ── Init ── */
-  async function init() {
-    addDateChip();
-    addBanner(BANNER, '<strong>Welcome to PuratchiThaai!</strong><br>Your Digital Member ID Card Generator');
-    await botReply('\u{1F44B} Hello! Welcome to <strong>PuratchiThaai</strong> ID Card Generator.<br><br>Send <strong>Hi</strong> to get started!', 1200);
-  }
-
-  /* ── API fetch wrapper ── */
-  async function api(url, body, isForm) {
-    const opts = { method: 'POST' };
-    if (isForm) {
-      opts.body = body;  // FormData
-    } else {
-      opts.headers = { 'Content-Type': 'application/json' };
-      opts.body = JSON.stringify(body);
-    }
-    const r = await fetch(url, opts);
-    return r.json();
-  }
-
-  /* ── Main Handler ── */
-  async function handleSend() {
-    const txt = input.value.trim();
-    if (!txt && state !== S.AWAIT_PHOTO) return;
-    input.value = '';
-
-    if (state === S.WELCOME) {
-      userMsg(txt);
-      state = S.AWAIT_MOBILE;
-      setNumeric('Enter 10-digit mobile number...');
-      await botReply('\u{1F4F1} Please enter your <strong>10-digit mobile number</strong> to verify:', 900);
-
-    } else if (state === S.AWAIT_MOBILE) {
-      const m = txt.replace(/\D/g, '');
-      if (m.length !== 10) {
-        userMsg(txt);
-        await botReply('\u274C Please enter a valid <strong>10-digit mobile number</strong>.', 600);
-        return;
+        const b = document.createElement('div');
+        b.className = 'bubble';
+        b.innerHTML = html + '<span class="time">' + now() + '</span>';
+        div.appendChild(b);
+        chatEl.appendChild(div);
+        scroll();
       }
-      userMsg(m);
-      mobile = m;
-      lockInput();
+      const botMsg = (h, cls) => addBubble(h, 'bot', cls);
+      const userMsg = (h, cls) => addBubble(h, 'user', cls);
 
-      try {
-        // Check if already verified
-        const chk = await api('/api/chat/check-mobile', { mobile: m });
-        if (chk.already_verified) {
-          state = S.AWAIT_EPIC;
-          setText('Enter EPIC Number...');
-          unlockInput();
-          await botReply('\u2705 Mobile number already verified!<br><br>Please enter your <strong>EPIC Number</strong> (Voter ID):', 800);
-        } else {
-          // Send OTP
+      function addBanner(imgUrl, htmlKey, withStartBtn) {
+        const div = document.createElement('div');
+        div.className = 'message bot banner-message';
+        div.innerHTML =
+          '<div class="bubble">' +
+          '<img src="' + imgUrl + '" alt="Banner" onerror="this.style.display=\\\'none\\\'">' +
+          '<div class="banner-text">' + t(htmlKey) + '<span class="time">' + now() + '</span></div>' +
+          (withStartBtn ? '<div class="banner-action"><button class="btn-reply" id="bannerStartBtn">' + t('start_btn') + '</button></div>' : '') +
+          '</div>';
+        chatEl.appendChild(div);
+
+        if (withStartBtn) {
+          document.getElementById('bannerStartBtn').onclick = function () {
+            this.disabled = true;
+            this.innerHTML = t('starting');
+            input.value = 'Hi';
+            handleSend();
+          };
+        }
+        scroll();
+      }
+
+      function addDateChip() {
+        const d = document.createElement('div');
+        d.className = 'date-chip';
+        d.textContent = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+        chatEl.appendChild(d);
+      }
+
+      let typingEl = null;
+      function showTyping() {
+        if (typingEl) return;
+        typingEl = document.createElement('div');
+        typingEl.className = 'message bot typing-indicator';
+        typingEl.innerHTML = '<img class="bot-avatar-img" src="https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg"><div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+        chatEl.appendChild(typingEl);
+        scroll();
+      }
+      function hideTyping() {
+        if (typingEl) { typingEl.remove(); typingEl = null; }
+      }
+
+      function botReply(html, delay) {
+        return new Promise(resolve => {
           showTyping();
-          const otp = await api('/api/chat/send-otp', { mobile: m });
-          hideTyping();
-          if (otp.success) {
-            state = S.AWAIT_OTP;
-            setNumeric('Enter 6-digit OTP...');
+          setTimeout(() => { hideTyping(); botMsg(html); resolve(); }, delay || 800);
+        });
+      }
+
+      function setNumeric(placeholder_key) {
+        input.type = 'tel';
+        input.inputMode = 'numeric';
+        input.pattern = '[0-9]*';
+        input.placeholder = t(placeholder_key) || '';
+      }
+      function setText(placeholder_key) {
+        input.type = 'text';
+        input.inputMode = 'text';
+        input.removeAttribute('pattern');
+        input.placeholder = t(placeholder_key) || '';
+      }
+      function showAttach() { attachBtn.classList.add('visible'); }
+      function hideAttach() { attachBtn.classList.remove('visible'); }
+      function lockInput() { input.disabled = true; sendBtn.disabled = true; }
+      function unlockInput() { input.disabled = false; sendBtn.disabled = false; input.focus(); }
+
+      function updateCurrentPlaceholder() {
+        if (state === S.WELCOME || state === S.DONE) { setText('placeholder_type'); }
+        else if (state === S.AWAIT_MOBILE) { setNumeric('placeholder_mobile'); }
+        else if (state === S.AWAIT_OTP) { setNumeric('placeholder_otp'); }
+        else if (state === S.AWAIT_EPIC) { setText('placeholder_epic'); }
+        else if (state === S.AWAIT_PHOTO) { setText('placeholder_upload'); }
+        else if (state === S.CONFIRM) { setText('placeholder_yes'); }
+      }
+
+      /* ── Banner URL ── */
+      const BANNER = "/static/banner.png";
+
+      /* ── Init ── */
+      async function init() {
+        addDateChip();
+        addBanner(BANNER, 'banner', true);
+        updateCurrentPlaceholder();
+      }
+
+      /* ── API fetch wrapper ── */
+      async function api(url, body, isForm) {
+        const opts = { method: 'POST' };
+        if (isForm) {
+          opts.body = body;  // FormData
+        } else {
+          opts.headers = { 'Content-Type': 'application/json' };
+          opts.body = JSON.stringify(body);
+        }
+        const r = await fetch(url, opts);
+        return r.json();
+      }
+
+      /* ── Main Handler ── */
+      async function handleSend() {
+        const txt = input.value.trim();
+        if (!txt && state !== S.AWAIT_PHOTO) return;
+        input.value = '';
+
+        if (state === S.WELCOME) {
+          userMsg(txt);
+          state = S.AWAIT_MOBILE;
+          setNumeric('placeholder_mobile');
+          await botReply(t('ask_mobile'), 900);
+
+        } else if (state === S.AWAIT_MOBILE) {
+          const m = txt.replace(/\D/g, '');
+          if (m.length !== 10) {
+            userMsg(txt);
+            await botReply(t('invalid_mobile'), 600);
+            return;
+          }
+          userMsg(m);
+          mobile = m;
+          lockInput();
+
+          try {
+            // Always send OTP — every time
+            showTyping();
+            const otp = await api('/api/chat/send-otp', { mobile: m });
+            hideTyping();
+            if (otp.success) {
+              state = S.AWAIT_OTP;
+              setNumeric('placeholder_otp');
+              unlockInput();
+              await botReply(t('ask_otp', { m: m }), 800);
+            } else {
+              unlockInput();
+              await botReply(t('otp_fail'), 600);
+            }
+          } catch (e) {
+            hideTyping(); unlockInput();
+            await botReply(t('went_wrong'), 600);
+          }
+
+        } else if (state === S.AWAIT_OTP) {
+          const o = txt.replace(/\D/g, '');
+          if (o.length !== 6) {
+            userMsg(txt);
+            await botReply(t('invalid_otp'), 600);
+            return;
+          }
+          userMsg(o);
+          lockInput();
+          try {
+            const res = await api('/api/chat/verify-otp', { mobile, otp: o });
+            if (res.success) {
+              // Check if mobile already has a generated card
+              if (res.has_card && res.card_url) {
+                state = S.DONE;
+                setText('placeholder_type');
+                hideAttach();
+                unlockInput();
+                epic = res.epic_no || '';
+                let h = t('otp_verified_exists');
+                h += '<div class="card-preview"><img src="' + res.card_url + '" alt="ID Card"></div>';
+                h += '<a href="/mycard/' + res.epic_no + '/download" class="download-btn" target="_blank">' + t('download_btn') + '</a>';
+                h += '<br><br>' + t('type_anything');
+                await botReply(h, 1200);
+              } else {
+                state = S.AWAIT_EPIC;
+                setText('placeholder_epic');
+                unlockInput();
+                await botReply(t('ask_epic'), 800);
+              }
+            } else {
+              unlockInput();
+              const err = res.message || t('invalid_otp_res');
+              await botReply('\u274C ' + err, 600);
+            }
+          } catch (e) {
             unlockInput();
-            let msg = '\u{1F4E8} OTP sent to <strong>+91 ' + m + '</strong><br><br>Please enter the <strong>6-digit OTP</strong>:';
-            await botReply(msg, 800);
+            await botReply(t('verif_fail'), 600);
+          }
+
+        } else if (state === S.AWAIT_EPIC) {
+          const ep = txt.trim().toUpperCase();
+          if (!ep) return;
+          userMsg(ep);
+          lockInput();
+          try {
+            showTyping();
+            const res = await api('/api/chat/validate-epic', { epic_no: ep });
+            hideTyping();
+            if (res.success) {
+              epic = ep;
+              voter = res.voter;
+              state = S.AWAIT_PHOTO;
+              setText('placeholder_upload');
+              showAttach();
+              unlockInput();
+
+              // Build details HTML
+              let h = t('voter_found') + '<div class="voter-details-card">';
+              const skip = new Set(['_id', 'photo_url', 'card_url', 'verify_url', 'serial_number']);
+              for (const [k, v] of Object.entries(res.voter)) {
+                if (!v || skip.has(k)) continue;
+                const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v + '</span></div>';
+              }
+              h += '</div><br>' + t('upload_photo');
+              await botReply(h, 1000);
+            } else {
+              unlockInput();
+              const err = res.message || t('epic_not_found');
+              await botReply('\u274C ' + err, 600);
+            }
+          } catch (e) {
+            hideTyping(); unlockInput();
+            await botReply(t('valid_fail'), 600);
+          }
+
+        } else if (state === S.CONFIRM) {
+          const lo = txt.toLowerCase();
+          if (lo === 'yes' || lo === 'confirm' || lo === 'generate' || lo === 'y' || lo === 'ஆம்') {
+            userMsg(txt);
+            await doGenerate();
+          } else if (lo === 'no' || lo === 'cancel' || lo === 'n' || lo === 'இல்லை') {
+            userMsg(txt);
+            state = S.AWAIT_EPIC;
+            setText('placeholder_epic');
+            hideAttach();
+            photoFile = null;
+            await botReply(t('start_over'), 700);
           } else {
+            userMsg(txt);
+            await botReply(t('yes_or_no'), 500);
+          }
+
+        } else if (state === S.DONE) {
+          userMsg(txt);
+          state = S.AWAIT_MOBILE;
+          setNumeric('placeholder_mobile');
+          hideAttach();
+          photoFile = null;
+          await botReply(t('ready_another'), 800);
+        }
+      }
+
+      /* ── Card Generation ── */
+      window.doGenerate = async function () {
+        state = S.GENERATING;
+        lockInput();
+
+        try {
+          const fd = new FormData();
+          fd.append('epic_no', epic);
+          fd.append('mobile', mobile);
+          if (photoFile) fd.append('photo', photoFile);
+
+          showTyping();
+          const res = await api('/api/chat/generate-card', fd, true);
+          hideTyping();
+
+          if (res.success) {
+            state = S.DONE;
+            let h = t('card_generated');
+            if (res.card_url) {
+              h += '<div class="card-preview"><img src="' + res.card_url + '" alt="ID Card"></div>';
+              h += '<a href="/mycard/' + epic + '/download" class="download-btn" target="_blank">' + t('download_btn') + '</a>';
+            }
+            h += '<br><br>' + t('type_anything');
+            await botReply(h, 1500);
+            setText('placeholder_type');
+            hideAttach();
             unlockInput();
-            await botReply('\u274C Could not send OTP. Please try again.', 600);
+            photoFile = null;
+          } else {
+            state = S.CONFIRM;
+            unlockInput();
+            const err = res.message || t('gen_failed');
+            await botReply('\u274C ' + err, 700);
           }
+        } catch (e) {
+          hideTyping();
+          state = S.CONFIRM;
+          unlockInput();
+          await botReply(t('went_wrong'), 600);
         }
-      } catch(e) {
-        hideTyping(); unlockInput();
-        await botReply('\u274C Something went wrong. Please try again.', 600);
-      }
+      };
 
-    } else if (state === S.AWAIT_OTP) {
-      const o = txt.replace(/\D/g, '');
-      if (o.length !== 6) {
-        userMsg(txt);
-        await botReply('\u274C Please enter a valid <strong>6-digit OTP</strong>.', 600);
-        return;
-      }
-      userMsg(o);
-      lockInput();
-      try {
-        const res = await api('/api/chat/verify-otp', { mobile, otp: o });
-        if (res.success) {
-          state = S.AWAIT_EPIC;
-          setText('Enter EPIC Number...');
-          unlockInput();
-          await botReply('\u2705 Mobile number verified successfully!<br><br>Please enter your <strong>EPIC Number</strong> (Voter ID):', 800);
-        } else {
-          unlockInput();
-          await botReply('\u274C Invalid OTP. Please try again.', 600);
-        }
-      } catch(e) {
-        unlockInput();
-        await botReply('\u274C Verification failed. Please try again.', 600);
-      }
-
-    } else if (state === S.AWAIT_EPIC) {
-      const ep = txt.trim().toUpperCase();
-      if (!ep) return;
-      userMsg(ep);
-      lockInput();
-      try {
-        showTyping();
-        const res = await api('/api/chat/validate-epic', { epic_no: ep });
-        hideTyping();
-        if (res.success) {
-          epic = ep;
-          voter = res.voter;
-          state = S.AWAIT_PHOTO;
-          setText('Click \u{1F4CE} to upload photo...');
-          showAttach();
-          unlockInput();
-
-          // Build details HTML
-          let h = '\u2705 <strong>Voter Found!</strong><div class="voter-details-card">';
-          const skip = new Set(['_id','photo_url','card_url','verify_url','serial_number']);
-          for (const [k, v] of Object.entries(res.voter)) {
-            if (!v || skip.has(k)) continue;
-            const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v + '</span></div>';
-          }
-          h += '</div><br>\u{1F4F7} Now please <strong>upload your photo</strong> by clicking the \u{1F4CE} button below.';
-          await botReply(h, 1000);
-        } else {
-          unlockInput();
-          await botReply('\u274C ' + (res.message || 'EPIC Number not found. Please check and try again.'), 600);
-        }
-      } catch(e) {
-        hideTyping(); unlockInput();
-        await botReply('\u274C Could not validate. Please try again.', 600);
-      }
-
-    } else if (state === S.CONFIRM) {
-      const lo = txt.toLowerCase();
-      if (lo === 'yes' || lo === 'confirm' || lo === 'generate' || lo === 'y') {
-        userMsg(txt);
-        await doGenerate();
-      } else if (lo === 'no' || lo === 'cancel' || lo === 'n') {
-        userMsg(txt);
+      /* ── Cancel ── */
+      window.doCancel = function () {
         state = S.AWAIT_EPIC;
-        setText('Enter EPIC Number...');
+        setText('placeholder_epic');
         hideAttach();
         photoFile = null;
-        await botReply('Okay! Let\'s start over.<br><br>Please enter your <strong>EPIC Number</strong>:', 700);
-      } else {
-        userMsg(txt);
-        await botReply('Please type <strong>Yes</strong> to generate or <strong>No</strong> to cancel.', 500);
-      }
+        botReply(t('cancelled'), 500);
+      };
 
-    } else if (state === S.DONE) {
-      userMsg(txt);
-      state = S.AWAIT_MOBILE;
-      setNumeric('Enter 10-digit mobile number...');
-      hideAttach();
-      photoFile = null;
-      await botReply('\u{1F44B} Ready for another card?<br><br>\u{1F4F1} Please enter your <strong>10-digit mobile number</strong>:', 800);
-    }
-  }
+      /* ── Photo Upload ── */
+      attachBtn.addEventListener('click', () => {
+        if (state === S.AWAIT_PHOTO) photoInput.click();
+      });
 
-  /* ── Card Generation ── */
-  window.doGenerate = async function() {
-    state = S.GENERATING;
-    lockInput();
+      photoInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        photoFile = file;
 
-    try {
-      const fd = new FormData();
-      fd.append('epic_no', epic);
-      fd.append('mobile', mobile);
-      if (photoFile) fd.append('photo', photoFile);
+        // Show preview
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          userMsg('<img src="' + ev.target.result + '" class="photo-thumb" alt="Photo"><br>' + t('photo_uploaded'));
+          state = S.CONFIRM;
+          hideAttach();
+          setText('placeholder_yes');
 
-      showTyping();
-      const res = await api('/api/chat/generate-card', fd, true);
-      hideTyping();
+          let h = t('photo_received');
+          h += '<div class="action-buttons">';
+          h += '<button class="action-btn confirm" onclick="doGenerate()">' + t('gen_card_btn') + '</button>';
+          h += '<button class="action-btn cancel" onclick="doCancel()">' + t('cancel_btn') + '</button>';
+          h += '</div>';
+          await botReply(h, 900);
+        };
+        reader.readAsDataURL(file);
+        photoInput.value = '';
+      });
 
-      if (res.success) {
-        state = S.DONE;
-        let h = '\u{1F389} <strong>Your ID Card has been generated!</strong>';
-        if (res.card_url) {
-          h += '<div class="card-preview"><img src="' + res.card_url + '" alt="ID Card"></div>';
-          h += '<a href="/mycard/' + epic + '/download" class="download-btn" target="_blank"><i class="bi bi-download"></i> Download Card</a>';
+      /* ── Event Listeners ── */
+      sendBtn.addEventListener('click', handleSend);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSend(); });
+
+      /* ── Theme Toggle ── */
+      const themeToggleBtn = document.getElementById('themeToggle');
+      themeToggleBtn.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        if (document.body.classList.contains('dark-mode')) {
+          themeToggleBtn.classList.replace('bi-lightbulb', 'bi-moon-stars-fill');
+        } else {
+          themeToggleBtn.classList.replace('bi-moon-stars-fill', 'bi-lightbulb');
         }
-        h += '<br><br><em style="color:#667781">Type anything to generate another card.</em>';
-        await botReply(h, 1500);
-        setText('Type a message...');
-        hideAttach();
-        unlockInput();
-        photoFile = null;
-      } else {
-        state = S.CONFIRM;
-        unlockInput();
-        await botReply('\u274C ' + (res.message || 'Generation failed. Please try again.'), 700);
+      });
+
+      /* ── Language Toggle ── */
+      if (langToggleBtn) {
+        langToggleBtn.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            lang = 'ta';
+          } else {
+            lang = 'en';
+          }
+          updateCurrentPlaceholder();
+
+          // Re-trigger the whole process so bot messages restart via user action language selected
+          chatEl.innerHTML = '';
+          state = S.WELCOME;
+          epic = ''; mobile = ''; photoFile = null;
+          input.value = '';
+          init();
+        });
       }
-    } catch(e) {
-      hideTyping();
-      state = S.CONFIRM;
-      unlockInput();
-      await botReply('\u274C Something went wrong. Please try again.', 600);
-    }
-  };
 
-  /* ── Cancel ── */
-  window.doCancel = function() {
-    state = S.AWAIT_EPIC;
-    setText('Enter EPIC Number...');
-    hideAttach();
-    photoFile = null;
-    botReply('Cancelled. Please enter your <strong>EPIC Number</strong> to try again:', 500);
-  };
-
-  /* ── Photo Upload ── */
-  attachBtn.addEventListener('click', () => {
-    if (state === S.AWAIT_PHOTO) photoInput.click();
-  });
-
-  photoInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    photoFile = file;
-
-    // Show preview
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      userMsg('<img src="' + ev.target.result + '" class="photo-thumb" alt="Photo"><br>Photo uploaded');
-      state = S.CONFIRM;
-      hideAttach();
-      setText('Type "yes" to confirm...');
-
-      let h = '\u{1F4F8} Photo received!<br><br>Ready to generate your <strong>ID Card</strong>?<br>';
-      h += '<div class="action-buttons">';
-      h += '<button class="action-btn confirm" onclick="doGenerate()">\u2705 Generate Card</button>';
-      h += '<button class="action-btn cancel" onclick="doCancel()">\u274C Cancel</button>';
-      h += '</div>';
-      await botReply(h, 900);
-    };
-    reader.readAsDataURL(file);
-    photoInput.value = '';
-  });
-
-  /* ── Event Listeners ── */
-  sendBtn.addEventListener('click', handleSend);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSend(); });
-
-  /* ── Boot ── */
-  window.addEventListener('load', init);
-})();
-</script>
+      /* ── Boot ── */
+      window.addEventListener('load', init);
+    })();
+  </script>
 </body>
+
 </html>

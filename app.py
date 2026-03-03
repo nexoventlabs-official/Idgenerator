@@ -56,8 +56,8 @@ mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
 stats_col = db[config.MONGO_STATS_COLLECTION]
-otp_col = db['otp_sessions']
 verified_mobiles_col = db['verified_mobiles']
+otp_col = db['otp_sessions']
 
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
@@ -74,6 +74,7 @@ cloudinary.config(
     api_secret=config.CLOUDINARY_API_SECRET,
     secure=True,
 )
+
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -394,25 +395,37 @@ def get_dashboard_stats():
 
 @app.route('/')
 def user_home():
-    return render_template('user/chatbot.html')
+    resp = app.make_response(render_template('user/chatbot.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 # ── Chatbot API Endpoints ────────────────────────────────────────
 
 @app.route('/api/chat/check-mobile', methods=['POST'])
 def chat_check_mobile():
-    """Check if mobile number is already verified."""
+    """Check if mobile number has a previously generated card."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
-    doc = verified_mobiles_col.find_one({'mobile': mobile})
-    return jsonify({'already_verified': bool(doc)})
+
+    # Check if this mobile has a linked card in stats
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    if stat and stat.get('card_url'):
+        return jsonify({
+            'has_card': True,
+            'epic_no': stat.get('epic_no', ''),
+            'card_url': stat.get('card_url', '')
+        })
+    return jsonify({'has_card': False})
 
 
 @app.route('/api/chat/send-otp', methods=['POST'])
 def chat_send_otp():
-    """Generate and send OTP to mobile number."""
+    """Generate and send OTP to mobile number via 2Factor.in voice call."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     if not mobile or len(mobile) != 10:
@@ -431,34 +444,25 @@ def chat_send_otp():
         upsert=True
     )
 
-    # Try to send via SMS API (Fast2SMS or similar)
-    sms_sent = False
+    # Send OTP via 2Factor.in voice call
+    otp_sent = False
     sms_api_key = os.getenv('SMS_API_KEY', '')
     if sms_api_key:
         try:
-            resp = http_requests.post(
-                'https://www.fast2sms.com/dev/bulkV2',
-                headers={'authorization': sms_api_key},
-                data={
-                    'variables_values': otp,
-                    'route': 'otp',
-                    'numbers': mobile,
-                },
-                timeout=10
+            resp = http_requests.get(
+                f'https://2factor.in/API/V1/{sms_api_key}/SMS/{mobile}/{otp}',
+                timeout=15
             )
-            if resp.status_code == 200:
-                sms_sent = True
-                logger.info(f"OTP sent to {mobile}")
+            if resp.status_code == 200 and resp.json().get('Status') == 'Success':
+                otp_sent = True
+                logger.info(f"OTP call sent to {mobile}")
         except Exception as e:
-            logger.warning(f"SMS send failed for {mobile}: {e}")
+            logger.warning(f"OTP send failed for {mobile}: {e}")
 
-    response = {'success': True}
-    if sms_sent:
-        logger.info(f"OTP sent via SMS to {mobile}")
-    else:
-        logger.info(f"SMS not sent for {mobile} (no API key). OTP: {otp}")
+    if not otp_sent:
+        logger.warning(f"OTP not sent for {mobile}")
 
-    return jsonify(response)
+    return jsonify({'success': otp_sent})
 
 
 @app.route('/api/chat/verify-otp', methods=['POST'])
@@ -483,15 +487,20 @@ def chat_verify_otp():
     except Exception:
         pass
 
-    # Mark as verified
+    # Mark OTP as verified (but don't mark mobile as verified yet — that happens after card generation)
     otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
-    verified_mobiles_col.update_one(
-        {'mobile': mobile},
-        {'$set': {'mobile': mobile, 'verified_at': datetime.now(timezone.utc).isoformat()}},
-        upsert=True
-    )
 
-    return jsonify({'success': True})
+    # Check if this mobile already has a linked card
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    if stat and stat.get('card_url'):
+        return jsonify({
+            'success': True,
+            'has_card': True,
+            'epic_no': stat.get('epic_no', ''),
+            'card_url': stat.get('card_url', '')
+        })
+
+    return jsonify({'success': True, 'has_card': False})
 
 
 @app.route('/api/chat/validate-epic', methods=['POST'])
@@ -554,6 +563,14 @@ def chat_generate_card():
         card_url = upload_card_to_cloudinary(card_image, epic_no)
 
         increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url, auth_mobile=mobile_num)
+
+        # Now mark mobile as verified (only after successful card generation)
+        if mobile_num:
+            verified_mobiles_col.update_one(
+                {'mobile': mobile_num},
+                {'$set': {'mobile': mobile_num, 'epic_no': epic_no, 'verified_at': datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
 
         return jsonify({'success': True, 'card_url': card_url, 'epic_no': epic_no})
     except Exception as e:

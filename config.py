@@ -41,6 +41,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 # ── YouTube Data API ─────────────────────────────────────────────
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
+
 # ── Font Settings ─────────────────────────────────────────────────
 FONT_SIZE = 30
 FONT_MIN_SIZE = 14
