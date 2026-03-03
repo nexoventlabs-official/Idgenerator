@@ -91,6 +91,7 @@ def generate_qr_code(voter: dict) -> Image.Image:
             f"NAME:{voter.get('name', '')}\n"
             f"ASSEMBLY:{voter.get('assembly', '')}\n"
             f"DISTRICT:{voter.get('district', '')}\n"
+            f"MOBILE:{voter.get('auth_mobile', '')}\n"
             f"SN:{voter.get('serial_number', '')}"
         )
     qr = qrcode.QRCode(

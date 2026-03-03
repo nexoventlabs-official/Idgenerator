@@ -104,27 +104,6 @@
         </a>
       </li>
     </ul>
-    <div class="sidebar-section">Content Management</div>
-    <ul class="sidebar-nav">
-      <li>
-        <a href="{{ url_for('admin.admin_photos') }}"
-           class="{{ 'active' if request.endpoint == 'admin.admin_photos' }}">
-          <i class="bi bi-images"></i> Photos
-        </a>
-      </li>
-      <li>
-        <a href="{{ url_for('admin.admin_videos') }}"
-           class="{{ 'active' if request.endpoint == 'admin.admin_videos' }}">
-          <i class="bi bi-camera-video-fill"></i> Videos
-        </a>
-      </li>
-      <li>
-        <a href="{{ url_for('admin.admin_announcements') }}"
-           class="{{ 'active' if request.endpoint == 'admin.admin_announcements' }}">
-          <i class="bi bi-megaphone-fill"></i> Announcements
-        </a>
-      </li>
-    </ul>
     <div class="sidebar-section">Quick Links</div>
     <ul class="sidebar-nav">
       <li>

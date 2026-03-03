@@ -13,6 +13,7 @@ import csv
 import io
 import json
 import os
+import random
 import sys
 from datetime import datetime, timezone
 
@@ -55,9 +56,8 @@ mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
 stats_col = db[config.MONGO_STATS_COLLECTION]
-photos_col = db['photos']
-videos_col = db['videos']
-announcements_col = db['announcements']
+otp_col = db['otp_sessions']
+verified_mobiles_col = db['verified_mobiles']
 
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
@@ -260,8 +260,8 @@ def replace_all_voters(voter_list: list[dict]) -> int:
 #  GENERATION STATS (MongoDB)
 # ══════════════════════════════════════════════════════════════════
 
-def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = ''):
-    """Increment generation count; optionally update photo_url and card_url."""
+def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '', auth_mobile: str = ''):
+    """Increment generation count; optionally update photo_url, card_url, auth_mobile."""
     update = {
         '$inc': {'count': 1},
         '$set': {'last_generated': datetime.now(timezone.utc).isoformat()},
@@ -271,6 +271,8 @@ def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str 
         update['$set']['photo_url'] = photo_url
     if card_url:
         update['$set']['card_url'] = card_url
+    if auth_mobile:
+        update['$set']['auth_mobile'] = auth_mobile
     stats_col.update_one({'epic_no': epic_no}, update, upsert=True)
 
 
@@ -292,7 +294,7 @@ def get_voter_card_url(epic_no: str) -> str:
 
 
 def get_all_stats() -> dict:
-    """Return {epic_no: {count, last_generated, photo_url, card_url}} dict."""
+    """Return {epic_no: {count, last_generated, photo_url, card_url, auth_mobile}} dict."""
     result = {}
     for doc in stats_col.find({}, {'_id': 0}):
         result[doc['epic_no']] = {
@@ -300,6 +302,7 @@ def get_all_stats() -> dict:
             'last_generated': doc.get('last_generated', ''),
             'photo_url': doc.get('photo_url', ''),
             'card_url': doc.get('card_url', ''),
+            'auth_mobile': doc.get('auth_mobile', ''),
         }
     return result
 
@@ -391,126 +394,171 @@ def get_dashboard_stats():
 
 @app.route('/')
 def user_home():
-    # Fetch latest content for home page sections
-    latest_photos = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1).limit(6))
-    latest_videos = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1).limit(3))
-    latest_announcements = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1).limit(3))
-    member_count = stats_col.count_documents({})
-    return render_template('user/home.html',
-                           latest_photos=latest_photos,
-                           latest_videos=latest_videos,
-                           latest_announcements=latest_announcements,
-                           member_count=member_count)
+    return render_template('user/chatbot.html')
 
 
-@app.route('/photos')
-def user_photos():
-    """Public photos gallery page."""
-    photos = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('user/photos.html', photos=photos)
+# ── Chatbot API Endpoints ────────────────────────────────────────
+
+@app.route('/api/chat/check-mobile', methods=['POST'])
+def chat_check_mobile():
+    """Check if mobile number is already verified."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+    doc = verified_mobiles_col.find_one({'mobile': mobile})
+    return jsonify({'already_verified': bool(doc)})
 
 
-@app.route('/videos')
-def user_videos():
-    """Public videos page."""
-    videos = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('user/videos.html', videos=videos)
+@app.route('/api/chat/send-otp', methods=['POST'])
+def chat_send_otp():
+    """Generate and send OTP to mobile number."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    otp = str(random.randint(100000, 999999))
+
+    # Store OTP in DB
+    otp_col.update_one(
+        {'mobile': mobile},
+        {'$set': {
+            'otp': otp,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'verified': False,
+        }},
+        upsert=True
+    )
+
+    # Try to send via SMS API (Fast2SMS or similar)
+    sms_sent = False
+    sms_api_key = os.getenv('SMS_API_KEY', '')
+    if sms_api_key:
+        try:
+            resp = http_requests.post(
+                'https://www.fast2sms.com/dev/bulkV2',
+                headers={'authorization': sms_api_key},
+                data={
+                    'variables_values': otp,
+                    'route': 'otp',
+                    'numbers': mobile,
+                },
+                timeout=10
+            )
+            if resp.status_code == 200:
+                sms_sent = True
+                logger.info(f"OTP sent to {mobile}")
+        except Exception as e:
+            logger.warning(f"SMS send failed for {mobile}: {e}")
+
+    response = {'success': True}
+    if sms_sent:
+        logger.info(f"OTP sent via SMS to {mobile}")
+    else:
+        logger.info(f"SMS not sent for {mobile} (no API key). OTP: {otp}")
+
+    return jsonify(response)
 
 
-@app.route('/announcements')
-def user_announcements():
-    """Public announcements page."""
-    announcements = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('user/announcements.html', announcements=announcements)
+@app.route('/api/chat/verify-otp', methods=['POST'])
+def chat_verify_otp():
+    """Verify OTP for mobile number."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    otp = data.get('otp', '').strip()
+
+    if not mobile or not otp:
+        return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
+
+    doc = otp_col.find_one({'mobile': mobile})
+    if not doc or doc.get('otp') != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
+
+    # Check expiry (5 minutes)
+    try:
+        created = datetime.fromisoformat(doc['created_at'])
+        if (datetime.now(timezone.utc) - created).total_seconds() > 300:
+            return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
+    except Exception:
+        pass
+
+    # Mark as verified
+    otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
+    verified_mobiles_col.update_one(
+        {'mobile': mobile},
+        {'$set': {'mobile': mobile, 'verified_at': datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+
+    return jsonify({'success': True})
 
 
-@app.route('/registration')
-def user_registration():
-    """Registration page (placeholder)."""
-    return render_template('user/registration.html')
-
-
-@app.route('/generate-id')
-def user_generate_page():
-    """Dedicated page for generating ID card."""
-    return render_template('user/generate.html')
-
-
-@app.route('/lookup-voter', methods=['POST'])
-def lookup_voter():
-    """AJAX endpoint: return voter details for confirmation before generating."""
-    epic_no = request.form.get('epic_no', '').strip().upper()
+@app.route('/api/chat/validate-epic', methods=['POST'])
+def chat_validate_epic():
+    """Validate EPIC number and return voter details."""
+    data = request.get_json()
+    epic_no = data.get('epic_no', '').strip().upper()
     if not epic_no:
-        return jsonify({'success': False, 'message': 'Please enter your Epic Number.'}), 400
+        return jsonify({'success': False, 'message': 'Please enter your EPIC Number.'}), 400
+
     voter = find_voter_by_epic(epic_no)
     if not voter:
-        return jsonify({'success': False, 'message': 'Epic Number not found. Please check and try again.'}), 404
-    # Return only safe display fields
+        return jsonify({'success': False, 'message': 'EPIC Number not found. Please check and try again.'}), 404
+
     display_fields = {}
     for key, val in voter.items():
         if key.startswith('_'):
             continue
         display_fields[key] = str(val) if val else ''
+
     return jsonify({'success': True, 'voter': display_fields})
 
 
-@app.route('/generate', methods=['POST'])
-def user_generate():
-    """User enters Epic Number + photo → generate card."""
+@app.route('/api/chat/generate-card', methods=['POST'])
+def chat_generate_card():
+    """Upload photo and generate ID card via chatbot."""
     epic_no = request.form.get('epic_no', '').strip().upper()
+    mobile_num = request.form.get('mobile', '').strip()
 
     if not epic_no:
-        flash('Please enter your Epic Number.', 'danger')
-        return redirect(url_for('user_generate_page'))
+        return jsonify({'success': False, 'message': 'EPIC Number is required.'}), 400
+
+    voter = find_voter_by_epic(epic_no)
+    if not voter:
+        return jsonify({'success': False, 'message': 'EPIC Number not found.'}), 404
 
     # Photo is required
-    photo_image = None
-    photo_url = ''
     if 'photo' not in request.files or not request.files['photo'].filename:
-        flash('Please upload your photo. It is required.', 'danger')
-        return redirect(url_for('user_generate_page'))
+        return jsonify({'success': False, 'message': 'Photo is required.'}), 400
 
     file = request.files['photo']
     if not allowed_file(file.filename, ALLOWED_IMG):
-        flash('Invalid photo format. Please upload a JPG or PNG image.', 'danger')
-        return redirect(url_for('user_generate_page'))
+        return jsonify({'success': False, 'message': 'Invalid photo format. Use JPG or PNG.'}), 400
 
-    # Look up in MongoDB
-    voter = find_voter_by_epic(epic_no)
-    if not voter:
-        flash('Epic Number not found. Please check and try again.', 'danger')
-        return redirect(url_for('user_generate_page'))
-
-    # Process photo upload
+    photo_image = None
+    photo_url = ''
     try:
         photo_image = Image.open(file.stream).convert('RGB')
-        # Upload to Cloudinary
         photo_url = upload_photo_to_cloudinary(photo_image, epic_no)
     except Exception as e:
         logger.warning(f"Photo upload error for {epic_no}: {e}")
-        flash('Could not process the uploaded photo. Please try again.', 'danger')
-        return redirect(url_for('user_generate_page'))
+        return jsonify({'success': False, 'message': 'Could not process the uploaded photo.'}), 500
 
-    # Generate card
     try:
         voter['serial_number'] = generate_serial_number(epic_no)
         voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
+        voter['auth_mobile'] = mobile_num
         template = Image.open(config.TEMPLATE_PATH).convert('RGBA')
         card_image = generate_card(voter, template, photo_image=photo_image)
-
-        # Upload generated card to Cloudinary (replaces old card)
         card_url = upload_card_to_cloudinary(card_image, epic_no)
 
-        # Track generation + photo URL + card URL
-        increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url)
+        increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url, auth_mobile=mobile_num)
 
-        # PRG: Redirect to GET /card/<epic_no> to prevent re-generation on refresh
-        return redirect(url_for('user_card_page', epic_no=epic_no))
-
+        return jsonify({'success': True, 'card_url': card_url, 'epic_no': epic_no})
     except Exception as e:
         logger.error(f"Card generation error for {epic_no}: {e}")
-        flash('Something went wrong generating the card. Please try again.', 'danger')
-        return redirect(url_for('user_generate_page'))
+        return jsonify({'success': False, 'message': 'Card generation failed. Please try again.'}), 500
 
 
 @app.route('/card/<epic_no>')
@@ -575,10 +623,12 @@ def verify_voter(epic_no):
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
     voter['card_url'] = s.get('card_url', '')
+    voter['auth_mobile'] = s.get('auth_mobile', '')
 
     # Separate core fields from extra fields
     core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count',
-                 'last_generated', 'photo_url', 'card_url', 'serial_number', 'verify_url'}
+                 'last_generated', 'photo_url', 'card_url', 'serial_number',
+                 'verify_url', 'auth_mobile'}
     extra_fields = {k: v for k, v in voter.items() if k not in core_keys and v}
 
     return render_template('user/verify.html',
@@ -652,7 +702,7 @@ def voters_list():
     assemblies = sorted({v.get('assembly', '') for v in voters if v.get('assembly', '')})
     districts = sorted({v.get('district', '') for v in voters if v.get('district', '')})
 
-    # Attach generation count + photo URL + card URL
+    # Attach generation count + photo URL + card URL + auth mobile
     for v in voters:
         epic = v['epic_no']
         s = all_stats.get(epic, {})
@@ -660,6 +710,7 @@ def voters_list():
         v['last_generated'] = s.get('last_generated', '')
         v['photo_url'] = s.get('photo_url', '')
         v['card_url'] = s.get('card_url', '')
+        v['auth_mobile'] = s.get('auth_mobile', '')
 
     # Apply assembly/district filters
     if filter_assembly:
@@ -776,193 +827,15 @@ def voter_detail(epic_no):
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
     voter['card_url'] = s.get('card_url', '')
+    voter['auth_mobile'] = s.get('auth_mobile', '')
 
     # Separate core fields from extra fields for display
-    core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count', 'last_generated', 'photo_url', 'card_url'}
+    core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count',
+                 'last_generated', 'photo_url', 'card_url', 'auth_mobile'}
     extra_fields = {k: v for k, v in voter.items() if k not in core_keys}
 
     return render_template('admin/voter_detail.html',
                            voter=voter, extra_fields=extra_fields)
-
-# ── Admin: Photos Management ─────────────────────────────────────
-
-@admin_bp.route('/photos')
-def admin_photos():
-    items = list(photos_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('admin/photos.html', items=items)
-
-
-@admin_bp.route('/photos/add', methods=['POST'])
-def admin_photos_add():
-    title = request.form.get('title', '').strip()
-    url = request.form.get('url', '').strip()
-    if not url:
-        flash('Image URL is required.', 'danger')
-        return redirect(url_for('admin.admin_photos'))
-    photos_col.insert_one({
-        'title': title,
-        'url': url,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-    })
-    flash('Photo added successfully!', 'success')
-    return redirect(url_for('admin.admin_photos'))
-
-
-@admin_bp.route('/photos/delete', methods=['POST'])
-def admin_photos_delete():
-    url = request.form.get('url', '').strip()
-    if url:
-        photos_col.delete_one({'url': url})
-        flash('Photo deleted.', 'success')
-    return redirect(url_for('admin.admin_photos'))
-
-
-# ── Admin: Videos Management ─────────────────────────────────────
-
-@admin_bp.route('/videos')
-def admin_videos():
-    items = list(videos_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('admin/videos.html', items=items)
-
-
-def _extract_youtube_id(url):
-    """Extract YouTube video ID from various URL formats."""
-    yt_id = ''
-    if 'youtube.com/watch' in url and 'v=' in url:
-        yt_id = url.split('v=')[1].split('&')[0]
-    elif 'youtu.be/' in url:
-        yt_id = url.split('youtu.be/')[1].split('?')[0]
-    elif 'youtube.com/embed/' in url:
-        yt_id = url.split('youtube.com/embed/')[1].split('?')[0]
-    return yt_id
-
-
-def _fetch_youtube_details(yt_id):
-    """Fetch title & description from YouTube.
-    Uses oEmbed (no key needed) for title, Data API v3 for description."""
-    title, description = None, None
-
-    # 1) oEmbed — always works, no API key needed, returns title
-    try:
-        oembed = http_requests.get(
-            'https://www.youtube.com/oembed',
-            params={'url': f'https://www.youtube.com/watch?v={yt_id}', 'format': 'json'},
-            timeout=8,
-        )
-        if oembed.status_code == 200:
-            title = oembed.json().get('title', '')
-    except Exception:
-        pass
-
-    # 2) Data API v3 — for description (requires API key)
-    api_key = config.YOUTUBE_API_KEY
-    if api_key and yt_id:
-        try:
-            resp = http_requests.get(
-                'https://www.googleapis.com/youtube/v3/videos',
-                params={'id': yt_id, 'part': 'snippet', 'key': api_key},
-                timeout=8,
-            )
-            data = resp.json()
-            if data.get('items'):
-                snippet = data['items'][0]['snippet']
-                if not title:
-                    title = snippet.get('title', '')
-                description = snippet.get('description', '')
-        except Exception:
-            pass
-
-    return title, description
-
-
-@admin_bp.route('/videos/add', methods=['POST'])
-def admin_videos_add():
-    title = request.form.get('title', '').strip()
-    url = request.form.get('url', '').strip()
-    if not url:
-        flash('Video URL is required.', 'danger')
-        return redirect(url_for('admin.admin_videos'))
-
-    description = ''
-    yt_id = _extract_youtube_id(url)
-    if yt_id:
-        yt_title, yt_desc = _fetch_youtube_details(yt_id)
-        if yt_title and not title:
-            title = yt_title
-        if yt_desc:
-            description = yt_desc
-
-    videos_col.insert_one({
-        'title': title,
-        'description': description,
-        'url': url,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-    })
-    flash('Video added successfully!', 'success')
-    return redirect(url_for('admin.admin_videos'))
-
-
-@admin_bp.route('/videos/delete', methods=['POST'])
-def admin_videos_delete():
-    url = request.form.get('url', '').strip()
-    if url:
-        videos_col.delete_one({'url': url})
-        flash('Video deleted.', 'success')
-    return redirect(url_for('admin.admin_videos'))
-
-@admin_bp.route('/videos/refresh', methods=['POST'])
-def admin_videos_refresh():
-    """Re-fetch YouTube title & description for all videos."""
-    updated = 0
-    for video in videos_col.find():
-        yt_id = _extract_youtube_id(video.get('url', ''))
-        if yt_id:
-            yt_title, yt_desc = _fetch_youtube_details(yt_id)
-            update_fields = {}
-            if yt_title:
-                update_fields['title'] = yt_title
-            if yt_desc:
-                update_fields['description'] = yt_desc
-            if update_fields:
-                videos_col.update_one({'_id': video['_id']}, {'$set': update_fields})
-                updated += 1
-    flash(f'Refreshed {updated} video(s) with YouTube details.', 'success')
-    return redirect(url_for('admin.admin_videos'))
-
-# ── Admin: Announcements Management ──────────────────────────────
-
-@admin_bp.route('/announcements')
-def admin_announcements():
-    items = list(announcements_col.find({}, {'_id': 0}).sort('created_at', -1))
-    return render_template('admin/announcements.html', items=items)
-
-
-@admin_bp.route('/announcements/add', methods=['POST'])
-def admin_announcements_add():
-    title = request.form.get('title', '').strip()
-    content = request.form.get('content', '').strip()
-    image_url = request.form.get('image_url', '').strip()
-    if not title:
-        flash('Title is required.', 'danger')
-        return redirect(url_for('admin.admin_announcements'))
-    announcements_col.insert_one({
-        'title': title,
-        'content': content,
-        'image_url': image_url,
-        'created_at': datetime.now(timezone.utc).isoformat(),
-    })
-    flash('Announcement added successfully!', 'success')
-    return redirect(url_for('admin.admin_announcements'))
-
-
-@admin_bp.route('/announcements/delete', methods=['POST'])
-def admin_announcements_delete():
-    title = request.form.get('title', '').strip()
-    created_at = request.form.get('created_at', '').strip()
-    if title and created_at:
-        announcements_col.delete_one({'title': title, 'created_at': created_at})
-        flash('Announcement deleted.', 'success')
-    return redirect(url_for('admin.admin_announcements'))
 
 @admin_bp.route('/api/voters')
 def api_voters():
@@ -983,6 +856,7 @@ def api_voters():
         v['last_generated'] = s.get('last_generated', '')
         v['photo_url'] = s.get('photo_url', '')
         v['card_url'] = s.get('card_url', '')
+        v['auth_mobile'] = s.get('auth_mobile', '')
 
     # Apply filters
     if assembly:

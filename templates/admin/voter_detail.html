@@ -78,6 +78,16 @@
           <tr><th>Name</th><td class="fw-semibold">{{ voter.name }}</td></tr>
           <tr><th>Assembly</th><td>{{ voter.assembly or '—' }}</td></tr>
           <tr><th>District</th><td>{{ voter.district or '—' }}</td></tr>
+          <tr>
+            <th>Auth Mobile</th>
+            <td>
+              {% if voter.auth_mobile %}
+              <i class="bi bi-phone-fill text-success"></i> +91 {{ voter.auth_mobile }}
+              {% else %}
+              <span class="text-muted">Not verified</span>
+              {% endif %}
+            </td>
+          </tr>
         </tbody>
       </table>
 

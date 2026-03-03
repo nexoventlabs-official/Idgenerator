@@ -149,6 +149,12 @@
           <span class="d-label">Epic Number</span>
           <span class="d-value" style="font-family:monospace;">{{ voter.epic_no }}</span>
         </div>
+        {% if voter.auth_mobile %}
+        <div class="d-item">
+          <span class="d-label">Auth Mobile</span>
+          <span class="d-value">+91 {{ voter.auth_mobile }}</span>
+        </div>
+        {% endif %}
         {% if voter.assembly %}
         <div class="d-item">
           <span class="d-label">Assembly</span>
