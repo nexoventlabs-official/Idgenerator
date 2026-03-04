@@ -1095,6 +1095,14 @@
       function setText(placeholder_key) {
         input.type = 'text';
         input.inputMode = 'text';
+        input.autocapitalize = 'off';
+        input.removeAttribute('pattern');
+        input.placeholder = t(placeholder_key) || '';
+      }
+      function setEpicInput(placeholder_key) {
+        input.type = 'text';
+        input.inputMode = 'text';
+        input.autocapitalize = 'characters';
         input.removeAttribute('pattern');
         input.placeholder = t(placeholder_key) || '';
       }
@@ -1107,7 +1115,7 @@
         if (state === S.WELCOME || state === S.DONE) { setText('placeholder_type'); }
         else if (state === S.AWAIT_MOBILE) { setNumeric('placeholder_mobile'); }
         else if (state === S.AWAIT_OTP) { setNumeric('placeholder_otp'); }
-        else if (state === S.AWAIT_EPIC) { setText('placeholder_epic'); }
+        else if (state === S.AWAIT_EPIC) { setEpicInput('placeholder_epic'); }
         else if (state === S.AWAIT_PHOTO) { setText('placeholder_upload'); }
         else if (state === S.CONFIRM) { setText('placeholder_yes'); }
       }
@@ -1463,6 +1471,24 @@
       /* ── Event Listeners ── */
       sendBtn.addEventListener('click', handleSend);
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSend(); });
+
+      /* ── EPIC input: auto-uppercase first 3 chars, then switch to numeric ── */
+      input.addEventListener('input', function () {
+        if (state !== S.AWAIT_EPIC) return;
+        let val = this.value;
+        // Uppercase the alphabetic prefix (first 3 chars)
+        let prefix = val.slice(0, 3).toUpperCase().replace(/[^A-Z]/g, '');
+        let rest = val.slice(3).replace(/[^0-9]/g, '');
+        this.value = prefix + rest;
+        // Switch keyboard to numeric after 3 letters are entered
+        if (prefix.length >= 3 && this.inputMode !== 'numeric') {
+          this.inputMode = 'numeric';
+          this.autocapitalize = 'off';
+        } else if (prefix.length < 3 && this.inputMode !== 'text') {
+          this.inputMode = 'text';
+          this.autocapitalize = 'characters';
+        }
+      });
 
       /* ── Theme Toggle ── */
       const themeToggleBtn = document.getElementById('themeToggle');
