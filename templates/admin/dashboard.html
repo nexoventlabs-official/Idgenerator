@@ -112,7 +112,7 @@
               <td>
                 {% if stats.db_connected %}
                 <span class="badge bg-success"><i class="bi bi-check-circle"></i> MongoDB Connected</span>
-                — {{ stats.mongodb_size_mb }} MB ({{ stats.total_voters }} records)
+                — <span id="ext-db-size">{{ stats.mongodb_size_mb }}</span> MB ({{ stats.total_voters }} records)
                 {% else %}
                 <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Disconnected</span>
                 {% endif %}
@@ -120,12 +120,12 @@
             </tr>
             <tr>
               <td class="text-muted">Cloudinary Quota</td>
-              <td><span class="badge bg-info text-dark">Credits Used</span> — {{ stats.cloudinary_credits }} / 25
+              <td><span class="badge bg-info text-dark">Credits Used</span> — <span id="ext-cloudinary">{{ stats.cloudinary_credits }}</span> / 25
                 Monthly Limit</td>
             </tr>
             <tr>
               <td class="text-muted">SMS Balance (2Factor)</td>
-              <td><span class="badge bg-warning text-dark">Available SMS</span> — {{ stats.sms_balance }}</td>
+              <td><span class="badge bg-warning text-dark">Available SMS</span> — <span id="ext-sms">{{ stats.sms_balance }}</span></td>
             </tr>
             <tr>
               <td class="text-muted">Card Storage</td>
@@ -170,4 +170,25 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Load slow external stats (Cloudinary, SMS, DB size) asynchronously
+// So dashboard renders instantly — external data fills in within 1-3s
+(function() {
+  fetch('{{ url_for("admin.api_external_stats") }}')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var el;
+      el = document.getElementById('ext-db-size');
+      if (el && d.mongodb_size_mb !== undefined) el.textContent = d.mongodb_size_mb;
+      el = document.getElementById('ext-cloudinary');
+      if (el && d.cloudinary_credits) el.textContent = d.cloudinary_credits;
+      el = document.getElementById('ext-sms');
+      if (el && d.sms_balance) el.textContent = d.sms_balance;
+    })
+    .catch(function() {});
+})();
+</script>
 {% endblock %}

@@ -1,7 +1,7 @@
 """
-Voter ID Card Generator v4.0 — Web App
+Voter ID Card Generator v4.0 - Web App
 ========================================
-- User  : /       Enter Epic Number + optional photo → Generate & Download Card
+- User  : /       Enter Epic Number + optional photo -> Generate & Download Card
 - Admin : /admin  Import XLSX/CSV, view voters & generation stats
 
 Database : MongoDB Atlas
@@ -14,7 +14,9 @@ import io
 import json
 import os
 import random
+import re
 import sys
+import time
 from datetime import datetime, timezone
 
 from flask import (
@@ -28,7 +30,12 @@ import requests as http_requests
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING, DESCENDING
+
+try:
+    import redis as _redis_lib
+except ImportError:
+    _redis_lib = None
 
 import string
 
@@ -53,13 +60,29 @@ ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 
 logger = setup_logging()
 
-# ── MongoDB Setup (Main DB — voter data from XLSX imports, READ-ONLY after import) ──
-mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
+# ── MongoDB Setup (Main DB - voter data from XLSX imports, READ-ONLY after import) ──
+mongo_client = MongoClient(
+    config.MONGO_URI,
+    serverSelectionTimeoutMS=5000,
+    maxPoolSize=50,          # Handle 50 concurrent connections per worker
+    minPoolSize=5,           # Keep 5 connections warm
+    maxIdleTimeMS=30000,     # Close idle connections after 30s
+    connectTimeoutMS=5000,
+    socketTimeoutMS=10000,
+)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
 
-# ── MongoDB Setup (Generated Voters DB — all card-generation activity) ──
-gen_mongo_client = MongoClient(config.GEN_MONGO_URI, serverSelectionTimeoutMS=5000)
+# ── MongoDB Setup (Generated Voters DB - all card-generation activity) ──
+gen_mongo_client = MongoClient(
+    config.GEN_MONGO_URI,
+    serverSelectionTimeoutMS=5000,
+    maxPoolSize=50,
+    minPoolSize=5,
+    maxIdleTimeMS=30000,
+    connectTimeoutMS=5000,
+    socketTimeoutMS=10000,
+)
 gen_db = gen_mongo_client[config.GEN_MONGO_DB_NAME]
 gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
 stats_col = gen_db[config.MONGO_STATS_COLLECTION]
@@ -68,30 +91,63 @@ otp_col = gen_db['otp_sessions']
 volunteer_requests_col = gen_db['volunteer_requests']
 booth_agent_requests_col = gen_db['booth_agent_requests']
 
-# Ensure indexes (graceful — don't crash if Atlas is unreachable)
+# Ensure indexes (graceful - don't crash if Atlas is unreachable)
 try:
-    # 1st MongoDB — voter data only
+    # 1st MongoDB - voter data only
     voters_col.create_index('epic_no', unique=True)
-    logger.info("MongoDB (voters) connected & index ensured.")
+    # Compound indexes for filter & search at scale
+    voters_col.create_index([('assembly', 1), ('district', 1)])
+    voters_col.create_index([('name', 1)])
+    # Text index for fast $text search across multiple fields
+    try:
+        voters_col.create_index(
+            [('name', 'text'), ('epic_no', 'text'), ('assembly', 'text'), ('district', 'text')],
+            name='voters_text_search',
+            default_language='none',
+        )
+    except Exception:
+        pass  # Text index may already exist with different spec
+    logger.info("MongoDB (voters) connected & indexes ensured.")
 except Exception as e:
     logger.warning(f"MongoDB (voters) index creation skipped: {e}")
 
 try:
-    # 2nd MongoDB — all generation activity
+    # 2nd MongoDB - all generation activity
     stats_col.create_index('epic_no', unique=True)
+    stats_col.create_index([('count', 1)])
+    stats_col.create_index([('auth_mobile', 1)])
     gen_voters_col.create_index('ptc_code', unique=True)
     gen_voters_col.create_index('epic_no')
     gen_voters_col.create_index('mobile')
     gen_voters_col.create_index('referral_id', unique=True, sparse=True)
     gen_voters_col.create_index('referred_by_ptc')
+    # Compound indexes for filter, search & sort at scale
+    gen_voters_col.create_index([('assembly', 1), ('district', 1)])
+    gen_voters_col.create_index([('generated_at', -1)])
+    gen_voters_col.create_index([('name', 1)])
+    # Text index for fast $text search across multiple fields
+    try:
+        gen_voters_col.create_index(
+            [('name', 'text'), ('epic_no', 'text'), ('ptc_code', 'text'), ('mobile', 'text'), ('assembly', 'text'), ('district', 'text')],
+            name='gen_voters_text_search',
+            default_language='none',
+        )
+    except Exception:
+        pass  # Text index may already exist with different spec
     otp_col.create_index('mobile', unique=True)
     verified_mobiles_col.create_index('mobile', unique=True)
     volunteer_requests_col.create_index('ptc_code', unique=True)
     volunteer_requests_col.create_index('mobile')
     volunteer_requests_col.create_index('status')
+    # Compound indexes for status + sort
+    volunteer_requests_col.create_index([('status', 1), ('requested_at', -1)])
+    volunteer_requests_col.create_index([('name', 1)])
     booth_agent_requests_col.create_index('ptc_code', unique=True)
     booth_agent_requests_col.create_index('mobile')
     booth_agent_requests_col.create_index('status')
+    # Compound indexes for status + sort
+    booth_agent_requests_col.create_index([('status', 1), ('requested_at', -1)])
+    booth_agent_requests_col.create_index([('name', 1)])
     logger.info("MongoDB (generated) connected & indexes ensured.")
 except Exception as e:
     logger.warning(f"MongoDB (generated) index creation skipped: {e}")
@@ -105,9 +161,95 @@ cloudinary.config(
 )
 
 
+# ══════════════════════════════════════════════════════════════════
+#  REDIS CACHE SETUP  (P2 - optional, graceful degradation)
+# ══════════════════════════════════════════════════════════════════
+
+_redis_client = None
+REDIS_DASHBOARD_KEY = 'voter_app:dashboard_stats'
+REDIS_DASHBOARD_TTL = 60  # seconds
+REDIS_EXTERNAL_STATS_KEY = 'voter_app:external_stats'
+REDIS_EXTERNAL_STATS_TTL = 300  # 5 min for Cloudinary/SMS/dbstats (slow HTTP calls)
+REDIS_DROPDOWN_VOTERS_KEY = 'voter_app:dropdown:voters'
+REDIS_DROPDOWN_GEN_KEY = 'voter_app:dropdown:gen_voters'
+REDIS_DROPDOWN_TTL = 300  # 5 min - assembly/district lists change very rarely
+
+try:
+    _redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    if _redis_lib:
+        _redis_client = _redis_lib.from_url(_redis_url, socket_connect_timeout=2, decode_responses=True)
+        _redis_client.ping()
+        logger.info(f"Redis connected: {_redis_url}")
+except Exception as _re:
+    _redis_client = None
+    logger.info(f"Redis not available (dashboard cache disabled): {_re}")
+
+
+def _cache_get(key: str) -> dict | None:
+    """Get a JSON value from Redis cache. Returns None on miss or if Redis unavailable."""
+    if not _redis_client:
+        return None
+    try:
+        raw = _redis_client.get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def _cache_set(key: str, value: dict, ttl: int = 60):
+    """Set a JSON value in Redis cache with TTL. No-op if Redis unavailable."""
+    if not _redis_client:
+        return
+    try:
+        _redis_client.setex(key, ttl, json.dumps(value))
+    except Exception:
+        pass
+
 
 # ══════════════════════════════════════════════════════════════════
-#  FILE PARSING HELPERS (XLSX / CSV → list of dicts)
+#  MONGODB SEARCH / FILTER HELPERS  (for 5.6 Cr scale)
+# ══════════════════════════════════════════════════════════════════
+
+def _build_search_filter(search: str, fields: list[str]) -> dict:
+    """Build a MongoDB $or filter using case-insensitive regex across fields."""
+    if not search:
+        return {}
+    escaped = re.escape(search)
+    regex = {'$regex': escaped, '$options': 'i'}
+    return {'$or': [{f: regex} for f in fields]}
+
+
+def _merge_conditions(conditions: list[dict]) -> dict:
+    """Merge a list of query conditions into a single MongoDB query."""
+    if not conditions:
+        return {}
+    if len(conditions) == 1:
+        return conditions[0]
+    return {'$and': conditions}
+
+
+def _build_cursor_filter(cursor_id: str, direction: str = 'next', descending: bool = True) -> dict:
+    """Build after/before filter for cursor-based pagination using _id.
+
+    descending=True  (sort _id:-1): 'next' = $lt, 'prev' = $gt
+    descending=False (sort _id:1):  'next' = $gt, 'prev' = $lt
+    """
+    if not cursor_id:
+        return {}
+    from bson import ObjectId
+    try:
+        oid = ObjectId(cursor_id)
+    except Exception:
+        return {}
+    if descending:
+        return {'_id': {'$lt': oid}} if direction == 'next' else {'_id': {'$gt': oid}}
+    else:
+        return {'_id': {'$gt': oid}} if direction == 'next' else {'_id': {'$lt': oid}}
+
+
+
+# ══════════════════════════════════════════════════════════════════
+#  FILE PARSING HELPERS (XLSX / CSV -> list of dicts)
 # ══════════════════════════════════════════════════════════════════
 
 def _match_column(header: str, candidates: list[str]) -> bool:
@@ -291,15 +433,11 @@ def replace_all_voters(voter_list: list[dict]) -> int:
 # ══════════════════════════════════════════════════════════════════
 
 def generate_ptc_code() -> str:
-    """Generate a unique PTC-XXXXXXX code (7 alphanumeric chars, uppercase)."""
-    chars = string.ascii_uppercase + string.digits
-    for _ in range(100):  # max retries to avoid infinite loop
-        code = 'PTC-' + ''.join(random.choices(chars, k=7))
-        if not gen_voters_col.find_one({'ptc_code': code}):
-            return code
-    # Fallback: use timestamp-based
-    ts = datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[:7]
-    return f'PTC-{ts}'
+    """Generate a unique PTC-XXXXXXX code (collision-free under concurrent load)."""
+    import uuid
+    # Use UUID4 hex for guaranteed uniqueness - no DB check loop needed
+    uid = uuid.uuid4().hex[:7].upper()
+    return f'PTC-{uid}'
 
 
 def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str,
@@ -334,7 +472,7 @@ def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str
 
 
 def get_or_create_referral(ptc_code: str) -> dict | None:
-    """Return { referral_id, referral_link } — idempotent."""
+    """Return { referral_id, referral_link } - idempotent."""
     voter = gen_voters_col.find_one({'ptc_code': ptc_code})
     if not voter:
         return None
@@ -343,12 +481,8 @@ def get_or_create_referral(ptc_code: str) -> dict | None:
             'referral_id': voter['referral_id'],
             'referral_link': f"{config.BASE_URL}/refer/{ptc_code}/{voter['referral_id']}"
         }
-    chars = string.ascii_uppercase + string.digits
-    rid = ''
-    for _ in range(100):
-        rid = 'REF-' + ''.join(random.choices(chars, k=8))
-        if not gen_voters_col.find_one({'referral_id': rid}):
-            break
+    import uuid
+    rid = 'REF-' + uuid.uuid4().hex[:8].upper()
     link = f"{config.BASE_URL}/refer/{ptc_code}/{rid}"
     gen_voters_col.update_one(
         {'ptc_code': ptc_code},
@@ -434,16 +568,8 @@ def upload_photo_to_cloudinary(image: Image.Image, epic_no: str) -> str:
 
 
 def upload_card_to_cloudinary(card_image: Image.Image, epic_no: str) -> str:
-    """Upload generated card image to Cloudinary. Replaces any existing card."""
+    """Upload generated card image to Cloudinary (overwrite mode - no delete needed)."""
     safe_id = epic_no.replace('/', '_').replace('\\', '_')
-
-    # Delete old card first (if exists) to ensure a clean replacement
-    try:
-        public_id = f"{config.CLOUDINARY_CARDS_FOLDER}/{safe_id}"
-        cloudinary.uploader.destroy(public_id, resource_type='image', invalidate=True)
-        logger.info(f"Deleted old card from Cloudinary: {public_id}")
-    except Exception:
-        pass  # No old card exists, that's fine
 
     buf = io.BytesIO()
     card_image.save(buf, format='JPEG', quality=config.JPEG_QUALITY)
@@ -470,48 +596,125 @@ def allowed_file(filename, exts):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in exts
 
 
-def get_dashboard_stats():
-    try:
-        total_voters = voters_col.count_documents({})
-        all_stats = get_all_stats()
-        total_generated = sum(1 for s in all_stats.values() if s['count'] > 0)
-        total_generations = sum(s['count'] for s in all_stats.values())
-        cards_on_cloud = sum(1 for s in all_stats.values() if s.get('card_url'))
-        db_connected = True
+def _get_external_stats() -> dict:
+    """Fetch slow external stats (Cloudinary, SMS, dbstats) - cached 5 min."""
+    cached = _cache_get(REDIS_EXTERNAL_STATS_KEY)
+    if cached:
+        return cached
 
-        # Generated voters count from new DB
-        try:
-            generated_voters_count = gen_voters_col.count_documents({})
-        except Exception:
-            generated_voters_count = 0
-        
-        # MongoDB Storage (both DBs combined)
-        db_stats_1 = db.command("dbstats")
-        db_stats_2 = gen_db.command("dbstats")
-        mongodb_size_mb = round(
-            (db_stats_1.get("dataSize", 0) + db_stats_2.get("dataSize", 0)) / (1024 * 1024), 2
+    result = {'mongodb_size_mb': 0, 'cloudinary_credits': 'N/A', 'sms_balance': 'N/A'}
+    try:
+        db_stats_1 = db.command('dbstats')
+        db_stats_2 = gen_db.command('dbstats')
+        result['mongodb_size_mb'] = round(
+            (db_stats_1.get('dataSize', 0) + db_stats_2.get('dataSize', 0)) / (1024 * 1024), 2
         )
-        
-        # Cloudinary Quota
-        cloudinary_credits = "N/A"
+    except Exception:
+        pass
+
+    try:
+        cli_usage = cloudinary.api.usage()
+        used = cli_usage.get('credits', {}).get('usage', 0)
+        result['cloudinary_credits'] = f"{round(used, 2)}"
+    except Exception:
+        pass
+
+    sms_api_key = os.getenv('SMS_API_KEY', '')
+    if sms_api_key:
         try:
-            cli_usage = cloudinary.api.usage()
-            used = cli_usage.get('credits', {}).get('usage', 0)
-            cloudinary_credits = f"{round(used, 2)}"
+            resp = http_requests.get(f"https://2factor.in/API/V1/{sms_api_key}/BAL/SMS", timeout=3)
+            if resp.status_code == 200:
+                result['sms_balance'] = resp.json().get('Details', 'N/A')
         except Exception:
             pass
-            
-        # 2Factor SMS Balance
-        sms_balance = "N/A"
-        sms_api_key = os.getenv('SMS_API_KEY', '')
-        if sms_api_key:
-            try:
-                resp = http_requests.get(f"https://2factor.in/API/V1/{sms_api_key}/BAL/SMS", timeout=5)
-                if resp.status_code == 200:
-                    sms_balance = resp.json().get('Details', 'N/A')
-            except Exception:
-                pass
-                
+
+    _cache_set(REDIS_EXTERNAL_STATS_KEY, result, REDIS_EXTERNAL_STATS_TTL)
+    return result
+
+
+def _get_cached_dropdowns(collection, cache_key: str) -> tuple[list, list]:
+    """Return (assemblies, districts) from cache or distinct() scan."""
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached.get('assemblies', []), cached.get('districts', [])
+    assemblies = sorted(a for a in collection.distinct('assembly') if a)
+    districts = sorted(d for d in collection.distinct('district') if d)
+    _cache_set(cache_key, {'assemblies': assemblies, 'districts': districts}, REDIS_DROPDOWN_TTL)
+    return assemblies, districts
+
+
+def get_dashboard_stats():
+    # P2: Try Redis cache first - instant dashboard load
+    cached = _cache_get(REDIS_DASHBOARD_KEY)
+    if cached:
+        return cached
+
+    try:
+        # Use estimated_document_count - O(1) via collection metadata (fast at 5.6 Cr)
+        total_voters = voters_col.estimated_document_count()
+
+        # P1: Single aggregation for stats_col (1 query instead of loading ALL docs)
+        stats_agg = list(stats_col.aggregate([
+            {'$group': {
+                '_id': None,
+                'total_generated': {'$sum': {'$cond': [{'$gt': ['$count', 0]}, 1, 0]}},
+                'total_generations': {'$sum': '$count'},
+                'cards_on_cloud': {'$sum': {'$cond': [{'$gt': ['$card_url', '']}, 1, 0]}},
+            }}
+        ]))
+        if stats_agg:
+            total_generated = stats_agg[0].get('total_generated', 0)
+            total_generations = stats_agg[0].get('total_generations', 0)
+            cards_on_cloud = stats_agg[0].get('cards_on_cloud', 0)
+        else:
+            total_generated = 0
+            total_generations = 0
+            cards_on_cloud = 0
+
+        db_connected = True
+
+        # Generated voters count - O(1)
+        try:
+            generated_voters_count = gen_voters_col.estimated_document_count()
+        except Exception:
+            generated_voters_count = 0
+
+        # P1: Single aggregation for gen_voters referral total
+        try:
+            ref_agg = list(gen_voters_col.aggregate([
+                {'$group': {
+                    '_id': None,
+                    'total_referrals': {'$sum': {'$ifNull': ['$referred_members_count', 0]}},
+                }}
+            ]))
+            total_referrals = ref_agg[0]['total_referrals'] if ref_agg else 0
+        except Exception:
+            total_referrals = 0
+
+        # P1: Single aggregation for volunteer status counts
+        try:
+            vol_agg = list(volunteer_requests_col.aggregate([
+                {'$group': {'_id': '$status', 'count': {'$sum': 1}}}
+            ]))
+            vol_counts = {doc['_id']: doc['count'] for doc in vol_agg}
+            pending_volunteers = vol_counts.get('pending', 0)
+            confirmed_volunteers = vol_counts.get('confirmed', 0)
+        except Exception:
+            pending_volunteers = 0
+            confirmed_volunteers = 0
+
+        # P1: Single aggregation for booth agent status counts
+        try:
+            ba_agg = list(booth_agent_requests_col.aggregate([
+                {'$group': {'_id': '$status', 'count': {'$sum': 1}}}
+            ]))
+            ba_counts = {doc['_id']: doc['count'] for doc in ba_agg}
+            pending_booth_agents = ba_counts.get('pending', 0)
+            confirmed_booth_agents = ba_counts.get('confirmed', 0)
+        except Exception:
+            pending_booth_agents = 0
+            confirmed_booth_agents = 0
+
     except Exception:
         total_voters = 0
         total_generated = 0
@@ -519,48 +722,35 @@ def get_dashboard_stats():
         cards_on_cloud = 0
         generated_voters_count = 0
         db_connected = False
-        mongodb_size_mb = 0
-        cloudinary_credits = "N/A"
-        sms_balance = "N/A"
-
-    # New stats — referrals, volunteers, booth agents
-    try:
-        total_referrals = gen_voters_col.aggregate([
-            {'$group': {'_id': None, 'total': {'$sum': '$referred_members_count'}}}
-        ])
-        total_referrals = list(total_referrals)
-        total_referrals = total_referrals[0]['total'] if total_referrals else 0
-    except Exception:
         total_referrals = 0
-    try:
-        pending_volunteers = volunteer_requests_col.count_documents({'status': 'pending'})
-        confirmed_volunteers = volunteer_requests_col.count_documents({'status': 'confirmed'})
-    except Exception:
         pending_volunteers = 0
         confirmed_volunteers = 0
-    try:
-        pending_booth_agents = booth_agent_requests_col.count_documents({'status': 'pending'})
-        confirmed_booth_agents = booth_agent_requests_col.count_documents({'status': 'confirmed'})
-    except Exception:
         pending_booth_agents = 0
         confirmed_booth_agents = 0
 
-    return {
+    # External stats (Cloudinary, SMS, dbstats) - separately cached 5 min
+    ext = _get_external_stats()
+
+    result = {
         'total_voters': total_voters,
         'total_generated': total_generated,
         'total_generations': total_generations,
         'cards_on_cloud': cards_on_cloud,
         'generated_voters_count': generated_voters_count,
         'db_connected': db_connected,
-        'mongodb_size_mb': mongodb_size_mb,
-        'cloudinary_credits': cloudinary_credits,
-        'sms_balance': sms_balance,
+        'mongodb_size_mb': ext.get('mongodb_size_mb', 0),
+        'cloudinary_credits': ext.get('cloudinary_credits', 'N/A'),
+        'sms_balance': ext.get('sms_balance', 'N/A'),
         'total_referrals': total_referrals,
         'pending_volunteers': pending_volunteers,
         'confirmed_volunteers': confirmed_volunteers,
         'pending_booth_agents': pending_booth_agents,
         'confirmed_booth_agents': confirmed_booth_agents,
     }
+
+    # P2: Cache in Redis for 60s
+    _cache_set(REDIS_DASHBOARD_KEY, result, REDIS_DASHBOARD_TTL)
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -599,11 +789,23 @@ def chat_check_mobile():
 
 @app.route('/api/chat/send-otp', methods=['POST'])
 def chat_send_otp():
-    """Generate and send OTP to mobile number via 2Factor.in voice call."""
+    """Generate and send OTP to mobile number via 2Factor.in - rate-limited."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    # Rate limit: max 1 OTP per mobile per 60 seconds
+    existing = otp_col.find_one({'mobile': mobile})
+    if existing:
+        try:
+            created = datetime.fromisoformat(existing['created_at'])
+            elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+            if elapsed < 60:
+                wait = int(60 - elapsed)
+                return jsonify({'success': False, 'message': f'Please wait {wait}s before requesting another OTP.'}), 429
+        except Exception:
+            pass
 
     otp = str(random.randint(100000, 999999))
 
@@ -661,7 +863,7 @@ def chat_verify_otp():
     except Exception:
         pass
 
-    # Mark OTP as verified (but don't mark mobile as verified yet — that happens after card generation)
+    # Mark OTP as verified (but don't mark mobile as verified yet - that happens after card generation)
     otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
 
     # Check if this mobile already has a linked card
@@ -763,7 +965,7 @@ def chat_generate_card():
 
 @app.route('/card/<epic_no>')
 def user_card_page(epic_no):
-    """GET page showing generated card — safe to refresh (no re-generation)."""
+    """GET page showing generated card - safe to refresh (no re-generation)."""
     epic_no = epic_no.strip().upper()
     voter = find_voter_by_epic(epic_no)
     if not voter:
@@ -810,7 +1012,7 @@ def user_download_card(epic_no):
 
 @app.route('/verify/<epic_no>')
 def verify_voter(epic_no):
-    """Public verification page — opened when QR code is scanned on mobile."""
+    """Public verification page - opened when QR code is scanned on mobile."""
     epic_no = epic_no.strip().upper()
     voter = find_voter_by_epic(epic_no)
     if not voter:
@@ -999,7 +1201,7 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 # ── Admin Authentication ─────────────────────────────────────────
 @admin_bp.before_request
 def require_admin_login():
-    """Guard all /admin routes — redirect to login if not authenticated."""
+    """Guard all /admin routes - redirect to login if not authenticated."""
     if request.endpoint == 'admin.login':
         return  # allow access to the login page itself
     if not session.get('admin_logged_in'):
@@ -1047,46 +1249,48 @@ def voters_list():
     filter_assembly = request.args.get('assembly', '').strip()
     filter_district = request.args.get('district', '').strip()
 
-    # Get voters from MongoDB
-    voters = load_voters_from_db()
-    all_stats = get_all_stats()
+    # Cached dropdown options (5 min TTL - distinct on 5.6 Cr is expensive)
+    assemblies, districts = _get_cached_dropdowns(voters_col, REDIS_DROPDOWN_VOTERS_KEY)
 
-    # Collect unique assemblies & districts for filter dropdowns
-    assemblies = sorted({v.get('assembly', '') for v in voters if v.get('assembly', '')})
-    districts = sorted({v.get('district', '') for v in voters if v.get('district', '')})
+    # Build MongoDB query for server-side filtering & search
+    conditions = []
+    if filter_assembly:
+        conditions.append({'assembly': filter_assembly})
+    if filter_district:
+        conditions.append({'district': filter_district})
+    if search:
+        sf = _build_search_filter(search, ['epic_no', 'name', 'assembly', 'district'])
+        if sf:
+            conditions.append(sf)
+    query = _merge_conditions(conditions)
 
-    # Attach generation count + photo URL + card URL + auth mobile
+    # Server-side count & pagination
+    if query:
+        total = voters_col.count_documents(query)
+    else:
+        total = voters_col.estimated_document_count()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    skip = (page - 1) * per_page
+
+    voters = list(voters_col.find(query, {'_id': 0}).skip(skip).limit(per_page))
+
+    # Batch-fetch stats for ONLY this page (not all voters)
+    epic_nos = [v['epic_no'] for v in voters if v.get('epic_no')]
+    stats_docs = {s['epic_no']: s for s in stats_col.find(
+        {'epic_no': {'$in': epic_nos}}, {'_id': 0}
+    )} if epic_nos else {}
+
     for v in voters:
-        epic = v['epic_no']
-        s = all_stats.get(epic, {})
+        s = stats_docs.get(v.get('epic_no', ''), {})
         v['gen_count'] = s.get('count', 0)
         v['last_generated'] = s.get('last_generated', '')
         v['photo_url'] = s.get('photo_url', '')
         v['card_url'] = s.get('card_url', '')
         v['auth_mobile'] = s.get('auth_mobile', '')
 
-    # Apply assembly/district filters
-    if filter_assembly:
-        voters = [v for v in voters if v.get('assembly', '') == filter_assembly]
-    if filter_district:
-        voters = [v for v in voters if v.get('district', '') == filter_district]
-
-    # Search filter
-    if search:
-        sl = search.lower()
-        voters = [v for v in voters if
-                  sl in v.get('epic_no', '').lower() or
-                  sl in v.get('name', '').lower() or
-                  sl in v.get('assembly', '').lower() or
-                  sl in v.get('district', '').lower()]
-
-    total = len(voters)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    voters_page = voters[(page - 1) * per_page: page * per_page]
-
     return render_template('admin/voters.html',
-                           voters=voters_page, page=page,
+                           voters=voters, page=page,
                            total_pages=total_pages, total=total,
                            per_page=per_page, search=search,
                            assemblies=assemblies, districts=districts,
@@ -1130,18 +1334,18 @@ def import_xlsx():
             import_mode = request.form.get('import_mode', 'merge')
 
             if import_mode == 'replace':
-                # Replace all — drop existing and insert fresh
+                # Replace all - drop existing and insert fresh
                 count = replace_all_voters(voter_list)
                 flash(f'Data replaced successfully! {count} unique voter records stored.', 'success')
             else:
-                # Merge — upsert (update existing, insert new, no duplicates)
+                # Merge - upsert (update existing, insert new, no duplicates)
                 existing_count = voters_col.count_documents({})
                 count = upsert_voters(voter_list)
                 new_total = voters_col.count_documents({})
                 new_added = new_total - existing_count
                 updated = count - new_added if count > new_added else 0
                 flash(
-                    f'Import merged! {len(voter_list)} records processed — '
+                    f'Import merged! {len(voter_list)} records processed - '
                     f'{new_added} new added, {updated} updated, '
                     f'{new_total} total in database.',
                     'success'
@@ -1153,9 +1357,9 @@ def import_xlsx():
 
         return redirect(url_for('admin.dashboard'))
 
-    # GET — show current status
+    # GET - show current status
     try:
-        voters_count = voters_col.count_documents({})
+        voters_count = voters_col.estimated_document_count()
     except Exception:
         voters_count = 0
     return render_template('admin/import.html', voters_count=voters_count)
@@ -1164,6 +1368,12 @@ def import_xlsx():
 @admin_bp.route('/api/stats')
 def api_stats():
     return jsonify(get_dashboard_stats())
+
+
+@admin_bp.route('/api/external-stats')
+def api_external_stats():
+    """Separate endpoint for slow external stats - loaded via AJAX."""
+    return jsonify(_get_external_stats())
 
 
 @admin_bp.route('/voters/<epic_no>')
@@ -1192,50 +1402,93 @@ def voter_detail(epic_no):
 
 @admin_bp.route('/api/voters')
 def api_voters():
-    """JSON API: search, filter, paginate voters."""
+    """JSON API: search, filter, paginate voters - cursor-based and page-based."""
     search = request.args.get('search', '').strip()
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
+    cursor = request.args.get('cursor', '').strip()
+    direction = request.args.get('direction', 'next').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    voters = load_voters_from_db()
-    all_stats = get_all_stats()
+    # Build MongoDB query - all filtering happens in DB, not Python
+    conditions = []
+    if assembly:
+        conditions.append({'assembly': assembly})
+    if district:
+        conditions.append({'district': district})
+    if search:
+        sf = _build_search_filter(search, ['epic_no', 'name', 'assembly', 'district'])
+        if sf:
+            conditions.append(sf)
+    base_query = _merge_conditions(conditions)
+
+    # Server-side count (estimated for unfiltered, count_documents for filtered)
+    if base_query:
+        total = voters_col.count_documents(base_query)
+    else:
+        total = voters_col.estimated_document_count()
+
+    if cursor:
+        # ── P2: Cursor-based pagination (avoids skip at 5.6 Cr scale) ──
+        cursor_filter = _build_cursor_filter(cursor, direction, descending=False)
+        query = _merge_conditions([base_query, cursor_filter]) if cursor_filter else base_query
+
+        sort_dir = ASCENDING
+        if direction == 'prev':
+            sort_dir = DESCENDING
+        voters = list(voters_col.find(query).sort('_id', sort_dir).limit(per_page))
+        if direction == 'prev':
+            voters.reverse()
+
+        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
+        prev_cursor = str(voters[0]['_id']) if voters else None
+        for v in voters:
+            v['_id'] = str(v['_id'])
+    else:
+        # ── Page-based (first load / fallback) ──
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        skip = (page - 1) * per_page
+        voters = list(voters_col.find(base_query).sort('_id', ASCENDING).skip(skip).limit(per_page))
+
+        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
+        prev_cursor = None
+        for v in voters:
+            v['_id'] = str(v['_id'])
+
+    # Batch-fetch stats for ONLY this page (20 records) instead of ALL stats
+    epic_nos = [v['epic_no'] for v in voters if v.get('epic_no')]
+    stats_docs = {s['epic_no']: s for s in stats_col.find(
+        {'epic_no': {'$in': epic_nos}}, {'_id': 0}
+    )} if epic_nos else {}
 
     for v in voters:
-        s = all_stats.get(v['epic_no'], {})
+        s = stats_docs.get(v.get('epic_no', ''), {})
         v['gen_count'] = s.get('count', 0)
         v['last_generated'] = s.get('last_generated', '')
         v['photo_url'] = s.get('photo_url', '')
         v['card_url'] = s.get('card_url', '')
         v['auth_mobile'] = s.get('auth_mobile', '')
 
-    # Apply filters
-    if assembly:
-        voters = [v for v in voters if v.get('assembly', '') == assembly]
-    if district:
-        voters = [v for v in voters if v.get('district', '') == district]
-    if search:
-        sl = search.lower()
-        voters = [v for v in voters if
-                  sl in v.get('epic_no', '').lower() or
-                  sl in v.get('name', '').lower() or
-                  sl in v.get('assembly', '').lower() or
-                  sl in v.get('district', '').lower()]
-
-    total = len(voters)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    voters_page = voters[(page - 1) * per_page: page * per_page]
-
-    return jsonify({
-        'voters': voters_page,
+    response = {
+        'voters': voters,
         'total': total,
-        'page': page,
         'per_page': per_page,
-        'total_pages': total_pages,
-    })
+        'next_cursor': next_cursor,
+        'prev_cursor': prev_cursor,
+    }
+    if cursor:
+        response['has_next'] = len(voters) == per_page
+        response['has_prev'] = bool(cursor)
+        response['cursor_mode'] = True
+    else:
+        response['page'] = page
+        response['total_pages'] = total_pages
+        response['cursor_mode'] = False
+
+    return jsonify(response)
 
 
 # ── Generated Voters (from new DB) ──────────────────────────────
@@ -1248,79 +1501,106 @@ def generated_voters_list():
     per_page = min(max(per_page, 5), 100)
     search = request.args.get('search', '').strip()
 
-    voters = list(gen_voters_col.find({}, {'_id': 0}).sort('generated_at', -1))
+    # Build MongoDB query - server-side search
+    query = _build_search_filter(search, ['epic_no', 'name', 'ptc_code', 'mobile', 'assembly', 'district']) if search else {}
 
-    # Search filter
-    if search:
-        sl = search.lower()
-        voters = [v for v in voters if
-                  sl in v.get('epic_no', '').lower() or
-                  sl in v.get('name', '').lower() or
-                  sl in v.get('ptc_code', '').lower() or
-                  sl in v.get('mobile', '').lower() or
-                  sl in v.get('assembly', '').lower() or
-                  sl in v.get('district', '').lower()]
-
-    total = len(voters)
+    # Server-side count & pagination
+    total = gen_voters_col.count_documents(query)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    voters_page = voters[(page - 1) * per_page: page * per_page]
+    skip = (page - 1) * per_page
+
+    voters = list(gen_voters_col.find(query, {'_id': 0}).sort('generated_at', -1).skip(skip).limit(per_page))
 
     return render_template('admin/generated_voters.html',
-                           voters=voters_page, page=page,
+                           voters=voters, page=page,
                            total_pages=total_pages, total=total,
                            per_page=per_page, search=search)
 
 
 @admin_bp.route('/api/generated-voters')
 def api_generated_voters():
-    """JSON API for generated voters list with search and assembly/district filters."""
+    """JSON API for generated voters list - supports cursor-based & page-based pagination."""
     search = request.args.get('search', '').strip()
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
+    cursor = request.args.get('cursor', '').strip()
+    direction = request.args.get('direction', 'next').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    voters = list(gen_voters_col.find({}, {'_id': 0}).sort('generated_at', -1))
+    # Cached dropdown options (5 min TTL - distinct() is expensive at scale)
+    assemblies, districts = _get_cached_dropdowns(gen_voters_col, REDIS_DROPDOWN_GEN_KEY)
 
-    # Collect unique assemblies and districts for filter dropdowns
-    assemblies = sorted(set(v.get('assembly', '') for v in voters if v.get('assembly')))
-    districts = sorted(set(v.get('district', '') for v in voters if v.get('district')))
-
-    # Apply assembly filter
+    # Build base MongoDB query - all filtering in DB
+    conditions = []
     if assembly:
-        voters = [v for v in voters if v.get('assembly', '').lower() == assembly.lower()]
-
-    # Apply district filter
+        conditions.append({'assembly': {'$regex': f'^{re.escape(assembly)}$', '$options': 'i'}})
     if district:
-        voters = [v for v in voters if v.get('district', '').lower() == district.lower()]
-
-    # Apply search filter
+        conditions.append({'district': {'$regex': f'^{re.escape(district)}$', '$options': 'i'}})
     if search:
-        sl = search.lower()
-        voters = [v for v in voters if
-                  sl in v.get('epic_no', '').lower() or
-                  sl in v.get('name', '').lower() or
-                  sl in v.get('ptc_code', '').lower() or
-                  sl in v.get('mobile', '').lower() or
-                  sl in v.get('assembly', '').lower() or
-                  sl in v.get('district', '').lower()]
+        sf = _build_search_filter(search, ['epic_no', 'name', 'ptc_code', 'mobile', 'assembly', 'district'])
+        if sf:
+            conditions.append(sf)
+    base_query = _merge_conditions(conditions)
 
-    total = len(voters)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    voters_page = voters[(page - 1) * per_page: page * per_page]
+    # Server-side count
+    total = gen_voters_col.count_documents(base_query)
 
-    return jsonify({
-        'voters': voters_page,
-        'total': total,
-        'page': page,
-        'per_page': per_page,
-        'total_pages': total_pages,
-        'assemblies': assemblies,
-        'districts': districts,
-    })
+    if cursor:
+        # ── P2: Cursor-based pagination (no .skip - O(log n) for deep pages) ──
+        cursor_filter = _build_cursor_filter(cursor, direction, descending=True)
+        query = _merge_conditions([base_query, cursor_filter]) if cursor_filter else base_query
+
+        sort_dir = DESCENDING
+        if direction == 'prev':
+            sort_dir = ASCENDING
+        voters = list(gen_voters_col.find(query).sort('_id', sort_dir).limit(per_page))
+        if direction == 'prev':
+            voters.reverse()
+
+        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
+        prev_cursor = str(voters[0]['_id']) if voters else None
+        for v in voters:
+            v['_id'] = str(v['_id'])
+
+        return jsonify({
+            'voters': voters,
+            'total': total,
+            'per_page': per_page,
+            'next_cursor': next_cursor,
+            'prev_cursor': prev_cursor,
+            'has_next': len(voters) == per_page,
+            'has_prev': bool(cursor),
+            'assemblies': assemblies,
+            'districts': districts,
+            'cursor_mode': True,
+        })
+    else:
+        # ── Page-based (first load / fallback) ──
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        skip = (page - 1) * per_page
+        voters = list(gen_voters_col.find(base_query).sort('_id', DESCENDING).skip(skip).limit(per_page))
+
+        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
+        prev_cursor = None
+        for v in voters:
+            v['_id'] = str(v['_id'])
+
+        return jsonify({
+            'voters': voters,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages,
+            'next_cursor': next_cursor,
+            'prev_cursor': prev_cursor,
+            'assemblies': assemblies,
+            'districts': districts,
+            'cursor_mode': False,
+        })
 
 
 # ── Generated Voter Detail ──────────────────────────────────────
@@ -1354,36 +1634,31 @@ def volunteer_requests_page():
 
 @admin_bp.route('/api/volunteer-requests')
 def api_volunteer_requests():
-    """JSON API for volunteer requests."""
+    """JSON API for volunteer requests - server-side search & pagination."""
     search = request.args.get('search', '').strip()
     status = request.args.get('status', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    query = {}
+    conditions = []
     if status:
-        query['status'] = status
-
-    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('requested_at', -1))
-
+        conditions.append({'status': status})
     if search:
-        sl = search.lower()
-        items = [v for v in items if
-                 sl in v.get('name', '').lower() or
-                 sl in v.get('ptc_code', '').lower() or
-                 sl in v.get('epic_no', '').lower() or
-                 sl in v.get('mobile', '').lower() or
-                 sl in v.get('assembly', '').lower() or
-                 sl in v.get('district', '').lower()]
+        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile', 'assembly', 'district'])
+        if sf:
+            conditions.append(sf)
+    query = _merge_conditions(conditions)
 
-    total = len(items)
+    total = volunteer_requests_col.count_documents(query)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    items_page = items[(page - 1) * per_page: page * per_page]
+    skip = (page - 1) * per_page
+
+    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('requested_at', -1).skip(skip).limit(per_page))
 
     return jsonify({
-        'items': items_page,
+        'items': items,
         'total': total,
         'page': page,
         'per_page': per_page,
@@ -1431,29 +1706,28 @@ def confirmed_volunteers_page():
 
 @admin_bp.route('/api/confirmed-volunteers')
 def api_confirmed_volunteers():
-    """JSON API for confirmed volunteers."""
+    """JSON API for confirmed volunteers - server-side search & pagination."""
     search = request.args.get('search', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    items = list(volunteer_requests_col.find({'status': 'confirmed'}, {'_id': 0}).sort('reviewed_at', -1))
-
+    conditions = [{'status': 'confirmed'}]
     if search:
-        sl = search.lower()
-        items = [v for v in items if
-                 sl in v.get('name', '').lower() or
-                 sl in v.get('ptc_code', '').lower() or
-                 sl in v.get('epic_no', '').lower() or
-                 sl in v.get('mobile', '').lower()]
+        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile'])
+        if sf:
+            conditions.append(sf)
+    query = _merge_conditions(conditions)
 
-    total = len(items)
+    total = volunteer_requests_col.count_documents(query)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    items_page = items[(page - 1) * per_page: page * per_page]
+    skip = (page - 1) * per_page
+
+    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('reviewed_at', -1).skip(skip).limit(per_page))
 
     return jsonify({
-        'items': items_page, 'total': total,
+        'items': items, 'total': total,
         'page': page, 'per_page': per_page, 'total_pages': total_pages,
     })
 
@@ -1468,36 +1742,31 @@ def booth_agent_requests_page():
 
 @admin_bp.route('/api/booth-agent-requests')
 def api_booth_agent_requests():
-    """JSON API for booth agent requests."""
+    """JSON API for booth agent requests - server-side search & pagination."""
     search = request.args.get('search', '').strip()
     status = request.args.get('status', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    query = {}
+    conditions = []
     if status:
-        query['status'] = status
-
-    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('requested_at', -1))
-
+        conditions.append({'status': status})
     if search:
-        sl = search.lower()
-        items = [v for v in items if
-                 sl in v.get('name', '').lower() or
-                 sl in v.get('ptc_code', '').lower() or
-                 sl in v.get('epic_no', '').lower() or
-                 sl in v.get('mobile', '').lower() or
-                 sl in v.get('assembly', '').lower() or
-                 sl in v.get('district', '').lower()]
+        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile', 'assembly', 'district'])
+        if sf:
+            conditions.append(sf)
+    query = _merge_conditions(conditions)
 
-    total = len(items)
+    total = booth_agent_requests_col.count_documents(query)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    items_page = items[(page - 1) * per_page: page * per_page]
+    skip = (page - 1) * per_page
+
+    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('requested_at', -1).skip(skip).limit(per_page))
 
     return jsonify({
-        'items': items_page,
+        'items': items,
         'total': total,
         'page': page,
         'per_page': per_page,
@@ -1545,29 +1814,28 @@ def confirmed_booth_agents_page():
 
 @admin_bp.route('/api/confirmed-booth-agents')
 def api_confirmed_booth_agents():
-    """JSON API for confirmed booth agents."""
+    """JSON API for confirmed booth agents - server-side search & pagination."""
     search = request.args.get('search', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    items = list(booth_agent_requests_col.find({'status': 'confirmed'}, {'_id': 0}).sort('reviewed_at', -1))
-
+    conditions = [{'status': 'confirmed'}]
     if search:
-        sl = search.lower()
-        items = [v for v in items if
-                 sl in v.get('name', '').lower() or
-                 sl in v.get('ptc_code', '').lower() or
-                 sl in v.get('epic_no', '').lower() or
-                 sl in v.get('mobile', '').lower()]
+        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile'])
+        if sf:
+            conditions.append(sf)
+    query = _merge_conditions(conditions)
 
-    total = len(items)
+    total = booth_agent_requests_col.count_documents(query)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    items_page = items[(page - 1) * per_page: page * per_page]
+    skip = (page - 1) * per_page
+
+    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('reviewed_at', -1).skip(skip).limit(per_page))
 
     return jsonify({
-        'items': items_page, 'total': total,
+        'items': items, 'total': total,
         'page': page, 'per_page': per_page, 'total_pages': total_pages,
     })
 

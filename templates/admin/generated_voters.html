@@ -206,9 +206,15 @@
   var debounceTimer   = null;
   var fetchController = null;
   var allVotersCache  = [];  // Cache for detail lookup
+  var pageCache       = {};  // Client-side page cache to avoid re-fetching
+  var dropdownsCached = false; // Cache filter dropdown options (rarely change)
+  var nextCursor      = null;  // P2: cursor-based pagination
+  var prevCursor      = null;
+  var cursorMode      = false; // Switches after first page load
 
-  /* ── Fetch generated voters from API ── */
-  function fetchVoters() {
+  /* ── Fetch generated voters from API (cursor-based or page-based) ── */
+  function fetchVoters(opts) {
+    opts = opts || {};
     if (fetchController) fetchController.abort();
     fetchController = new AbortController();
 
@@ -217,17 +223,46 @@
     if (q) params.set('search', q);
     if (assemblyFilter.value) params.set('assembly', assemblyFilter.value);
     if (districtFilter.value) params.set('district', districtFilter.value);
-    params.set('page', currentPage);
     params.set('per_page', perPage);
+
+    // Use cursor if navigating with cursor-based pagination
+    if (opts.cursor) {
+      params.set('cursor', opts.cursor);
+      params.set('direction', opts.direction || 'next');
+    } else {
+      params.set('page', currentPage);
+    }
+
+    var cacheKey = params.toString();
+
+    // Return cached data if available
+    if (!opts.skipCache && pageCache[cacheKey]) {
+      var cached = pageCache[cacheKey];
+      allVotersCache = cached.voters;
+      nextCursor = cached.next_cursor || null;
+      prevCursor = cached.prev_cursor || null;
+      cursorMode = cached.cursor_mode || false;
+      renderTable(cached.voters, cached.page || 1, cached.per_page, cached.total, q);
+      renderPagination(cached);
+      countLabel.textContent = cached.total;
+      updateFilterDropdowns(cached.assemblies || [], cached.districts || []);
+      updateClearBtn(q);
+      updateActiveFilters();
+      return;
+    }
 
     spinner.classList.add('active');
 
     fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
       .then(function(r) { return r.json(); })
       .then(function(data) {
+        pageCache[cacheKey] = data;
         allVotersCache = data.voters;
-        renderTable(data.voters, data.page, data.per_page, data.total, q);
-        renderPagination(data.page, data.total_pages);
+        nextCursor = data.next_cursor || null;
+        prevCursor = data.prev_cursor || null;
+        cursorMode = data.cursor_mode || false;
+        renderTable(data.voters, data.page || 1, data.per_page, data.total, q);
+        renderPagination(data);
         countLabel.textContent = data.total;
         updateFilterDropdowns(data.assemblies || [], data.districts || []);
         spinner.classList.remove('active');
@@ -243,8 +278,11 @@
     updateActiveFilters();
   }
 
-  /* ── Update filter dropdowns (preserve selection) ── */
+  /* ── Update filter dropdowns (cache after first load — values rarely change) ── */
   function updateFilterDropdowns(assemblies, districts) {
+    if (dropdownsCached) return;
+    dropdownsCached = true;
+
     var curA = assemblyFilter.value;
     var curD = districtFilter.value;
 
@@ -283,6 +321,10 @@
 
   window.triggerFilterChange = function() {
     currentPage = 1;
+    nextCursor = null;
+    prevCursor = null;
+    cursorMode = false;
+    pageCache = {};  // Clear page cache when filters change
     fetchVoters();
   };
 
@@ -319,13 +361,22 @@
         '<td>' + highlight(v.mobile || '—', hl) + '</td>' +
         '<td>' + highlight(v.assembly || '—', hl) + '</td>' +
         '<td><code style="font-size:0.78rem;">' + highlight(refId, hl) + '</code></td>' +
-        '<td>' + (refCount > 0 ? '<span class="badge bg-success">' + refCount + '</span>' : '<span class="text-muted">0</span>') + '</td>' +
+        '<td class="ref-count-cell" data-ptc="' + escHtml(v.ptc_code) + '" style="cursor:pointer;" title="View referred voters"><span class="badge bg-' + (refCount > 0 ? 'success' : 'secondary') + '">' + refCount + '</span></td>' +
         '<td style="font-size:0.8rem;color:#888;">' + genAt + '</td>' +
         '</tr>';
     });
     tbody.innerHTML = html;
 
-    // Attach click handlers for detail view
+    // Attach click handlers for referred count — navigate to detail page
+    tbody.querySelectorAll('.ref-count-cell').forEach(function(cell) {
+      cell.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var ptc = this.dataset.ptc;
+        if (ptc) window.location.href = '/admin/generated-voters/' + encodeURIComponent(ptc);
+      });
+    });
+
+    // Attach click handlers for detail view (row click → modal)
     tbody.querySelectorAll('.voter-row').forEach(function(row) {
       row.addEventListener('click', function() {
         var idx = parseInt(this.dataset.idx);
@@ -433,8 +484,48 @@
     return d.innerHTML;
   }
 
-  /* ── Render pagination ── */
-  function renderPagination(page, totalPages) {
+  /* ── Render pagination (cursor-based or page-based) ── */
+  function renderPagination(data) {
+    if (data.cursor_mode || nextCursor || prevCursor) {
+      // ── Cursor-based: Prev / Next only (O(log n) at any depth) ──
+      var hasPrev = data.has_prev && prevCursor;
+      var hasNext = data.has_next !== false && nextCursor;
+      if (!hasPrev && !hasNext) {
+        paginationNav.style.display = 'none';
+        return;
+      }
+      paginationNav.style.cssText = '';
+      var html = '<ul class="pagination pagination-sm mb-0">';
+      html += '<li class="page-item ' + (hasPrev ? '' : 'disabled') + '">' +
+        '<a class="page-link" href="#" id="cursorPrev"><i class="bi bi-chevron-left"></i> Prev</a></li>';
+      html += '<li class="page-item disabled"><span class="page-link text-muted" style="min-width:120px;text-align:center;">Total: ' + (data.total || 0).toLocaleString() + '</span></li>';
+      html += '<li class="page-item ' + (hasNext ? '' : 'disabled') + '">' +
+        '<a class="page-link" href="#" id="cursorNext">Next <i class="bi bi-chevron-right"></i></a></li>';
+      html += '</ul>';
+      paginationNav.innerHTML = html;
+
+      var prevBtn = document.getElementById('cursorPrev');
+      var nextBtn = document.getElementById('cursorNext');
+      if (prevBtn && hasPrev) {
+        prevBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          fetchVoters({ cursor: prevCursor, direction: 'prev' });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
+      if (nextBtn && hasNext) {
+        nextBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          fetchVoters({ cursor: nextCursor, direction: 'next' });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      }
+      return;
+    }
+
+    // ── Page-based (first load) ──
+    var page = data.page || 1;
+    var totalPages = data.total_pages || 1;
     if (totalPages <= 1) {
       paginationNav.style.display = 'none';
       return;
@@ -472,8 +563,15 @@
         e.preventDefault();
         var pg = parseInt(this.dataset.page);
         if (pg >= 1 && pg <= totalPages && pg !== page) {
-          currentPage = pg;
-          fetchVoters();
+          // After first page, switch to cursor-based when cursors available
+          if (pg === page + 1 && nextCursor) {
+            fetchVoters({ cursor: nextCursor, direction: 'next' });
+          } else if (pg === page - 1 && prevCursor) {
+            fetchVoters({ cursor: prevCursor, direction: 'prev' });
+          } else {
+            currentPage = pg;
+            fetchVoters();
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       });
@@ -486,6 +584,10 @@
 
   function triggerSearch(delay) {
     currentPage = 1;
+    nextCursor = null;
+    prevCursor = null;
+    cursorMode = false;
+    pageCache = {};  // Clear page cache when search changes
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(fetchVoters, delay);
   }
@@ -509,6 +611,10 @@
     searchInput.value = '';
     updateClearBtn('');
     currentPage = 1;
+    nextCursor = null;
+    prevCursor = null;
+    cursorMode = false;
+    pageCache = {};
     clearTimeout(debounceTimer);
     fetchVoters();
     searchInput.focus();
@@ -534,6 +640,10 @@
       this.classList.add('btn-dark');
       perPage = parseInt(this.dataset.pp);
       currentPage = 1;
+      nextCursor = null;
+      prevCursor = null;
+      cursorMode = false;
+      pageCache = {};
       fetchVoters();
     });
   });
