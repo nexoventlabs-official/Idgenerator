@@ -64,6 +64,39 @@
       </div>
     </div>
   </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#e0f2f1; color:#00695c;">
+        <i class="bi bi-share-fill"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.total_referrals }}</div>
+        <div class="stat-label">Total Referrals</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#fff8e1; color:#f57f17;">
+        <i class="bi bi-person-badge-fill"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.pending_volunteers }} <small style="font-size:0.55em;color:#888">/ {{ stats.confirmed_volunteers }}</small></div>
+        <div class="stat-label">Volunteers (Pending / Confirmed)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#fce4ec; color:#880e4f;">
+        <i class="bi bi-shop"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.pending_booth_agents }} <small style="font-size:0.55em;color:#888">/ {{ stats.confirmed_booth_agents }}</small></div>
+        <div class="stat-label">Booth Agents (Pending / Confirmed)</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Quick Status -->

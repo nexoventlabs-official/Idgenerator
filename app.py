@@ -65,6 +65,8 @@ gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
 stats_col = gen_db[config.MONGO_STATS_COLLECTION]
 verified_mobiles_col = gen_db['verified_mobiles']
 otp_col = gen_db['otp_sessions']
+volunteer_requests_col = gen_db['volunteer_requests']
+booth_agent_requests_col = gen_db['booth_agent_requests']
 
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
@@ -80,8 +82,16 @@ try:
     gen_voters_col.create_index('ptc_code', unique=True)
     gen_voters_col.create_index('epic_no')
     gen_voters_col.create_index('mobile')
+    gen_voters_col.create_index('referral_id', unique=True, sparse=True)
+    gen_voters_col.create_index('referred_by_ptc')
     otp_col.create_index('mobile', unique=True)
     verified_mobiles_col.create_index('mobile', unique=True)
+    volunteer_requests_col.create_index('ptc_code', unique=True)
+    volunteer_requests_col.create_index('mobile')
+    volunteer_requests_col.create_index('status')
+    booth_agent_requests_col.create_index('ptc_code', unique=True)
+    booth_agent_requests_col.create_index('mobile')
+    booth_agent_requests_col.create_index('status')
     logger.info("MongoDB (generated) connected & indexes ensured.")
 except Exception as e:
     logger.warning(f"MongoDB (generated) index creation skipped: {e}")
@@ -292,7 +302,8 @@ def generate_ptc_code() -> str:
     return f'PTC-{ts}'
 
 
-def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str):
+def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str,
+                        referred_by_ptc: str = '', referred_by_referral_id: str = ''):
     """Save a generated voter record to the new Generated Voters DB."""
     doc = {
         'ptc_code': ptc_code,
@@ -305,11 +316,54 @@ def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str
         'card_url': card_url,
         'generated_at': datetime.now(timezone.utc).isoformat(),
     }
+    if referred_by_ptc:
+        doc['referred_by_ptc'] = referred_by_ptc
+    if referred_by_referral_id:
+        doc['referred_by_referral_id'] = referred_by_referral_id
     gen_voters_col.update_one(
         {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
         {'$set': doc},
         upsert=True
     )
+    # If referred, increment referrer's count
+    if referred_by_ptc:
+        gen_voters_col.update_one(
+            {'ptc_code': referred_by_ptc},
+            {'$inc': {'referred_members_count': 1}}
+        )
+
+
+def get_or_create_referral(ptc_code: str) -> dict | None:
+    """Return { referral_id, referral_link } — idempotent."""
+    voter = gen_voters_col.find_one({'ptc_code': ptc_code})
+    if not voter:
+        return None
+    if voter.get('referral_id'):
+        return {
+            'referral_id': voter['referral_id'],
+            'referral_link': f"{config.BASE_URL}/refer/{ptc_code}/{voter['referral_id']}"
+        }
+    chars = string.ascii_uppercase + string.digits
+    rid = ''
+    for _ in range(100):
+        rid = 'REF-' + ''.join(random.choices(chars, k=8))
+        if not gen_voters_col.find_one({'referral_id': rid}):
+            break
+    link = f"{config.BASE_URL}/refer/{ptc_code}/{rid}"
+    gen_voters_col.update_one(
+        {'ptc_code': ptc_code},
+        {'$set': {
+            'referral_id': rid,
+            'referral_link': link,
+        },
+         '$setOnInsert': {'referred_members_count': 0}}
+    )
+    # Ensure referred_members_count exists
+    gen_voters_col.update_one(
+        {'ptc_code': ptc_code, 'referred_members_count': {'$exists': False}},
+        {'$set': {'referred_members_count': 0}}
+    )
+    return {'referral_id': rid, 'referral_link': link}
 
 
 def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '', auth_mobile: str = ''):
@@ -469,6 +523,28 @@ def get_dashboard_stats():
         cloudinary_credits = "N/A"
         sms_balance = "N/A"
 
+    # New stats — referrals, volunteers, booth agents
+    try:
+        total_referrals = gen_voters_col.aggregate([
+            {'$group': {'_id': None, 'total': {'$sum': '$referred_members_count'}}}
+        ])
+        total_referrals = list(total_referrals)
+        total_referrals = total_referrals[0]['total'] if total_referrals else 0
+    except Exception:
+        total_referrals = 0
+    try:
+        pending_volunteers = volunteer_requests_col.count_documents({'status': 'pending'})
+        confirmed_volunteers = volunteer_requests_col.count_documents({'status': 'confirmed'})
+    except Exception:
+        pending_volunteers = 0
+        confirmed_volunteers = 0
+    try:
+        pending_booth_agents = booth_agent_requests_col.count_documents({'status': 'pending'})
+        confirmed_booth_agents = booth_agent_requests_col.count_documents({'status': 'confirmed'})
+    except Exception:
+        pending_booth_agents = 0
+        confirmed_booth_agents = 0
+
     return {
         'total_voters': total_voters,
         'total_generated': total_generated,
@@ -478,7 +554,12 @@ def get_dashboard_stats():
         'db_connected': db_connected,
         'mongodb_size_mb': mongodb_size_mb,
         'cloudinary_credits': cloudinary_credits,
-        'sms_balance': sms_balance
+        'sms_balance': sms_balance,
+        'total_referrals': total_referrals,
+        'pending_volunteers': pending_volunteers,
+        'confirmed_volunteers': confirmed_volunteers,
+        'pending_booth_agents': pending_booth_agents,
+        'confirmed_booth_agents': confirmed_booth_agents,
     }
 
 
@@ -661,7 +742,10 @@ def chat_generate_card():
         increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url, auth_mobile=mobile_num)
 
         # Save to Generated Voters DB (new MongoDB)
-        save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code)
+        ref_ptc = request.form.get('ref_ptc', '').strip()
+        ref_rid = request.form.get('ref_rid', '').strip()
+        save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code,
+                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid)
 
         # Now mark mobile as verified (only after successful card generation)
         if mobile_num:
@@ -754,6 +838,155 @@ def verify_voter(epic_no):
     return render_template('user/verify.html',
                            voter=voter,
                            extra_fields=extra_fields)
+
+
+# ── Referral Landing Page ────────────────────────────────────────
+
+@app.route('/refer/<ptc_code>/<referral_id>')
+def referral_landing(ptc_code, referral_id):
+    """Validate referral link and redirect to chatbot with ref params."""
+    voter = gen_voters_col.find_one({'ptc_code': ptc_code, 'referral_id': referral_id})
+    if not voter:
+        flash('Invalid referral link.', 'danger')
+        return redirect(url_for('user_home'))
+    return redirect(url_for('user_home') + f'?ref={ptc_code}&rid={referral_id}')
+
+
+# ── New Chatbot API Endpoints ────────────────────────────────────
+
+@app.route('/api/chat/get-referral-link', methods=['POST'])
+def chat_get_referral_link():
+    """Get or create unique referral link for a voter."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    voter = gen_voters_col.find_one({'mobile': mobile})
+    if not voter or not voter.get('ptc_code'):
+        return jsonify({'success': False, 'message': 'Voter not found.'}), 404
+
+    result = get_or_create_referral(voter['ptc_code'])
+    if not result:
+        return jsonify({'success': False, 'message': 'Could not generate referral link.'}), 500
+
+    return jsonify({
+        'success': True,
+        'referral_id': result['referral_id'],
+        'referral_link': result['referral_link'],
+        'ptc_code': voter['ptc_code']
+    })
+
+
+@app.route('/api/chat/my-members', methods=['POST'])
+def chat_my_members():
+    """Get list of voters referred by this voter."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    voter = gen_voters_col.find_one({'mobile': mobile})
+    if not voter or not voter.get('ptc_code'):
+        return jsonify({'success': False, 'message': 'Voter not found.'}), 404
+
+    ptc_code = voter['ptc_code']
+    members = list(gen_voters_col.find(
+        {'referred_by_ptc': ptc_code},
+        {'_id': 0, 'name': 1, 'epic_no': 1, 'assembly': 1, 'district': 1,
+         'ptc_code': 1, 'generated_at': 1, 'mobile': 1}
+    ).sort('generated_at', -1))
+
+    return jsonify({
+        'success': True,
+        'referrer_name': voter.get('name', ''),
+        'referrer_ptc': ptc_code,
+        'total_referred': len(members),
+        'members': members
+    })
+
+
+@app.route('/api/chat/request-volunteer', methods=['POST'])
+def chat_request_volunteer():
+    """Submit a volunteer request."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    voter = gen_voters_col.find_one({'mobile': mobile})
+    if not voter or not voter.get('ptc_code'):
+        return jsonify({'success': False, 'message': 'Voter not found.'}), 404
+
+    existing = volunteer_requests_col.find_one({'ptc_code': voter['ptc_code']})
+    if existing:
+        return jsonify({
+            'success': True,
+            'already_requested': True,
+            'status': existing.get('status', 'pending'),
+            'message': 'You have already submitted a volunteer request.'
+        })
+
+    doc = {
+        'ptc_code': voter['ptc_code'],
+        'epic_no': voter.get('epic_no', ''),
+        'name': voter.get('name', ''),
+        'mobile': mobile,
+        'assembly': voter.get('assembly', ''),
+        'district': voter.get('district', ''),
+        'photo_url': voter.get('photo_url', ''),
+        'status': 'pending',
+        'requested_at': datetime.now(timezone.utc).isoformat(),
+        'reviewed_at': None,
+        'reviewed_by': None,
+    }
+    volunteer_requests_col.insert_one(doc)
+    return jsonify({'success': True, 'already_requested': False, 'message': 'Volunteer request submitted.'})
+
+
+@app.route('/api/chat/request-booth-agent', methods=['POST'])
+def chat_request_booth_agent():
+    """Submit a booth agent request."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    voter = gen_voters_col.find_one({'mobile': mobile})
+    if not voter or not voter.get('ptc_code'):
+        return jsonify({'success': False, 'message': 'Voter not found.'}), 404
+
+    existing = booth_agent_requests_col.find_one({'ptc_code': voter['ptc_code']})
+    if existing:
+        return jsonify({
+            'success': True,
+            'already_requested': True,
+            'status': existing.get('status', 'pending'),
+            'message': 'You have already submitted a booth agent request.'
+        })
+
+    doc = {
+        'ptc_code': voter['ptc_code'],
+        'epic_no': voter.get('epic_no', ''),
+        'name': voter.get('name', ''),
+        'mobile': mobile,
+        'assembly': voter.get('assembly', ''),
+        'district': voter.get('district', ''),
+        'photo_url': voter.get('photo_url', ''),
+        'status': 'pending',
+        'requested_at': datetime.now(timezone.utc).isoformat(),
+        'reviewed_at': None,
+        'reviewed_by': None,
+    }
+    booth_agent_requests_col.insert_one(doc)
+    return jsonify({'success': True, 'already_requested': False, 'message': 'Booth agent request submitted.'})
+
+
+@app.route('/api/whatsapp-channel')
+def api_whatsapp_channel():
+    """Return WhatsApp channel URL."""
+    url = config.WHATSAPP_CHANNEL_URL
+    return jsonify({'url': url})
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1087,6 +1320,255 @@ def api_generated_voters():
         'total_pages': total_pages,
         'assemblies': assemblies,
         'districts': districts,
+    })
+
+
+# ── Generated Voter Detail ──────────────────────────────────────
+
+@admin_bp.route('/generated-voters/<ptc_code>')
+def generated_voter_detail(ptc_code):
+    """Show full details for a generated voter including referred voters."""
+    voter = gen_voters_col.find_one({'ptc_code': ptc_code}, {'_id': 0})
+    if not voter:
+        flash('Generated voter not found.', 'danger')
+        return redirect(url_for('admin.generated_voters_list'))
+
+    # Get referred voters
+    referred = list(gen_voters_col.find(
+        {'referred_by_ptc': ptc_code},
+        {'_id': 0, 'name': 1, 'epic_no': 1, 'ptc_code': 1, 'mobile': 1,
+         'assembly': 1, 'district': 1, 'generated_at': 1, 'photo_url': 1}
+    ).sort('generated_at', -1))
+
+    return render_template('admin/generated_voter_detail.html',
+                           voter=voter, referred=referred)
+
+
+# ── Volunteer Requests ───────────────────────────────────────────
+
+@admin_bp.route('/volunteer-requests')
+def volunteer_requests_page():
+    """Show volunteer requests."""
+    return render_template('admin/volunteer_requests.html')
+
+
+@admin_bp.route('/api/volunteer-requests')
+def api_volunteer_requests():
+    """JSON API for volunteer requests."""
+    search = request.args.get('search', '').strip()
+    status = request.args.get('status', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+
+    query = {}
+    if status:
+        query['status'] = status
+
+    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('requested_at', -1))
+
+    if search:
+        sl = search.lower()
+        items = [v for v in items if
+                 sl in v.get('name', '').lower() or
+                 sl in v.get('ptc_code', '').lower() or
+                 sl in v.get('epic_no', '').lower() or
+                 sl in v.get('mobile', '').lower() or
+                 sl in v.get('assembly', '').lower() or
+                 sl in v.get('district', '').lower()]
+
+    total = len(items)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items_page = items[(page - 1) * per_page: page * per_page]
+
+    return jsonify({
+        'items': items_page,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+    })
+
+
+@admin_bp.route('/api/volunteer-requests/<ptc_code>/confirm', methods=['POST'])
+def confirm_volunteer(ptc_code):
+    """Confirm a volunteer request."""
+    result = volunteer_requests_col.update_one(
+        {'ptc_code': ptc_code, 'status': 'pending'},
+        {'$set': {
+            'status': 'confirmed',
+            'reviewed_at': datetime.now(timezone.utc).isoformat(),
+            'reviewed_by': config.ADMIN_USERNAME,
+        }}
+    )
+    if result.modified_count:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
+
+
+@admin_bp.route('/api/volunteer-requests/<ptc_code>/reject', methods=['POST'])
+def reject_volunteer(ptc_code):
+    """Reject a volunteer request."""
+    result = volunteer_requests_col.update_one(
+        {'ptc_code': ptc_code, 'status': 'pending'},
+        {'$set': {
+            'status': 'rejected',
+            'reviewed_at': datetime.now(timezone.utc).isoformat(),
+            'reviewed_by': config.ADMIN_USERNAME,
+        }}
+    )
+    if result.modified_count:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
+
+
+@admin_bp.route('/confirmed-volunteers')
+def confirmed_volunteers_page():
+    """Show confirmed volunteers."""
+    return render_template('admin/confirmed_volunteers.html')
+
+
+@admin_bp.route('/api/confirmed-volunteers')
+def api_confirmed_volunteers():
+    """JSON API for confirmed volunteers."""
+    search = request.args.get('search', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+
+    items = list(volunteer_requests_col.find({'status': 'confirmed'}, {'_id': 0}).sort('reviewed_at', -1))
+
+    if search:
+        sl = search.lower()
+        items = [v for v in items if
+                 sl in v.get('name', '').lower() or
+                 sl in v.get('ptc_code', '').lower() or
+                 sl in v.get('epic_no', '').lower() or
+                 sl in v.get('mobile', '').lower()]
+
+    total = len(items)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items_page = items[(page - 1) * per_page: page * per_page]
+
+    return jsonify({
+        'items': items_page, 'total': total,
+        'page': page, 'per_page': per_page, 'total_pages': total_pages,
+    })
+
+
+# ── Booth Agent Requests ─────────────────────────────────────────
+
+@admin_bp.route('/booth-agent-requests')
+def booth_agent_requests_page():
+    """Show booth agent requests."""
+    return render_template('admin/booth_agent_requests.html')
+
+
+@admin_bp.route('/api/booth-agent-requests')
+def api_booth_agent_requests():
+    """JSON API for booth agent requests."""
+    search = request.args.get('search', '').strip()
+    status = request.args.get('status', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+
+    query = {}
+    if status:
+        query['status'] = status
+
+    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('requested_at', -1))
+
+    if search:
+        sl = search.lower()
+        items = [v for v in items if
+                 sl in v.get('name', '').lower() or
+                 sl in v.get('ptc_code', '').lower() or
+                 sl in v.get('epic_no', '').lower() or
+                 sl in v.get('mobile', '').lower() or
+                 sl in v.get('assembly', '').lower() or
+                 sl in v.get('district', '').lower()]
+
+    total = len(items)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items_page = items[(page - 1) * per_page: page * per_page]
+
+    return jsonify({
+        'items': items_page,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+    })
+
+
+@admin_bp.route('/api/booth-agent-requests/<ptc_code>/confirm', methods=['POST'])
+def confirm_booth_agent(ptc_code):
+    """Confirm a booth agent request."""
+    result = booth_agent_requests_col.update_one(
+        {'ptc_code': ptc_code, 'status': 'pending'},
+        {'$set': {
+            'status': 'confirmed',
+            'reviewed_at': datetime.now(timezone.utc).isoformat(),
+            'reviewed_by': config.ADMIN_USERNAME,
+        }}
+    )
+    if result.modified_count:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
+
+
+@admin_bp.route('/api/booth-agent-requests/<ptc_code>/reject', methods=['POST'])
+def reject_booth_agent(ptc_code):
+    """Reject a booth agent request."""
+    result = booth_agent_requests_col.update_one(
+        {'ptc_code': ptc_code, 'status': 'pending'},
+        {'$set': {
+            'status': 'rejected',
+            'reviewed_at': datetime.now(timezone.utc).isoformat(),
+            'reviewed_by': config.ADMIN_USERNAME,
+        }}
+    )
+    if result.modified_count:
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
+
+
+@admin_bp.route('/confirmed-booth-agents')
+def confirmed_booth_agents_page():
+    """Show confirmed booth agents."""
+    return render_template('admin/confirmed_booth_agents.html')
+
+
+@admin_bp.route('/api/confirmed-booth-agents')
+def api_confirmed_booth_agents():
+    """JSON API for confirmed booth agents."""
+    search = request.args.get('search', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+
+    items = list(booth_agent_requests_col.find({'status': 'confirmed'}, {'_id': 0}).sort('reviewed_at', -1))
+
+    if search:
+        sl = search.lower()
+        items = [v for v in items if
+                 sl in v.get('name', '').lower() or
+                 sl in v.get('ptc_code', '').lower() or
+                 sl in v.get('epic_no', '').lower() or
+                 sl in v.get('mobile', '').lower()]
+
+    total = len(items)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items_page = items[(page - 1) * per_page: page * per_page]
+
+    return jsonify({
+        'items': items_page, 'total': total,
+        'page': page, 'per_page': per_page, 'total_pages': total_pages,
     })
 
 

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Confirmed Booth Agents{% endblock %}
+{% block page_title %}Confirmed Booth Agents{% endblock %}
+
+{% block extra_css %}
+  .req-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
+  .req-table td { font-size: 0.88rem; vertical-align: middle; }
+  .ptc-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;
+    background: #e8f5e9; color: #2e7d32; font-family: monospace; letter-spacing: 0.5px;
+  }
+  .filter-bar { background: #f8f9fa; border-radius: 12px; padding: 0.75rem 1rem; }
+  .filter-bar input { font-size: 0.85rem; border-radius: 8px; }
+  .no-results { padding: 3rem 1rem; text-align: center; color: #999; }
+  .no-results i { font-size: 2.5rem; opacity: 0.3; }
+  .loading-spinner { display: none; text-align: center; padding: 2rem; color: #aaa; font-size: 0.88rem; }
+  .loading-spinner.active { display: block; }
+  .loading-spinner .spinner-border { width: 1.2rem; height: 1.2rem; border-width: 2px; }
+{% endblock %}
+
+{% block content %}
+
+<div class="filter-bar mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col-lg-4 col-md-6">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+        <input type="text" id="searchInput" class="form-control border-start-0"
+               placeholder="Search by name, PTC code, mobile..." autocomplete="off">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+  <div class="table-responsive">
+    <table class="table table-hover req-table mb-0">
+      <thead class="table-light">
+        <tr>
+          <th style="width:40px">#</th>
+          <th>PTC Code</th>
+          <th>Name</th>
+          <th>Epic Number</th>
+          <th>Mobile</th>
+          <th>Assembly</th>
+          <th>District</th>
+          <th>Confirmed At</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+  <div id="loadingSpinner" class="loading-spinner">
+    <span class="spinner-border text-secondary"></span> Loading...
+  </div>
+</div>
+
+<nav class="mt-3 d-flex justify-content-center" id="paginationNav" style="display:none !important;"></nav>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var API = '{{ url_for("admin.api_confirmed_booth_agents") }}';
+  var searchInput = document.getElementById('searchInput');
+  var tbody = document.getElementById('tableBody');
+  var spinner = document.getElementById('loadingSpinner');
+  var paginationNav = document.getElementById('paginationNav');
+  var currentPage = 1, perPage = 20, debounceTimer = null;
+
+  function fetchData() {
+    var params = new URLSearchParams();
+    if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
+    params.set('page', currentPage);
+    params.set('per_page', perPage);
+    spinner.classList.add('active');
+
+    fetch(API + '?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        renderTable(data.items, data.page, data.per_page, data.total);
+        renderPagination(data.page, data.total_pages);
+        spinner.classList.remove('active');
+      })
+      .catch(function() { spinner.classList.remove('active'); });
+  }
+
+  function renderTable(items, page, pp, total) {
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="no-results"><i class="bi bi-inbox d-block mb-2"></i>No confirmed booth agents found.</td></tr>';
+      return;
+    }
+    var html = '';
+    items.forEach(function(v, i) {
+      var num = (page - 1) * pp + i + 1;
+      var dt = v.reviewed_at ? v.reviewed_at.substring(0, 19).replace('T', ' ') : '—';
+      html += '<tr>' +
+        '<td class="text-muted">' + num + '</td>' +
+        '<td><span class="ptc-badge">' + esc(v.ptc_code || '—') + '</span></td>' +
+        '<td class="fw-semibold">' + esc(v.name || '—') + '</td>' +
+        '<td><code>' + esc(v.epic_no || '—') + '</code></td>' +
+        '<td>' + esc(v.mobile || '—') + '</td>' +
+        '<td>' + esc(v.assembly || '—') + '</td>' +
+        '<td>' + esc(v.district || '—') + '</td>' +
+        '<td style="font-size:0.8rem;color:#888;">' + dt + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+  function renderPagination(page, totalPages) {
+    if (totalPages <= 1) { paginationNav.style.display = 'none'; return; }
+    paginationNav.style.cssText = '';
+    var html = '<ul class="pagination pagination-sm mb-0">';
+    html += '<li class="page-item ' + (page <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" data-page="' + (page - 1) + '"><i class="bi bi-chevron-left"></i></a></li>';
+    for (var p = Math.max(1, page - 3); p <= Math.min(totalPages, page + 3); p++) {
+      html += '<li class="page-item ' + (p === page ? 'active' : '') + '"><a class="page-link" href="#" data-page="' + p + '">' + p + '</a></li>';
+    }
+    html += '<li class="page-item ' + (page >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" data-page="' + (page + 1) + '"><i class="bi bi-chevron-right"></i></a></li>';
+    html += '</ul>';
+    paginationNav.innerHTML = html;
+    paginationNav.querySelectorAll('a[data-page]').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        var pg = parseInt(this.dataset.page);
+        if (pg >= 1 && pg <= totalPages && pg !== page) { currentPage = pg; fetchData(); }
+      });
+    });
+  }
+
+  searchInput.addEventListener('input', function() { currentPage = 1; clearTimeout(debounceTimer); debounceTimer = setTimeout(fetchData, 250); });
+  fetchData();
+})();
+</script>
+{% endblock %}

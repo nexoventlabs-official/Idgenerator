@@ -46,6 +46,9 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 # ── YouTube Data API ─────────────────────────────────────────────
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
+# ── WhatsApp Channel ─────────────────────────────────────────────
+WHATSAPP_CHANNEL_URL = os.getenv("WHATSAPP_CHANNEL_URL", "")
+
 
 # ── Font Settings ─────────────────────────────────────────────────
 FONT_SIZE = 30

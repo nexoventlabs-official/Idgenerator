@@ -158,7 +158,8 @@
           <th>Name</th>
           <th>Mobile</th>
           <th>Assembly</th>
-          <th>District</th>
+          <th>Referral ID</th>
+          <th>Referred</th>
           <th style="width:145px">Generated At</th>
         </tr>
       </thead>
@@ -288,7 +289,7 @@
   /* ── Render table rows ── */
   function renderTable(voters, page, pp, total, query) {
     if (!voters.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="no-results">' +
+      tbody.innerHTML = '<tr><td colspan="10" class="no-results">' +
         '<i class="bi bi-inbox d-block mb-2"></i>No generated voters found.</td></tr>';
       return;
     }
@@ -306,6 +307,8 @@
       }
 
       var genAt = v.generated_at ? v.generated_at.substring(0, 19).replace('T', ' ') : '—';
+      var refId = v.referral_id || '—';
+      var refCount = v.referred_members_count || 0;
 
       html += '<tr class="voter-row" data-idx="' + i + '">' +
         '<td class="text-muted">' + num + '</td>' +
@@ -315,7 +318,8 @@
         '<td class="fw-semibold">' + highlight(v.name || '—', hl) + '</td>' +
         '<td>' + highlight(v.mobile || '—', hl) + '</td>' +
         '<td>' + highlight(v.assembly || '—', hl) + '</td>' +
-        '<td>' + highlight(v.district || '—', hl) + '</td>' +
+        '<td><code style="font-size:0.78rem;">' + highlight(refId, hl) + '</code></td>' +
+        '<td>' + (refCount > 0 ? '<span class="badge bg-success">' + refCount + '</span>' : '<span class="text-muted">0</span>') + '</td>' +
         '<td style="font-size:0.8rem;color:#888;">' + genAt + '</td>' +
         '</tr>';
     });
@@ -363,6 +367,16 @@
     html += '<tr><th>Generated At</th><td>' + genAt + '</td></tr>';
     html += '</table>';
 
+    // Referral info
+    html += '<div class="detail-section-label">Referral Information</div>';
+    html += '<table class="table detail-table">';
+    html += '<tr><th>Referral ID</th><td><code>' + escHtml(v.referral_id || 'Not generated') + '</code></td></tr>';
+    html += '<tr><th>Referred Members</th><td><span class="badge bg-' + ((v.referred_members_count || 0) > 0 ? 'success' : 'secondary') + '">' + (v.referred_members_count || 0) + '</span></td></tr>';
+    if (v.referred_by_ptc) {
+      html += '<tr><th>Referred By</th><td><span class="ptc-badge">' + escHtml(v.referred_by_ptc) + '</span></td></tr>';
+    }
+    html += '</table>';
+
     // Card preview if available
     if (v.card_url) {
       html += '<div class="detail-section-label">Generated Card</div>';
@@ -373,6 +387,9 @@
 
     // Actions
     html += '<div class="detail-actions">';
+    if (v.ptc_code) {
+      html += '<a href="/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '" class="btn btn-sm btn-outline-dark"><i class="bi bi-box-arrow-up-right me-1"></i>Full Detail</a>';
+    }
     if (v.card_url) {
       html += '<a href="' + escHtml(v.card_url) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View Card</a>';
       html += '<a href="' + escHtml(v.card_url) + '" download class="btn btn-sm btn-outline-success"><i class="bi bi-download me-1"></i>Download</a>';

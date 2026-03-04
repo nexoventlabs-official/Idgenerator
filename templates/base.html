@@ -110,6 +110,33 @@
         </a>
       </li>
     </ul>
+    <div class="sidebar-section">Volunteer & Booth Agent</div>
+    <ul class="sidebar-nav">
+      <li>
+        <a href="{{ url_for('admin.volunteer_requests_page') }}"
+           class="{{ 'active' if request.endpoint == 'admin.volunteer_requests_page' }}">
+          <i class="bi bi-person-badge-fill"></i> Volunteer Requests
+        </a>
+      </li>
+      <li>
+        <a href="{{ url_for('admin.confirmed_volunteers_page') }}"
+           class="{{ 'active' if request.endpoint == 'admin.confirmed_volunteers_page' }}">
+          <i class="bi bi-person-check"></i> Confirmed Volunteers
+        </a>
+      </li>
+      <li>
+        <a href="{{ url_for('admin.booth_agent_requests_page') }}"
+           class="{{ 'active' if request.endpoint == 'admin.booth_agent_requests_page' }}">
+          <i class="bi bi-shop"></i> Booth Agent Requests
+        </a>
+      </li>
+      <li>
+        <a href="{{ url_for('admin.confirmed_booth_agents_page') }}"
+           class="{{ 'active' if request.endpoint == 'admin.confirmed_booth_agents_page' }}">
+          <i class="bi bi-shop-window"></i> Confirmed Booth Agents
+        </a>
+      </li>
+    </ul>
     <div class="sidebar-section">Quick Links</div>
     <ul class="sidebar-nav">
       <li>
