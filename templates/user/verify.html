@@ -251,6 +251,11 @@
 
       <div class="voter-name">{{ voter.name }}</div>
       <div class="voter-epic-code">{{ voter.epic_no }}</div>
+      {% if voter.ptc_code %}
+      <div style="font-family:monospace; font-size:0.85rem; color:#2e7d32; font-weight:700; letter-spacing:1px; margin-bottom:0.5rem;">
+        {{ voter.ptc_code }}
+      </div>
+      {% endif %}
 
       <div class="verified-badge">
         <i class="bi bi-patch-check-fill"></i> Verified Voter
@@ -267,6 +272,12 @@
           <span class="d-label">Epic Number</span>
           <span class="d-value" style="font-family:monospace;">{{ voter.epic_no }}</span>
         </div>
+        {% if voter.ptc_code %}
+        <div class="d-item">
+          <span class="d-label">PTC Code</span>
+          <span class="d-value" style="font-family:monospace; color:#2e7d32;">{{ voter.ptc_code }}</span>
+        </div>
+        {% endif %}
         {% if voter.auth_mobile %}
         <div class="d-item">
           <span class="d-label">Auth Mobile</span>

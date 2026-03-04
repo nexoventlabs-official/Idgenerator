@@ -87,12 +87,10 @@ def generate_qr_code(voter: dict) -> Image.Image:
         qr_data = verify_url
     else:
         qr_data = (
-            f"EPIC:{voter.get('epic_no', '')}\n"
             f"NAME:{voter.get('name', '')}\n"
             f"ASSEMBLY:{voter.get('assembly', '')}\n"
             f"DISTRICT:{voter.get('district', '')}\n"
-            f"MOBILE:{voter.get('auth_mobile', '')}\n"
-            f"SN:{voter.get('serial_number', '')}"
+            f"PTC:{voter.get('serial_number', '')}"
         )
     qr = qrcode.QRCode(
         version=config.QR_VERSION,
@@ -107,7 +105,8 @@ def generate_qr_code(voter: dict) -> Image.Image:
     )
     qr.add_data(qr_data)
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
+    bg_color = getattr(config, 'QR_BG_COLOR_UPPER', (229, 232, 237))
+    qr_img = qr.make_image(fill_color="black", back_color=bg_color).convert('RGB')
     box_w = config.QR_BOX[2] - config.QR_BOX[0]
     box_h = config.QR_BOX[3] - config.QR_BOX[1]
     return qr_img.resize((box_w, box_h), Image.LANCZOS)
@@ -153,16 +152,46 @@ def load_member_photo(photo_path: str = '', epic_no: str = '') -> Image.Image:
 
 
 def resize_photo_to_box(photo: Image.Image) -> Image.Image:
+    """Crop-to-fill the photo into the box and apply rounded corners."""
     box_w = config.PHOTO_BOX[2] - config.PHOTO_BOX[0]
     box_h = config.PHOTO_BOX[3] - config.PHOTO_BOX[1]
     img_w, img_h = photo.size
-    ratio = min(box_w / img_w, box_h / img_h)
+
+    # Crop-to-fill: scale so the smallest side fills the box, then centre-crop
+    ratio = max(box_w / img_w, box_h / img_h)
     new_w = int(img_w * ratio)
     new_h = int(img_h * ratio)
     resized = photo.resize((new_w, new_h), Image.LANCZOS)
-    result = Image.new('RGB', (box_w, box_h), color=(240, 240, 240))
-    result.paste(resized, ((box_w - new_w) // 2, (box_h - new_h) // 2))
-    return result
+
+    # Centre crop
+    left = (new_w - box_w) // 2
+    top = (new_h - box_h) // 2
+    cropped = resized.crop((left, top, left + box_w, top + box_h))
+
+    # Apply rounded corners and black border
+    radius = getattr(config, 'PHOTO_BORDER_RADIUS', 0)
+    border_w = getattr(config, 'PHOTO_BORDER_WIDTH', 3)
+    border_color = getattr(config, 'PHOTO_BORDER_COLOR', (0, 0, 0))
+
+    cropped = cropped.convert('RGBA')
+    if radius > 0:
+        # Round the corners with alpha mask
+        mask = Image.new('L', (box_w, box_h), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle([0, 0, box_w, box_h], radius=radius, fill=255)
+        cropped.putalpha(mask)
+
+    # Draw black rounded border on top of the photo
+    if border_w > 0:
+        border_draw = ImageDraw.Draw(cropped)
+        border_draw.rounded_rectangle(
+            [0, 0, box_w - 1, box_h - 1],
+            radius=radius,
+            outline=border_color + (255,),
+            width=border_w
+        )
+
+    return cropped
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -205,26 +234,39 @@ def generate_card(voter: dict, template: Image.Image,
     else:
         photo = load_member_photo(epic_no=voter.get('epic_no', ''))
     photo_resized = resize_photo_to_box(photo)
-    card.paste(photo_resized, (config.PHOTO_BOX[0], config.PHOTO_BOX[1]))
+    # Paste with alpha mask if photo has rounded corners (RGBA)
+    if photo_resized.mode == 'RGBA':
+        card.paste(photo_resized, (config.PHOTO_BOX[0], config.PHOTO_BOX[1]), photo_resized)
+    else:
+        card.paste(photo_resized, (config.PHOTO_BOX[0], config.PHOTO_BOX[1]))
 
     # ── 3. QR code ───────────────────────────────────────────────
     serial = voter.get('serial_number', generate_serial_number(voter.get('epic_no', '')))
     voter['serial_number'] = serial
 
+    # Paint over the template's white box with a smooth gradient sampled from
+    # left/right neighbours so it blends seamlessly into the card background.
+    wb = getattr(config, 'QR_WHITE_BOX', (318, 390, 486, 613))
+    for row_y in range(wb[1], wb[3] + 1):
+        # Sample the card colour just outside the left and right edges
+        lx = wb[0] - 3
+        rx = wb[2] + 3
+        lr, lg, lb = card.getpixel((lx, row_y))[:3]
+        rr, rg, rb = card.getpixel((rx, row_y))[:3]
+        # Average left and right to get the fill colour for this row
+        fill = ((lr + rr) // 2, (lg + rg) // 2, (lb + rb) // 2)
+        draw.line([(wb[0], row_y), (wb[2], row_y)], fill=fill)
+
     qr_img = generate_qr_code(voter)
     card.paste(qr_img, (config.QR_BOX[0], config.QR_BOX[1]))
 
     # ── 4. Text below QR ─────────────────────────────────────────
+    # Show only the PTC unique code below QR (no EPIC number)
     vid_font = load_bold_font(config.QR_ID_FONT_SIZE)
-    vid_text = voter.get('epic_no', '')
+    vid_text = serial  # PTC-XXXXXXX code
     vid_w = get_text_width(vid_text, vid_font)
     vid_x = config.QR_ID_XY[0] - vid_w // 2
     draw.text((vid_x, config.QR_ID_XY[1]), vid_text, fill=config.QR_FONT_COLOR, font=vid_font)
-
-    sn_font = load_font(config.QR_SERIAL_FONT_SIZE)
-    sn_w = get_text_width(serial, sn_font)
-    sn_x = config.QR_SERIAL_XY[0] - sn_w // 2
-    draw.text((sn_x, config.QR_SERIAL_XY[1]), serial, fill=config.QR_FONT_COLOR, font=sn_font)
 
     # ── 5. Return the card image (caller handles upload) ─────────
     return card.convert('RGB')

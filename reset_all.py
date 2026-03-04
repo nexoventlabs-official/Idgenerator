@@ -41,3 +41,16 @@ print(f"Deleted {res_stats.deleted_count} generation stats.")
 
 res_otp = otp_col.delete_many({})
 print(f"Deleted {res_otp.deleted_count} OTP records.")
+
+# Generated Voters MongoDB (second cluster)
+gen_uri = os.getenv('GEN_MONGO_URI')
+if gen_uri:
+    gen_client = MongoClient(gen_uri, tlsCAFile=certifi.where())
+    gen_db = gen_client[os.getenv('GEN_MONGO_DB_NAME', 'generated_voters')]
+    gen_col = gen_db[os.getenv('GEN_MONGO_COLLECTION', 'generated_voters')]
+    res_gen = gen_col.delete_many({})
+    print(f"Deleted {res_gen.deleted_count} generated voters.")
+else:
+    print("No GEN_MONGO_URI set, skipping generated voters.")
+
+print("Reset complete.")

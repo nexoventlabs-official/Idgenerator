@@ -30,6 +30,8 @@ import cloudinary.uploader
 import cloudinary.api
 from pymongo import MongoClient
 
+import string
+
 import config
 from generate_cards import (
     setup_logging, generate_card, generate_serial_number,
@@ -51,7 +53,7 @@ ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 
 logger = setup_logging()
 
-# ── MongoDB Setup ────────────────────────────────────────────────
+# ── MongoDB Setup (Main DB — voter data from XLSX imports) ───────
 mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
@@ -59,11 +61,19 @@ stats_col = db[config.MONGO_STATS_COLLECTION]
 verified_mobiles_col = db['verified_mobiles']
 otp_col = db['otp_sessions']
 
+# ── MongoDB Setup (Generated Voters DB — cards generated via chatbot) ──
+gen_mongo_client = MongoClient(config.GEN_MONGO_URI, serverSelectionTimeoutMS=5000)
+gen_db = gen_mongo_client[config.GEN_MONGO_DB_NAME]
+gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
+
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
     voters_col.create_index('epic_no', unique=True)
     stats_col.create_index('epic_no', unique=True)
-    logger.info("MongoDB connected & indexes ensured.")
+    gen_voters_col.create_index('ptc_code', unique=True)
+    gen_voters_col.create_index('epic_no')
+    gen_voters_col.create_index('mobile')
+    logger.info("MongoDB connected & indexes ensured (both DBs).")
 except Exception as e:
     logger.warning(f"MongoDB index creation skipped: {e}")
 
@@ -261,6 +271,38 @@ def replace_all_voters(voter_list: list[dict]) -> int:
 #  GENERATION STATS (MongoDB)
 # ══════════════════════════════════════════════════════════════════
 
+def generate_ptc_code() -> str:
+    """Generate a unique PTC-XXXXXXX code (7 alphanumeric chars, uppercase)."""
+    chars = string.ascii_uppercase + string.digits
+    for _ in range(100):  # max retries to avoid infinite loop
+        code = 'PTC-' + ''.join(random.choices(chars, k=7))
+        if not gen_voters_col.find_one({'ptc_code': code}):
+            return code
+    # Fallback: use timestamp-based
+    ts = datetime.now(timezone.utc).strftime('%y%m%d%H%M%S%f')[:7]
+    return f'PTC-{ts}'
+
+
+def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str):
+    """Save a generated voter record to the new Generated Voters DB."""
+    doc = {
+        'ptc_code': ptc_code,
+        'epic_no': voter.get('epic_no', ''),
+        'name': voter.get('name', ''),
+        'assembly': voter.get('assembly', ''),
+        'district': voter.get('district', ''),
+        'mobile': mobile,
+        'photo_url': photo_url,
+        'card_url': card_url,
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    gen_voters_col.update_one(
+        {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
+        {'$set': doc},
+        upsert=True
+    )
+
+
 def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '', auth_mobile: str = ''):
     """Increment generation count; optionally update photo_url, card_url, auth_mobile."""
     update = {
@@ -373,6 +415,12 @@ def get_dashboard_stats():
         total_generations = sum(s['count'] for s in all_stats.values())
         cards_on_cloud = sum(1 for s in all_stats.values() if s.get('card_url'))
         db_connected = True
+
+        # Generated voters count from new DB
+        try:
+            generated_voters_count = gen_voters_col.count_documents({})
+        except Exception:
+            generated_voters_count = 0
         
         # MongoDB Storage
         db_stats = db.command("dbstats")
@@ -403,6 +451,7 @@ def get_dashboard_stats():
         total_generated = 0
         total_generations = 0
         cards_on_cloud = 0
+        generated_voters_count = 0
         db_connected = False
         mongodb_size_mb = 0
         cloudinary_credits = "N/A"
@@ -413,6 +462,7 @@ def get_dashboard_stats():
         'total_generated': total_generated,
         'total_generations': total_generations,
         'cards_on_cloud': cards_on_cloud,
+        'generated_voters_count': generated_voters_count,
         'db_connected': db_connected,
         'mongodb_size_mb': mongodb_size_mb,
         'cloudinary_credits': cloudinary_credits,
@@ -586,7 +636,10 @@ def chat_generate_card():
         return jsonify({'success': False, 'message': 'Could not process the uploaded photo.'}), 500
 
     try:
-        voter['serial_number'] = generate_serial_number(epic_no)
+        # Generate unique PTC code for this registration
+        ptc_code = generate_ptc_code()
+
+        voter['serial_number'] = ptc_code
         voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
         voter['auth_mobile'] = mobile_num
         template = Image.open(config.TEMPLATE_PATH).convert('RGBA')
@@ -594,6 +647,9 @@ def chat_generate_card():
         card_url = upload_card_to_cloudinary(card_image, epic_no)
 
         increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url, auth_mobile=mobile_num)
+
+        # Save to Generated Voters DB (new MongoDB)
+        save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code)
 
         # Now mark mobile as verified (only after successful card generation)
         if mobile_num:
@@ -603,7 +659,7 @@ def chat_generate_card():
                 upsert=True
             )
 
-        return jsonify({'success': True, 'card_url': card_url, 'epic_no': epic_no})
+        return jsonify({'success': True, 'card_url': card_url, 'epic_no': epic_no, 'ptc_code': ptc_code})
     except Exception as e:
         logger.error(f"Card generation error for {epic_no}: {e}")
         return jsonify({'success': False, 'message': 'Card generation failed. Please try again.'}), 500
@@ -673,10 +729,14 @@ def verify_voter(epic_no):
     voter['card_url'] = s.get('card_url', '')
     voter['auth_mobile'] = s.get('auth_mobile', '')
 
+    # Attach PTC code from generated voters DB
+    gen_doc = gen_voters_col.find_one({'epic_no': epic_no}, {'ptc_code': 1})
+    voter['ptc_code'] = gen_doc.get('ptc_code', '') if gen_doc else ''
+
     # Separate core fields from extra fields
     core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count',
                  'last_generated', 'photo_url', 'card_url', 'serial_number',
-                 'verify_url', 'auth_mobile'}
+                 'verify_url', 'auth_mobile', 'ptc_code'}
     extra_fields = {k: v for k, v in voter.items() if k not in core_keys and v}
 
     return render_template('user/verify.html',
@@ -916,6 +976,74 @@ def api_voters():
         voters = [v for v in voters if
                   sl in v.get('epic_no', '').lower() or
                   sl in v.get('name', '').lower() or
+                  sl in v.get('assembly', '').lower() or
+                  sl in v.get('district', '').lower()]
+
+    total = len(voters)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    voters_page = voters[(page - 1) * per_page: page * per_page]
+
+    return jsonify({
+        'voters': voters_page,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+    })
+
+
+# ── Generated Voters (from new DB) ──────────────────────────────
+
+@admin_bp.route('/generated-voters')
+def generated_voters_list():
+    """Show all voters who generated ID cards via the chatbot."""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+    search = request.args.get('search', '').strip()
+
+    voters = list(gen_voters_col.find({}, {'_id': 0}).sort('generated_at', -1))
+
+    # Search filter
+    if search:
+        sl = search.lower()
+        voters = [v for v in voters if
+                  sl in v.get('epic_no', '').lower() or
+                  sl in v.get('name', '').lower() or
+                  sl in v.get('ptc_code', '').lower() or
+                  sl in v.get('mobile', '').lower() or
+                  sl in v.get('assembly', '').lower() or
+                  sl in v.get('district', '').lower()]
+
+    total = len(voters)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    voters_page = voters[(page - 1) * per_page: page * per_page]
+
+    return render_template('admin/generated_voters.html',
+                           voters=voters_page, page=page,
+                           total_pages=total_pages, total=total,
+                           per_page=per_page, search=search)
+
+
+@admin_bp.route('/api/generated-voters')
+def api_generated_voters():
+    """JSON API for generated voters list."""
+    search = request.args.get('search', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(max(per_page, 5), 100)
+
+    voters = list(gen_voters_col.find({}, {'_id': 0}).sort('generated_at', -1))
+
+    if search:
+        sl = search.lower()
+        voters = [v for v in voters if
+                  sl in v.get('epic_no', '').lower() or
+                  sl in v.get('name', '').lower() or
+                  sl in v.get('ptc_code', '').lower() or
+                  sl in v.get('mobile', '').lower() or
                   sl in v.get('assembly', '').lower() or
                   sl in v.get('district', '').lower()]
 

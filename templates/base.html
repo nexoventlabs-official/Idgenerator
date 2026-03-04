@@ -98,6 +98,12 @@
         </a>
       </li>
       <li>
+        <a href="{{ url_for('admin.generated_voters_list') }}"
+           class="{{ 'active' if request.endpoint == 'admin.generated_voters_list' }}">
+          <i class="bi bi-person-check-fill"></i> Generated Voters
+        </a>
+      </li>
+      <li>
         <a href="{{ url_for('admin.import_xlsx') }}"
            class="{{ 'active' if request.endpoint == 'admin.import_xlsx' }}">
           <i class="bi bi-file-earmark-spreadsheet"></i> Import XLSX

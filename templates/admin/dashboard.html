@@ -51,6 +51,21 @@
   </div>
 </div>
 
+<!-- Generated Voters Row -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#f3e5f5; color:#7b1fa2;">
+        <i class="bi bi-person-vcard-fill"></i>
+      </div>
+      <div>
+        <div class="stat-value">{{ stats.generated_voters_count }}</div>
+        <div class="stat-label">Generated Voters (New DB)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Quick Status -->
 <div class="row g-3 mb-4">
   <div class="col-lg-6">
@@ -110,6 +125,9 @@
           </a>
           <a href="{{ url_for('admin.voters_list') }}" class="btn btn-outline-success btn-sm">
             <i class="bi bi-people me-1"></i> View Voters
+          </a>
+          <a href="{{ url_for('admin.generated_voters_list') }}" class="btn btn-outline-info btn-sm">
+            <i class="bi bi-person-vcard me-1"></i> Generated Voters
           </a>
           <a href="{{ url_for('user_home') }}" target="_blank" class="btn btn-outline-danger btn-sm">
             <i class="bi bi-box-arrow-up-right me-1"></i> Open User Site

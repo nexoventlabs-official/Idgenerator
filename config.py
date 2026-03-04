@@ -21,11 +21,16 @@ UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
 # Excel — temporary local copy used during import parsing
 VOTERS_XLSX = os.path.join(DATA_DIR, 'voters.xlsx')
 
-# ── MongoDB ──────────────────────────────────────────────────────
+# ── MongoDB (Main — voter data from XLSX imports) ────────────────
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "voter_id_generator")
 MONGO_VOTERS_COLLECTION = os.getenv("MONGO_VOTERS_COLLECTION", "voters")
 MONGO_STATS_COLLECTION = os.getenv("MONGO_STATS_COLLECTION", "generation_stats")
+
+# ── MongoDB (Generated Voters — cards generated via chatbot) ─────
+GEN_MONGO_URI = os.getenv("GEN_MONGO_URI", "")
+GEN_MONGO_DB_NAME = os.getenv("GEN_MONGO_DB_NAME", "generated_voters")
+GEN_MONGO_COLLECTION = os.getenv("GEN_MONGO_COLLECTION", "generated_voters")
 
 # ── Cloudinary ───────────────────────────────────────────────────
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
@@ -84,10 +89,18 @@ DISTRICT_END_X = 695
 DISTRICT_MAX_WIDTH = 517
 
 # ── Photo Box ────────────────────────────────────────────────────
-PHOTO_BOX = (63, 402, 246, 600)
+# Slightly overlaps into the border (2px each side) to eliminate edge gaps
+PHOTO_BOX = (60, 397, 249, 604)
+PHOTO_BORDER_RADIUS = 24
+PHOTO_BORDER_WIDTH = 3
+PHOTO_BORDER_COLOR = (0, 0, 0)
 
 # ── QR Code Settings ─────────────────────────────────────────────
 QR_BOX = (338, 418, 468, 548)
+QR_WHITE_BOX = (318, 390, 486, 613)  # Template's built-in white box around QR area
+QR_WHITE_BOX_MID_Y = 580  # Split line between upper & lower fill zones
+QR_BG_COLOR_UPPER = (229, 232, 237)  # Matches card background at QR height (blue-grey tint)
+QR_BG_COLOR_LOWER = (243, 243, 243)  # Matches card background at bottom zone
 QR_ID_XY = (403, 555)
 QR_ID_FONT_SIZE = 18
 QR_SERIAL_XY = (403, 582)
