@@ -373,12 +373,40 @@ def get_dashboard_stats():
         total_generations = sum(s['count'] for s in all_stats.values())
         cards_on_cloud = sum(1 for s in all_stats.values() if s.get('card_url'))
         db_connected = True
+        
+        # MongoDB Storage
+        db_stats = db.command("dbstats")
+        mongodb_size_mb = round(db_stats.get("dataSize", 0) / (1024 * 1024), 2)
+        
+        # Cloudinary Quota
+        cloudinary_credits = "N/A"
+        try:
+            cli_usage = cloudinary.api.usage()
+            used = cli_usage.get('credits', {}).get('usage', 0)
+            cloudinary_credits = f"{round(used, 2)}"
+        except Exception:
+            pass
+            
+        # 2Factor SMS Balance
+        sms_balance = "N/A"
+        sms_api_key = os.getenv('SMS_API_KEY', '')
+        if sms_api_key:
+            try:
+                resp = http_requests.get(f"https://2factor.in/API/V1/{sms_api_key}/BAL/SMS", timeout=5)
+                if resp.status_code == 200:
+                    sms_balance = resp.json().get('Details', 'N/A')
+            except Exception:
+                pass
+                
     except Exception:
         total_voters = 0
         total_generated = 0
         total_generations = 0
         cards_on_cloud = 0
         db_connected = False
+        mongodb_size_mb = 0
+        cloudinary_credits = "N/A"
+        sms_balance = "N/A"
 
     return {
         'total_voters': total_voters,
@@ -386,6 +414,9 @@ def get_dashboard_stats():
         'total_generations': total_generations,
         'cards_on_cloud': cards_on_cloud,
         'db_connected': db_connected,
+        'mongodb_size_mb': mongodb_size_mb,
+        'cloudinary_credits': cloudinary_credits,
+        'sms_balance': sms_balance
     }
 
 

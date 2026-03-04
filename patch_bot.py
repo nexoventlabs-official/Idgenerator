@@ -125,6 +125,14 @@ new_script = r"""(function () {
         b.className = 'bubble';
         b.innerHTML = html + '<span class="time">' + now() + '</span>';
         div.appendChild(b);
+
+        if (type === 'user') {
+          const userIcon = document.createElement('div');
+          userIcon.className = 'user-avatar-svg';
+          userIcon.innerHTML = '<i class="bi bi-person-fill"></i>';
+          div.appendChild(userIcon);
+        }
+
         chatEl.appendChild(div);
         scroll();
       }
@@ -207,7 +215,7 @@ new_script = r"""(function () {
       }
 
       /* ── Banner URL ── */
-      const BANNER = "/static/banner.png";
+      const BANNER = "/static/banner.jpg";
 
       /* ── Init ── */
       async function init() {

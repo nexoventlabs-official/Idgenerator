@@ -24,22 +24,20 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: #e9ebee;
-      /* Telegram Web typical background */
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      background: #efeae2;
+      /* WhatsApp Web background */
     }
 
     /* ── Chat App Container ── */
     .chat-app {
       width: 100%;
-      height: 100vh;
+      height: 100%;
+      max-height: 100dvh;
       display: flex;
       flex-direction: column;
       position: relative;
       overflow: hidden;
-      background: #e9ebee;
+      background: #efeae2;
     }
 
     /* ── Chat Wallpaper ── */
@@ -49,22 +47,24 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: #e9ebee;
+      background-color: #efeae2;
+      background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+      opacity: 0.6;
       z-index: 0;
     }
 
     /* ── Header ── */
     .chat-header {
-      background: #ffffff;
-      color: #000000;
-      padding: 12px 20px;
+      background: #008069;
+      color: #ffffff;
+      padding: max(12px, env(safe-area-inset-top)) 20px 12px 20px;
       display: flex;
       align-items: center;
       gap: 14px;
       z-index: 10;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       flex-shrink: 0;
-      border-bottom: 1px solid #dfe1e5;
+      border-bottom: none;
     }
 
     .chat-header .avatar {
@@ -95,20 +95,20 @@
       font-size: 1.1rem;
       font-weight: 700;
       margin: 0;
-      color: #222;
+      color: #fff;
     }
 
     .chat-header .info .status {
       font-size: 0.82rem;
       font-weight: 500;
-      color: #3390ec;
+      color: #00a884;
       margin-top: 2px;
     }
 
     .chat-header .actions {
       display: flex;
       gap: 16px;
-      color: #888;
+      color: #fff;
       font-size: 1.3rem;
     }
 
@@ -155,6 +155,24 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
+    .user-avatar-svg {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #00a884;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    body.dark-mode .user-avatar-svg {
+      background: #005c4b;
+    }
+
     .message.bot {
       justify-content: flex-start;
     }
@@ -170,19 +188,25 @@
       font-size: 0.95rem;
       line-height: 1.5;
       position: relative;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
       word-wrap: break-word;
       color: #000;
+
+      /* Glassy Polished Style */
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.6);
     }
 
     .message.bot .bubble {
-      background: #ffffff;
+      background: rgba(255, 255, 255, 0.65);
       border-bottom-left-radius: 4px;
     }
 
     .message.user .bubble {
-      background: #eef2f5;
+      background: rgba(217, 253, 211, 0.7);
       border-bottom-right-radius: 4px;
+      border-color: rgba(255, 255, 255, 0.4);
     }
 
     .bubble .time {
@@ -223,8 +247,8 @@
 
     .btn-reply {
       background: #f0f4f9;
-      color: #3390ec;
-      border: 1px solid rgba(51, 144, 236, 0.3);
+      color: #00a884;
+      border: 1px solid rgba(0, 168, 132, 0.3);
       border-radius: 12px;
       padding: 10px 0;
       font-weight: 600;
@@ -354,14 +378,14 @@
     }
 
     .action-btn.confirm {
-      background: #3390ec;
+      background: #00a884;
       color: #fff;
-      box-shadow: 0 2px 6px rgba(51, 144, 236, 0.25);
+      box-shadow: 0 2px 6px rgba(0, 168, 132, 0.25);
     }
 
     .action-btn.confirm:hover {
-      background: #2a81d6;
-      box-shadow: 0 4px 10px rgba(51, 144, 236, 0.35);
+      background: #008069;
+      box-shadow: 0 4px 10px rgba(0, 168, 132, 0.35);
     }
 
     .action-btn.cancel {
@@ -376,22 +400,22 @@
     /* ── Upload Area ── */
     .upload-area {
       margin-top: 10px;
-      border: 2px dashed #3390ec;
+      border: 2px dashed #00a884;
       border-radius: 12px;
       padding: 20px;
       text-align: center;
       cursor: pointer;
       transition: all 0.2s;
-      background: rgba(51, 144, 236, 0.03);
+      background: rgba(0, 168, 132, 0.03);
     }
 
     .upload-area:hover {
-      background: rgba(51, 144, 236, 0.08);
+      background: rgba(0, 168, 132, 0.08);
     }
 
     .upload-area i {
       font-size: 2.2rem;
-      color: #3390ec;
+      color: #00a884;
     }
 
     .upload-area p {
@@ -400,43 +424,72 @@
       color: #666;
     }
 
-    /* ── Card Preview ── */
+    /* ── Card Preview & Actions ── */
+    .card-preview {
+      position: relative;
+      max-width: 320px;
+      margin-top: 10px;
+      border-radius: 8px;
+    }
+
     .card-preview img {
       width: 100%;
-      max-width: 300px;
       border-radius: 8px;
-      margin-top: 10px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
       display: block;
     }
 
-    .download-btn {
-      display: inline-flex;
-      align-items: center;
+    .card-actions-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
       gap: 8px;
-      background: #3390ec;
-      color: #fff;
-      border: none;
-      padding: 12px 26px;
-      border-radius: 24px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 14px;
-      text-decoration: none;
-      transition: background 0.2s, box-shadow 0.2s;
+      z-index: 5;
     }
 
-    .download-btn:hover {
-      background: #2a81d6;
-      color: #fff;
-      box-shadow: 0 4px 12px rgba(51, 144, 236, 0.3);
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.85);
+      color: #00a884;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      font-size: 1.1rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      transition: all 0.2s;
+    }
+
+    .icon-btn:hover {
+      background: #fff;
+      transform: scale(1.08);
+      color: #008069;
+    }
+
+    body.dark-mode .icon-btn {
+      background: rgba(32, 44, 51, 0.85);
+      color: #00a884;
+    }
+
+    .vertical-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 16px;
+      width: 100%;
+      max-width: 320px;
     }
 
     /* ── Input Area ── */
     .chat-input-area {
       background: #ffffff;
-      padding: 12px 10%;
+      padding: 12px 10% max(12px, env(safe-area-inset-bottom));
       display: flex;
       align-items: center;
       gap: 12px;
@@ -462,7 +515,7 @@
 
     .chat-input-area .attach-btn:hover {
       background: #e0e3e6;
-      color: #3390ec;
+      color: #00a884;
     }
 
     .chat-input-area .attach-btn.visible {
@@ -488,7 +541,7 @@
     }
 
     .input-wrapper input:focus {
-      border-color: #3390ec;
+      border-color: #00a884;
     }
 
     .input-wrapper input::placeholder {
@@ -499,7 +552,7 @@
       width: 48px;
       height: 48px;
       border: none;
-      background: #3390ec;
+      background: #00a884;
       color: #fff;
       border-radius: 50%;
       display: flex;
@@ -509,11 +562,11 @@
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
       flex-shrink: 0;
-      box-shadow: 0 2px 6px rgba(51, 144, 236, 0.3);
+      box-shadow: 0 2px 6px rgba(0, 168, 132, 0.3);
     }
 
     .chat-input-area .send-btn:hover {
-      background: #2a81d6;
+      background: #008069;
       transform: scale(1.05);
     }
 
@@ -562,7 +615,7 @@
       }
 
       .chat-input-area {
-        padding: 10px 5%;
+        padding: 10px 5% max(10px, env(safe-area-inset-bottom));
       }
     }
 
@@ -572,7 +625,7 @@
       }
 
       .chat-input-area {
-        padding: 8px 12px;
+        padding: 8px 12px max(8px, env(safe-area-inset-bottom));
         gap: 8px;
       }
 
@@ -586,7 +639,7 @@
       }
 
       .chat-header {
-        padding: 10px 14px;
+        padding: max(10px, env(safe-area-inset-top)) 14px 10px 14px;
         gap: 10px;
       }
 
@@ -627,8 +680,8 @@
       display: inline-block;
       width: 18px;
       height: 18px;
-      border: 3px solid rgba(51, 144, 236, 0.3);
-      border-top-color: #3390ec;
+      border: 3px solid rgba(0, 168, 132, 0.3);
+      border-top-color: #00a884;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       vertical-align: middle;
@@ -648,7 +701,7 @@
       gap: 6px;
       font-size: 0.8rem;
       font-weight: 700;
-      color: #666;
+      color: rgba(255, 255, 255, 0.9);
       cursor: pointer;
     }
 
@@ -672,7 +725,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: #ced4da;
+      background-color: rgba(255, 255, 255, 0.3);
       transition: .3s;
       border-radius: 24px;
     }
@@ -691,7 +744,7 @@
     }
 
     input:checked+.slider {
-      background-color: #3390ec;
+      background-color: #00a884;
     }
 
     input:checked+.slider:before {
@@ -707,19 +760,19 @@
     }
 
     body.dark-mode input:checked+.slider {
-      background-color: #3390ec;
+      background-color: #00a884;
     }
 
     /* ── Dark Mode ── */
     body.dark-mode,
     body.dark-mode .chat-app,
     body.dark-mode .chat-wallpaper {
-      background: #0f0f0f !important;
+      background: #0b141a !important;
     }
 
     body.dark-mode .chat-header {
-      background: #1a1a1a !important;
-      border-bottom: 1px solid #333 !important;
+      background: #202c33 !important;
+      border-bottom: none !important;
       color: #fff !important;
     }
 
@@ -732,22 +785,29 @@
     }
 
     body.dark-mode .message.bot .bubble {
-      background: #262626 !important;
-      color: #fff !important;
+      background: rgba(32, 44, 51, 0.7) !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #e9edef !important;
     }
 
     body.dark-mode .message.user .bubble {
-      background: #1a3c5a !important;
-      color: #fff !important;
+      background: rgba(0, 92, 75, 0.7) !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #e9edef !important;
     }
 
     body.dark-mode .chat-input-area {
-      background: #1a1a1a !important;
-      border-top: 1px solid #333 !important;
+      background: #202c33 !important;
+      border-top: none !important;
     }
 
     body.dark-mode .input-wrapper {
-      background: #262626 !important;
+      background: transparent !important;
+    }
+
+    body.dark-mode .input-wrapper input {
+      background: #2a3942 !important;
+      border-color: #2a3942 !important;
     }
 
     body.dark-mode input#messageInput {
@@ -756,9 +816,9 @@
     }
 
     body.dark-mode .voter-details-card {
-      background: #262626 !important;
-      border-color: #333 !important;
-      color: #ccc !important;
+      background: #202c33 !important;
+      border-color: #2a3942 !important;
+      color: #aebac1 !important;
     }
 
     body.dark-mode .voter-details-card .detail-row {
@@ -766,7 +826,7 @@
     }
 
     body.dark-mode .voter-details-card .detail-value {
-      color: #fff !important;
+      color: #e9edef !important;
     }
 
     body.dark-mode .date-chip {
@@ -777,7 +837,7 @@
     body.dark-mode .btn-reply {
       background: #262626 !important;
       border-color: #444 !important;
-      color: #3390ec !important;
+      color: #00a884 !important;
     }
 
     body.dark-mode .btn-reply:hover:not([disabled]) {
@@ -963,6 +1023,14 @@
         b.className = 'bubble';
         b.innerHTML = html + '<span class="time">' + now() + '</span>';
         div.appendChild(b);
+
+        if (type === 'user') {
+          const userIcon = document.createElement('div');
+          userIcon.className = 'user-avatar-svg';
+          userIcon.innerHTML = '<i class="bi bi-person-fill"></i>';
+          div.appendChild(userIcon);
+        }
+
         chatEl.appendChild(div);
         scroll();
       }
@@ -1044,8 +1112,77 @@
         else if (state === S.CONFIRM) { setText('placeholder_yes'); }
       }
 
+      /* ── OTP Actions ── */
+      window.doResendOtp = async function () {
+        const btn = document.getElementById('resendOtpBtn');
+        if (btn) btn.disabled = true;
+        lockInput();
+        showTyping();
+        try {
+          const otp = await api('/api/chat/send-otp', { mobile: mobile });
+          hideTyping();
+          if (otp.success) {
+            botMsg('\u2705 OTP Resent!');
+            window.startResendTimer();
+          } else {
+            botMsg('\u274C Failed to resend. Check number.');
+            if (btn) { btn.disabled = false; btn.innerText = 'Resend OTP'; }
+          }
+        } catch (e) {
+          hideTyping();
+          botMsg('\u274C Error resending.');
+          if (btn) { btn.disabled = false; btn.innerText = 'Resend OTP'; }
+        }
+        unlockInput();
+      };
+
+      window.doChangeMobile = function () {
+        if (window.resendTimer) clearInterval(window.resendTimer);
+        const rBtn = document.getElementById('resendOtpBtn');
+        const cBtn = document.getElementById('changeMobileBtn');
+        if (rBtn) { rBtn.disabled = true; rBtn.removeAttribute('id'); }
+        if (cBtn) { cBtn.disabled = true; cBtn.removeAttribute('id'); }
+
+        state = S.AWAIT_MOBILE;
+        mobile = '';
+        setNumeric('placeholder_mobile');
+        botReply(t('ask_mobile'), 500);
+      };
+
+      window.startResendTimer = function () {
+        let timeLeft = 30;
+        const btn = document.getElementById('resendOtpBtn');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.innerText = `Resend OTP (${timeLeft}s)`;
+        if (window.resendTimer) clearInterval(window.resendTimer);
+        window.resendTimer = setInterval(() => {
+          timeLeft--;
+          const currentBtn = document.getElementById('resendOtpBtn');
+          if (!currentBtn) {
+            clearInterval(window.resendTimer);
+            return;
+          }
+          if (timeLeft <= 0) {
+            clearInterval(window.resendTimer);
+            currentBtn.disabled = false;
+            currentBtn.innerText = 'Resend OTP';
+          } else {
+            currentBtn.innerText = `Resend OTP (${timeLeft}s)`;
+          }
+        }, 1000);
+      };
+
+      window.lockOtpButtons = function () {
+        if (window.resendTimer) clearInterval(window.resendTimer);
+        const rBtn = document.getElementById('resendOtpBtn');
+        const cBtn = document.getElementById('changeMobileBtn');
+        if (rBtn) { rBtn.disabled = true; rBtn.removeAttribute('id'); }
+        if (cBtn) { cBtn.disabled = true; cBtn.removeAttribute('id'); }
+      };
+
       /* ── Banner URL ── */
-      const BANNER = "/static/banner.png";
+      const BANNER = "/static/banner.jpg";
 
       /* ── Init ── */
       async function init() {
@@ -1099,7 +1236,13 @@
               state = S.AWAIT_OTP;
               setNumeric('placeholder_otp');
               unlockInput();
-              await botReply(t('ask_otp', { m: m }), 800);
+              let askText = t('ask_otp', { m: m });
+              askText += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">';
+              askText += '<button class="btn-reply" id="resendOtpBtn" onclick="doResendOtp()" disabled style="font-size:0.85rem; padding:8px;"><i class="bi bi-arrow-clockwise"></i> Resend OTP (30s)</button>';
+              askText += '<button class="btn-reply" id="changeMobileBtn" onclick="doChangeMobile()" style="font-size:0.85rem; padding:8px;"><i class="bi bi-telephone me-1"></i> Change Mobile Number</button>';
+              askText += '</div>';
+              await botReply(askText, 800);
+              window.startResendTimer();
             } else {
               unlockInput();
               await botReply(t('otp_fail'), 600);
@@ -1121,6 +1264,7 @@
           try {
             const res = await api('/api/chat/verify-otp', { mobile, otp: o });
             if (res.success) {
+              window.lockOtpButtons();
               // Check if mobile already has a generated card
               if (res.has_card && res.card_url) {
                 state = S.DONE;
@@ -1128,10 +1272,21 @@
                 hideAttach();
                 unlockInput();
                 epic = res.epic_no || '';
-                let h = t('otp_verified_exists');
-                h += '<div class="card-preview"><img src="' + res.card_url + '" alt="ID Card"></div>';
-                h += '<a href="/mycard/' + res.epic_no + '/download" class="download-btn" target="_blank">' + t('download_btn') + '</a>';
-                h += '<br><br>' + t('type_anything');
+                let h = t('otp_verified_exists') + '<br>';
+                h += '<div class="card-preview">';
+                h += '  <img src="' + res.card_url + '" alt="ID Card">';
+                h += '  <div class="card-actions-overlay">';
+                h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+                h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                h += '  </div>';
+                h += '</div>';
+                h += '<div class="vertical-actions">';
+                h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+                h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+                h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+                h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+                h += '  <a href="#" class="btn-reply" style="text-decoration:none;"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</a>';
+                h += '</div>';
                 await botReply(h, 1200);
               } else {
                 state = S.AWAIT_EPIC;
@@ -1230,12 +1385,24 @@
 
           if (res.success) {
             state = S.DONE;
-            let h = t('card_generated');
+            let h = t('card_generated') + '<br>';
             if (res.card_url) {
-              h += '<div class="card-preview"><img src="' + res.card_url + '" alt="ID Card"></div>';
-              h += '<a href="/mycard/' + epic + '/download" class="download-btn" target="_blank">' + t('download_btn') + '</a>';
+              h += '<div class="card-preview">';
+              h += '  <img src="' + res.card_url + '" alt="ID Card">';
+              h += '  <div class="card-actions-overlay">';
+              h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+              h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+              h += '  </div>';
+              h += '</div>';
             }
-            h += '<br><br>' + t('type_anything');
+            h += '<div class="vertical-actions">';
+            h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+            h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+            h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+            h += '  <button class="btn-reply" onclick="window.location.reload()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+            h += '  <a href="#" class="btn-reply" style="text-decoration:none;"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</a>';
+            h += '</div>';
+
             await botReply(h, 1500);
             setText('placeholder_type');
             hideAttach();
@@ -1310,11 +1477,13 @@
 
       /* ── Language Toggle ── */
       if (langToggleBtn) {
-        langToggleBtn.addEventListener('change', (e) => {
-          if (e.target.checked) {
+        langToggleBtn.addEventListener('click', () => {
+          if (lang === 'en') {
             lang = 'ta';
+            langToggleBtn.textContent = 'TA';
           } else {
             lang = 'en';
+            langToggleBtn.textContent = 'EN';
           }
           updateCurrentPlaceholder();
 
