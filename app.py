@@ -1029,14 +1029,29 @@ def generated_voters_list():
 
 @admin_bp.route('/api/generated-voters')
 def api_generated_voters():
-    """JSON API for generated voters list."""
+    """JSON API for generated voters list with search and assembly/district filters."""
     search = request.args.get('search', '').strip()
+    assembly = request.args.get('assembly', '').strip()
+    district = request.args.get('district', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
     voters = list(gen_voters_col.find({}, {'_id': 0}).sort('generated_at', -1))
 
+    # Collect unique assemblies and districts for filter dropdowns
+    assemblies = sorted(set(v.get('assembly', '') for v in voters if v.get('assembly')))
+    districts = sorted(set(v.get('district', '') for v in voters if v.get('district')))
+
+    # Apply assembly filter
+    if assembly:
+        voters = [v for v in voters if v.get('assembly', '').lower() == assembly.lower()]
+
+    # Apply district filter
+    if district:
+        voters = [v for v in voters if v.get('district', '').lower() == district.lower()]
+
+    # Apply search filter
     if search:
         sl = search.lower()
         voters = [v for v in voters if
@@ -1058,6 +1073,8 @@ def api_generated_voters():
         'page': page,
         'per_page': per_page,
         'total_pages': total_pages,
+        'assemblies': assemblies,
+        'districts': districts,
     })
 
 
