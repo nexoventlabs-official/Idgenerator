@@ -671,8 +671,15 @@
     }
 
     /* ── Hidden ── */
-    #photoInput {
+    #photoInput,
+    #cameraInput {
       display: none;
+    }
+
+    .photo-upload-btn,
+    .photo-camera-btn {
+      min-width: 140px;
+      justify-content: center;
     }
 
     /* ── Loading spinner ── */
@@ -897,7 +904,8 @@
       </button>
     </div>
 
-    <input type="file" id="photoInput" accept="image/png,image/jpeg,image/jpg,image/bmp" capture="user">
+    <input type="file" id="photoInput" accept="image/png,image/jpeg,image/jpg,image/bmp">
+    <input type="file" id="cameraInput" accept="image/png,image/jpeg,image/jpg" capture="environment">
   </div>
 
   <script>
@@ -920,7 +928,10 @@
           invalid_otp_res: 'Invalid OTP. Please try again.',
           verif_fail: '\u274C Verification failed. Please try again.',
           voter_found: '\u2705 <strong>Voter Found!</strong>',
-          upload_photo: '\u{1F4F7} Now please <strong>upload your photo</strong> by clicking the \u{1F4CE} button below.',
+          upload_photo: '\u{1F4F7} Now please <strong>upload your photo</strong> using the buttons below.',
+          photo_too_large: '\u274C File size exceeds <strong>5 MB</strong>. Please upload a smaller photo.',
+          btn_upload_photo: '<i class="bi bi-image"></i> Upload Photo',
+          btn_camera: '<i class="bi bi-camera-fill"></i> Camera',
           epic_not_found: 'EPIC Number not found. Please check and try again.',
           valid_fail: '\u274C Could not validate. Please try again.',
           start_over: 'Okay! Let\'s start over.<br><br>Please enter your <strong>EPIC Number</strong>:',
@@ -957,7 +968,10 @@
           invalid_otp_res: 'தவறான OTP. மீண்டும் முயற்சிக்கவும்.',
           verif_fail: '\u274C சரிபார்க்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           voter_found: '\u2705 <strong>வாக்காளர் விபரம் கிடைத்தது!</strong>',
-          upload_photo: '\u{1F4F7} இப்போது கீழே உள்ள \u{1F4CE} பட்டனை கிளிக் செய்து <strong>உங்கள் புகைப்படத்தை பதிவேற்றவும்</strong>.',
+          upload_photo: '\u{1F4F7} கீழே உள்ள பட்டன்களைப் பயன்படுத்தி <strong>உங்கள் புகைப்படத்தை பதிவேற்றவும்</strong>.',
+          photo_too_large: '\u274C கோப்பின் அளவு <strong>5 MB</strong> ஐ மீறுகிறது. சிறிய புகைப்படத்தைப் பதிவேற்றவும்.',
+          btn_upload_photo: '<i class="bi bi-image"></i> புகைப்படம் பதிவேற்று',
+          btn_camera: '<i class="bi bi-camera-fill"></i> கேமரா',
           epic_not_found: 'வாக்காளர் எண் கிடைக்கவில்லை. சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
           valid_fail: '\u274C உறுதிப்படுத்த முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           start_over: 'சரி! மீண்டும் தொடங்குவோம்.<br><br>உங்கள் <strong>வாக்காளர் எண்ணை</strong> உள்ளிடவும்:',
@@ -1338,6 +1352,10 @@
                 h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v + '</span></div>';
               }
               h += '</div><br>' + t('upload_photo');
+              h += '<div class="action-buttons" style="margin-top:10px;">';
+              h += '<button class="action-btn confirm photo-upload-btn" onclick="triggerPhotoUpload()">' + t('btn_upload_photo') + '</button>';
+              h += '<button class="action-btn confirm photo-camera-btn" onclick="triggerCamera()">' + t('btn_camera') + '</button>';
+              h += '</div>';
               await botReply(h, 1000);
             } else {
               unlockInput();
@@ -1439,14 +1457,35 @@
         botReply(t('cancelled'), 500);
       };
 
-      /* ── Photo Upload ── */
+      /* ── Photo Upload / Camera triggers ── */
+      const cameraInput = document.getElementById('cameraInput');
+      const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5 MB
+
+      window.triggerPhotoUpload = function () {
+        if (state === S.AWAIT_PHOTO) photoInput.click();
+      };
+      window.triggerCamera = function () {
+        if (state === S.AWAIT_PHOTO) cameraInput.click();
+      };
+
       attachBtn.addEventListener('click', () => {
         if (state === S.AWAIT_PHOTO) photoInput.click();
       });
 
-      photoInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+      function handlePhotoFile(file) {
         if (!file) return;
+
+        // 5 MB size check
+        if (file.size > MAX_PHOTO_SIZE) {
+          let h = t('photo_too_large');
+          h += '<div class="action-buttons" style="margin-top:10px;">';
+          h += '<button class="action-btn confirm photo-upload-btn" onclick="triggerPhotoUpload()">' + t('btn_upload_photo') + '</button>';
+          h += '<button class="action-btn confirm photo-camera-btn" onclick="triggerCamera()">' + t('btn_camera') + '</button>';
+          h += '</div>';
+          botReply(h, 600);
+          return;
+        }
+
         photoFile = file;
 
         // Show preview
@@ -1465,7 +1504,15 @@
           await botReply(h, 900);
         };
         reader.readAsDataURL(file);
+      }
+
+      photoInput.addEventListener('change', (e) => {
+        handlePhotoFile(e.target.files[0]);
         photoInput.value = '';
+      });
+      cameraInput.addEventListener('change', (e) => {
+        handlePhotoFile(e.target.files[0]);
+        cameraInput.value = '';
       });
 
       /* ── Event Listeners ── */
