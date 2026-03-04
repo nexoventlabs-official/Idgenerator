@@ -27,30 +27,33 @@ try:
 except Exception as e:
     print(f"Cloudinary delete error: {e}")
 
-# MongoDB Setup
+# MongoDB 1 — voter data only (no generation data here anymore)
 uri = os.getenv('MONGO_URI')
 client = MongoClient(uri, tlsCAFile=certifi.where())
 db = client[os.getenv('MONGO_DB_NAME')]
 
-# Collections to clear
-stats_col = db[os.getenv('MONGO_STATS_COLLECTION', 'generation_stats')]
-otp_col = db["otps"]
-
-res_stats = stats_col.delete_many({})
-print(f"Deleted {res_stats.deleted_count} generation stats.")
-
-res_otp = otp_col.delete_many({})
-print(f"Deleted {res_otp.deleted_count} OTP records.")
-
-# Generated Voters MongoDB (second cluster)
+# Generated Voters MongoDB (second cluster — all generation activity)
 gen_uri = os.getenv('GEN_MONGO_URI')
 if gen_uri:
     gen_client = MongoClient(gen_uri, tlsCAFile=certifi.where())
     gen_db = gen_client[os.getenv('GEN_MONGO_DB_NAME', 'generated_voters')]
     gen_col = gen_db[os.getenv('GEN_MONGO_COLLECTION', 'generated_voters')]
+    stats_col = gen_db[os.getenv('MONGO_STATS_COLLECTION', 'generation_stats')]
+    otp_col = gen_db['otp_sessions']
+    verified_col = gen_db['verified_mobiles']
+
     res_gen = gen_col.delete_many({})
     print(f"Deleted {res_gen.deleted_count} generated voters.")
+
+    res_stats = stats_col.delete_many({})
+    print(f"Deleted {res_stats.deleted_count} generation stats.")
+
+    res_otp = otp_col.delete_many({})
+    print(f"Deleted {res_otp.deleted_count} OTP records.")
+
+    res_verified = verified_col.delete_many({})
+    print(f"Deleted {res_verified.deleted_count} verified mobile records.")
 else:
-    print("No GEN_MONGO_URI set, skipping generated voters.")
+    print("No GEN_MONGO_URI set, skipping generated voters DB.")
 
 print("Reset complete.")

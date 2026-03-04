@@ -53,29 +53,38 @@ ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 
 logger = setup_logging()
 
-# ── MongoDB Setup (Main DB — voter data from XLSX imports) ───────
+# ── MongoDB Setup (Main DB — voter data from XLSX imports, READ-ONLY after import) ──
 mongo_client = MongoClient(config.MONGO_URI, serverSelectionTimeoutMS=5000)
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
-stats_col = db[config.MONGO_STATS_COLLECTION]
-verified_mobiles_col = db['verified_mobiles']
-otp_col = db['otp_sessions']
 
-# ── MongoDB Setup (Generated Voters DB — cards generated via chatbot) ──
+# ── MongoDB Setup (Generated Voters DB — all card-generation activity) ──
 gen_mongo_client = MongoClient(config.GEN_MONGO_URI, serverSelectionTimeoutMS=5000)
 gen_db = gen_mongo_client[config.GEN_MONGO_DB_NAME]
 gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
+stats_col = gen_db[config.MONGO_STATS_COLLECTION]
+verified_mobiles_col = gen_db['verified_mobiles']
+otp_col = gen_db['otp_sessions']
 
 # Ensure indexes (graceful — don't crash if Atlas is unreachable)
 try:
+    # 1st MongoDB — voter data only
     voters_col.create_index('epic_no', unique=True)
+    logger.info("MongoDB (voters) connected & index ensured.")
+except Exception as e:
+    logger.warning(f"MongoDB (voters) index creation skipped: {e}")
+
+try:
+    # 2nd MongoDB — all generation activity
     stats_col.create_index('epic_no', unique=True)
     gen_voters_col.create_index('ptc_code', unique=True)
     gen_voters_col.create_index('epic_no')
     gen_voters_col.create_index('mobile')
-    logger.info("MongoDB connected & indexes ensured (both DBs).")
+    otp_col.create_index('mobile', unique=True)
+    verified_mobiles_col.create_index('mobile', unique=True)
+    logger.info("MongoDB (generated) connected & indexes ensured.")
 except Exception as e:
-    logger.warning(f"MongoDB index creation skipped: {e}")
+    logger.warning(f"MongoDB (generated) index creation skipped: {e}")
 
 # ── Cloudinary Setup ─────────────────────────────────────────────
 cloudinary.config(
@@ -422,9 +431,12 @@ def get_dashboard_stats():
         except Exception:
             generated_voters_count = 0
         
-        # MongoDB Storage
-        db_stats = db.command("dbstats")
-        mongodb_size_mb = round(db_stats.get("dataSize", 0) / (1024 * 1024), 2)
+        # MongoDB Storage (both DBs combined)
+        db_stats_1 = db.command("dbstats")
+        db_stats_2 = gen_db.command("dbstats")
+        mongodb_size_mb = round(
+            (db_stats_1.get("dataSize", 0) + db_stats_2.get("dataSize", 0)) / (1024 * 1024), 2
+        )
         
         # Cloudinary Quota
         cloudinary_credits = "N/A"

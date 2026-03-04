@@ -21,13 +21,13 @@ UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
 # Excel — temporary local copy used during import parsing
 VOTERS_XLSX = os.path.join(DATA_DIR, 'voters.xlsx')
 
-# ── MongoDB (Main — voter data from XLSX imports) ────────────────
+# ── MongoDB 1 (Voter data from XLSX — READ-ONLY, verify EPIC only) ───
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "voter_id_generator")
 MONGO_VOTERS_COLLECTION = os.getenv("MONGO_VOTERS_COLLECTION", "voters")
 MONGO_STATS_COLLECTION = os.getenv("MONGO_STATS_COLLECTION", "generation_stats")
 
-# ── MongoDB (Generated Voters — cards generated via chatbot) ─────
+# ── MongoDB 2 (All generation activity — cards, stats, OTP, etc.) ──
 GEN_MONGO_URI = os.getenv("GEN_MONGO_URI", "")
 GEN_MONGO_DB_NAME = os.getenv("GEN_MONGO_DB_NAME", "generated_voters")
 GEN_MONGO_COLLECTION = os.getenv("GEN_MONGO_COLLECTION", "generated_voters")
