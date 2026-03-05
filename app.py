@@ -899,9 +899,10 @@ def chat_check_mobile():
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
     stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
-    if stat and stat.get('card_url') and stat.get('secret_pin'):
-        return jsonify({'success': True, 'has_card': True})
-    return jsonify({'success': True, 'has_card': False})
+    if stat and stat.get('card_url'):
+        has_pin = bool(stat.get('secret_pin'))
+        return jsonify({'success': True, 'has_card': True, 'has_pin': has_pin})
+    return jsonify({'success': True, 'has_card': False, 'has_pin': False})
 
 
 @app.route('/api/chat/verify-pin', methods=['POST'])
@@ -988,7 +989,7 @@ def chat_forgot_pin():
 
 @app.route('/api/chat/reset-pin', methods=['POST'])
 def chat_reset_pin():
-    """Verify OTP and generate a new 4-digit PIN."""
+    """Verify OTP and save user-chosen new PIN."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     otp = data.get('otp', '').strip()
@@ -1008,8 +1009,10 @@ def chat_reset_pin():
     except Exception:
         pass
 
-    # Generate new PIN
-    new_pin = generate_secret_pin()
+    # Accept user-chosen PIN
+    new_pin = data.get('new_pin', '').strip()
+    if not new_pin or len(new_pin) != 4 or not new_pin.isdigit():
+        return jsonify({'success': False, 'message': 'Please provide a valid 4-digit PIN.'}), 400
 
     # Update PIN in stats_col
     stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': new_pin}})
@@ -1026,13 +1029,61 @@ def chat_reset_pin():
 
     return jsonify({
         'success': True,
-        'new_pin': new_pin,
         'has_card': True,
         'epic_no': stat.get('epic_no', '') if stat else '',
         'card_url': stat.get('card_url', '') if stat else '',
         'voter_name': (gen_doc.get('name', '') if gen_doc else ''),
         'photo_url': (gen_doc.get('photo_url', '') if gen_doc else '')
     })
+
+
+@app.route('/api/chat/set-pin', methods=['POST'])
+def chat_set_pin():
+    """Set the 4-digit PIN for a user who just registered (card exists, no PIN yet)."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    pin = data.get('pin', '').strip()
+
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+    if not pin or len(pin) != 4 or not pin.isdigit():
+        return jsonify({'success': False, 'message': 'Please provide a valid 4-digit PIN.'}), 400
+
+    # Verify this mobile has a card
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    if not stat or not stat.get('card_url'):
+        return jsonify({'success': False, 'message': 'No card found for this mobile.'}), 404
+
+    # Save PIN to both collections
+    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': pin}})
+    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': pin}})
+
+    logger.info(f"PIN set for {mobile}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/chat/verify-forgot-otp', methods=['POST'])
+def chat_verify_forgot_otp():
+    """Verify the OTP sent for forgot-PIN flow (does NOT delete OTP or reset PIN)."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    otp = data.get('otp', '').strip()
+
+    if not mobile or not otp:
+        return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
+
+    doc = otp_col.find_one({'mobile': mobile})
+    if not doc or doc.get('otp') != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
+
+    try:
+        created = datetime.fromisoformat(doc['created_at'])
+        if (datetime.now(timezone.utc) - created).total_seconds() > 300:
+            return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
+    except Exception:
+        pass
+
+    return jsonify({'success': True})
 
 
 @app.route('/api/chat/validate-epic', methods=['POST'])
@@ -1089,8 +1140,6 @@ def chat_generate_card():
     try:
         # Generate unique PTC code for this registration
         ptc_code = generate_ptc_code()
-        # Generate 4-digit secret PIN for returning user login
-        secret_pin = generate_secret_pin()
 
         voter['serial_number'] = ptc_code
         voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
@@ -1100,14 +1149,13 @@ def chat_generate_card():
         card_url = upload_card_to_cloudinary(card_image, epic_no)
 
         increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url,
-                                   auth_mobile=mobile_num, secret_pin=secret_pin)
+                                   auth_mobile=mobile_num)
 
         # Save to Generated Voters DB (new MongoDB)
         ref_ptc = request.form.get('ref_ptc', '').strip()
         ref_rid = request.form.get('ref_rid', '').strip()
         save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code,
-                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid,
-                            secret_pin=secret_pin)
+                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid)
 
         # Now mark mobile as verified (only after successful card generation)
         if mobile_num:
@@ -1119,7 +1167,7 @@ def chat_generate_card():
 
         return jsonify({
             'success': True, 'card_url': card_url, 'epic_no': epic_no,
-            'ptc_code': ptc_code, 'secret_pin': secret_pin,
+            'ptc_code': ptc_code,
             'photo_url': photo_url
         })
     except Exception as e:
@@ -1210,12 +1258,37 @@ def verify_voter(epic_no):
 
 @app.route('/refer/<ptc_code>/<referral_id>')
 def referral_landing(ptc_code, referral_id):
-    """Validate referral link and redirect to chatbot with ref params."""
+    """Serve OG-tagged page for WhatsApp preview, then redirect to chatbot."""
     voter = gen_voters_col.find_one({'ptc_code': ptc_code, 'referral_id': referral_id})
     if not voter:
         flash('Invalid referral link.', 'danger')
         return redirect(url_for('user_home'))
-    return redirect(url_for('user_home') + f'?ref={ptc_code}&rid={referral_id}')
+
+    referrer_name = voter.get('name', 'A PuratchiThaai Member')
+    redirect_url = url_for('user_home') + f'?ref={ptc_code}&rid={referral_id}'
+    banner_url = f"{config.BASE_URL}/static/banner.jpg"
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta property="og:title" content="PuratchiThaai — Become a Member!">
+<meta property="og:description" content="{referrer_name} invites you to join PuratchiThaai! Generate your free Digital Member ID Card now and become a proud member.">
+<meta property="og:image" content="{banner_url}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{config.BASE_URL}/refer/{ptc_code}/{referral_id}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PuratchiThaai — Become a Member!">
+<meta name="twitter:description" content="{referrer_name} invites you to join PuratchiThaai! Generate your free Digital Member ID Card now.">
+<meta name="twitter:image" content="{banner_url}">
+<meta http-equiv="refresh" content="0;url={redirect_url}">
+<title>PuratchiThaai — Join Now!</title>
+</head><body style="font-family:sans-serif;text-align:center;padding:40px;">
+<p>Redirecting to PuratchiThaai...</p>
+<script>window.location.href="{redirect_url}";</script>
+</body></html>"""
+    return html
 
 
 # ── New Chatbot API Endpoints ────────────────────────────────────

@@ -8,6 +8,14 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PuratchiThaai — ID Card Generator</title>
+  <meta property="og:title" content="PuratchiThaai — Become a Member!">
+  <meta property="og:description" content="Join PuratchiThaai! Generate your free Digital Member ID Card now. Click the link to register and become a proud member of PuratchiThaai party.">
+  <meta property="og:image" content="/static/banner.jpg">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PuratchiThaai — Become a Member!">
+  <meta name="twitter:description" content="Join PuratchiThaai! Generate your free Digital Member ID Card now.">
+  <meta name="twitter:image" content="/static/banner.jpg">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
     * {
@@ -887,6 +895,76 @@
       background: transparent !important;
     }
 
+    /* Referral link box, code blocks inside bubbles */
+    body.dark-mode .bubble div[style*="background:#f0f4f9"] {
+      background: #1a2730 !important;
+      border: 1px solid #2a3942;
+    }
+    body.dark-mode .bubble code {
+      color: #00a884 !important;
+    }
+
+    /* PIN display box (green bg) */
+    body.dark-mode .bubble div[style*="background:#e8f5e9"] {
+      background: #1a2e1f !important;
+    }
+    body.dark-mode .bubble div[style*="background:#e8f5e9"] span {
+      color: #4caf50 !important;
+    }
+
+    /* Booth icon circle (pink bg) */
+    body.dark-mode .bubble div[style*="background:#fce4ec"] {
+      background: #3a1f27 !important;
+    }
+
+    /* Subtle hint text inside bubbles (#667781) */
+    body.dark-mode .bubble em[style*="color:#667781"] {
+      color: #8696a0 !important;
+    }
+
+    /* Cancel / secondary action buttons */
+    body.dark-mode .action-btn.cancel {
+      background: #2a3942 !important;
+      color: #e9edef !important;
+    }
+    body.dark-mode .action-btn.cancel:hover {
+      background: #36454f !important;
+    }
+
+    /* Upload area */
+    body.dark-mode .upload-area {
+      border-color: #00a884;
+      background: rgba(0, 168, 132, 0.05);
+    }
+    body.dark-mode .upload-area p {
+      color: #8696a0;
+    }
+
+    /* Send button */
+    body.dark-mode .send-btn {
+      background: #00a884 !important;
+    }
+
+    /* Scroll bar inside chat */
+    body.dark-mode .chat-messages::-webkit-scrollbar-thumb {
+      background: #374045;
+    }
+
+    /* Card preview shadow */
+    body.dark-mode .card-preview img {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Strong tags inside bot bubbles */
+    body.dark-mode .message.bot .bubble strong {
+      color: #e9edef;
+    }
+
+    /* Typing dots */
+    body.dark-mode .typing-dots span {
+      background: #8696a0;
+    }
+
     /* ── Sidebar Overlay ── */
     .sidebar-overlay {
       position: fixed;
@@ -931,6 +1009,7 @@
       margin: 0;
       font-size: 1.1rem;
       font-weight: 700;
+      cursor: pointer;
     }
     .sidebar-close {
       background: none;
@@ -1187,7 +1266,7 @@
     <!-- Sidebar Panel -->
     <div class="sidebar-panel" id="sidebarPanel">
       <div class="sidebar-header">
-        <h5>Menu</h5>
+        <h5 id="sidebarMenuTitle" onclick="showSidebarMain()">Menu</h5>
         <button class="sidebar-close" id="sidebarClose"><i class="bi bi-x-lg"></i></button>
       </div>
       <div class="sidebar-body">
@@ -1290,8 +1369,15 @@
           forgot_pin_btn: '<i class="bi bi-key me-1"></i> Forgot PIN?',
           forgot_pin_otp_sent: '\u{1F4DE} A <strong>Voice OTP</strong> will be sent to <strong>+91 {m}</strong> to reset your PIN.<br><br>Please enter the <strong>6-digit OTP</strong>:',
           forgot_pin_otp_fail: '\u274C Could not send OTP for PIN reset. Please try again.',
-          pin_reset_success: '\u2705 PIN reset successful!<br><br>\u{1F510} Your new <strong>4-digit secret PIN</strong> is: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">Please remember this PIN for future logins.</em>',
+          pin_reset_success: '\u2705 PIN set successfully!<br><br><em style="color:#667781; font-size:0.85rem;">Your new PIN has been saved. Use it to login next time.</em>',
           pin_generated: '\u{1F510} Your <strong>4-digit secret PIN</strong> is: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">Save this PIN! You\'ll need it to login next time without OTP.</em>',
+          ask_set_pin: '\u{1F510} Now set your <strong>4-digit secret PIN</strong>.<br><br>You\'ll need this PIN to login next time.<br><em style="color:#667781; font-size:0.85rem;">Enter any 4-digit number you can remember:</em>',
+          ask_set_new_pin: '\u{1F510} Set your <strong>new 4-digit PIN</strong>:<br><em style="color:#667781; font-size:0.85rem;">Enter any 4-digit number you can remember:</em>',
+          ask_confirm_pin: '\u{1F510} Please <strong>confirm</strong> your PIN.<br>Enter the same <strong>4-digit PIN</strong> again:',
+          pin_mismatch: '\u274C PINs do not match! Please try again.',
+          pin_set_success: '\u2705 <strong>PIN set successfully!</strong><br><em style="color:#667781; font-size:0.85rem;">Remember this PIN for future logins.</em>',
+          placeholder_set_pin: 'Set 4-digit PIN...',
+          placeholder_confirm_pin: 'Confirm 4-digit PIN...',
           // ── New Feature i18n ──
           add_member_title: '\u{1F517} <strong>Your Referral Link</strong>',
           add_member_desc: 'Share this link to invite new members. Anyone who registers using your link will appear in "My Members".',
@@ -1364,8 +1450,15 @@
           forgot_pin_btn: '<i class="bi bi-key me-1"></i> PIN மறந்துவிட்டீர்களா?',
           forgot_pin_otp_sent: '\u{1F4DE} PIN மீட்டமைக்க <strong>+91 {m}</strong> எண்ணிற்கு <strong>OTP அழைப்பு</strong> வரும்.<br><br>அழைப்பில் கேட்கும் <strong>6 இலக்க OTP</strong> யை உள்ளிடவும்:',
           forgot_pin_otp_fail: '\u274C PIN மீட்டமைக்க OTP அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
-          pin_reset_success: '\u2705 PIN மீட்டமைக்கப்பட்டது!<br><br>\u{1F510} உங்கள் புதிய <strong>4 இலக்க PIN</strong>: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">அடுத்த முறை உள்நுழைய இந்த PIN ஐன் தேவை.</em>',
+          pin_reset_success: '\u2705 PIN வெற்றிகரமாக அமைக்கப்பட்டது!<br><br><em style="color:#667781; font-size:0.85rem;">உங்கள் புதிய PIN சேமிக்கப்பட்டது. அடுத்த முறை உள்நுழைய இதைப் பயன்படுத்தவும்.</em>',
           pin_generated: '\u{1F510} உங்கள் <strong>4 இலக்க ரகசிய PIN</strong>: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">இந்த PIN ஐ சேமிக்கவும்! OTP இல்லாமல் அடுத்த முறை உள்நுழைய தேவை.</em>',
+          ask_set_pin: '\u{1F510} இப்போது உங்கள் <strong>4 இலக்க ரகசிய PIN</strong> அமைக்கவும்.<br><br>அடுத்த முறை உள்நுழைய இந்த PIN தேவை.<br><em style="color:#667781; font-size:0.85rem;">நினைவில் வைக்கக்கூடிய 4 இலக்க எண்ணை உள்ளிடவும்:</em>',
+          ask_set_new_pin: '\u{1F510} உங்கள் <strong>புதிய 4 இலக்க PIN</strong> அமைக்கவும்:<br><em style="color:#667781; font-size:0.85rem;">நினைவில் வைக்கக்கூடிய 4 இலக்க எண்ணை உள்ளிடவும்:</em>',
+          ask_confirm_pin: '\u{1F510} உங்கள் PIN ஐ <strong>உறுதிப்படுத்தவும்</strong>.<br>அதே <strong>4 இலக்க PIN</strong> ஐ மீண்டும் உள்ளிடவும்:',
+          pin_mismatch: '\u274C PIN பொருந்தவில்லை! மீண்டும் முயற்சிக்கவும்.',
+          pin_set_success: '\u2705 <strong>PIN வெற்றிகரமாக அமைக்கப்பட்டது!</strong><br><em style="color:#667781; font-size:0.85rem;">எதிர்கால உள்நுழைவுகளுக்கு இந்த PIN ஐ நினைவில் வைக்கவும்.</em>',
+          placeholder_set_pin: '4 இலக்க PIN அமைக்கவும்...',
+          placeholder_confirm_pin: '4 இலக்க PIN உறுதிப்படுத்தவும்...',
           // ── New Feature i18n ──
           add_member_title: '\u{1F517} <strong>உங்கள் பரிந்துரை இணைப்பு</strong>',
           add_member_desc: 'புதிய உறுப்பினர்களை அழைக்க இந்த இணைப்பைப் பகிரவும். உங்கள் இணைப்பைப் பயன்படுத்தி பதிவு செய்பவர்கள் "என் உறுப்பினர்கள்" பகுதியில் தோன்றுவார்கள்.',
@@ -1405,10 +1498,12 @@
       const S = {
         WELCOME: 0, AWAIT_MOBILE: 1, AWAIT_OTP: 2,
         AWAIT_EPIC: 3, AWAIT_PHOTO: 4, CONFIRM: 5,
-        GENERATING: 6, DONE: 7, AWAIT_PIN: 8, AWAIT_RESET_OTP: 9
+        GENERATING: 6, DONE: 7, AWAIT_PIN: 8, AWAIT_RESET_OTP: 9,
+        AWAIT_SET_PIN: 10, AWAIT_CONFIRM_PIN: 11
       };
       let state = S.WELCOME;
       let mobile = '', epic = '', voter = null, photoFile = null;
+      let pendingPin = '', pinContext = '', pendingOtp = '';
 
       /* ── localStorage helpers ── */
       const LS_KEY = 'pthaai_user';
@@ -1811,6 +1906,8 @@
         else if (state === S.AWAIT_MOBILE) { setNumeric('placeholder_mobile'); }
         else if (state === S.AWAIT_OTP || state === S.AWAIT_RESET_OTP) { setNumeric('placeholder_otp'); }
         else if (state === S.AWAIT_PIN) { setNumeric('placeholder_pin'); }
+        else if (state === S.AWAIT_SET_PIN) { setNumeric('placeholder_set_pin'); }
+        else if (state === S.AWAIT_CONFIRM_PIN) { setNumeric('placeholder_confirm_pin'); }
         else if (state === S.AWAIT_EPIC) { setEpicInput('placeholder_epic'); }
         else if (state === S.AWAIT_PHOTO) { setText('placeholder_upload'); }
         else if (state === S.CONFIRM) { setText('placeholder_yes'); }
@@ -2027,8 +2124,8 @@
             const check = await api('/api/chat/check-mobile', { mobile: m });
             hideTyping();
 
-            if (check.success && check.has_card) {
-              // Returning user — ask for 4-digit PIN instead of OTP
+            if (check.success && check.has_card && check.has_pin) {
+              // Returning user with PIN — ask for 4-digit PIN
               state = S.AWAIT_PIN;
               setNumeric('placeholder_pin');
               unlockInput();
@@ -2038,6 +2135,26 @@
               askText += '<button class="btn-reply" id="changeMobileBtn" onclick="doChangeMobile()" style="font-size:0.85rem; padding:8px;"><i class="bi bi-telephone me-1"></i> Change Mobile Number</button>';
               askText += '</div>';
               await botReply(askText, 800);
+            } else if (check.success && check.has_card && !check.has_pin) {
+              // Has card but never set PIN — send OTP to verify, then set PIN
+              showTyping();
+              const otpRes = await api('/api/chat/send-otp', { mobile: m });
+              hideTyping();
+              if (otpRes.success) {
+                state = S.AWAIT_OTP;
+                setNumeric('placeholder_otp');
+                unlockInput();
+                let askText = t('ask_otp', { m: m });
+                askText += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">';
+                askText += '<button class="btn-reply" id="resendOtpBtn" onclick="doResendOtp()" disabled style="font-size:0.85rem; padding:8px;"><i class="bi bi-arrow-clockwise"></i> Resend OTP (30s)</button>';
+                askText += '<button class="btn-reply" id="changeMobileBtn" onclick="doChangeMobile()" style="font-size:0.85rem; padding:8px;"><i class="bi bi-telephone me-1"></i> Change Mobile Number</button>';
+                askText += '</div>';
+                await botReply(askText, 800);
+                window.startResendTimer();
+              } else {
+                unlockInput();
+                await botReply(t('otp_fail'), 600);
+              }
             } else {
               // New user — send OTP as before
               showTyping();
@@ -2126,40 +2243,19 @@
           lockInput();
           try {
             showTyping();
-            const res = await api('/api/chat/reset-pin', { mobile, otp: o });
+            // Just verify OTP first (don't reset PIN yet — user will set their own)
+            const res = await api('/api/chat/verify-forgot-otp', { mobile, otp: o });
             hideTyping();
             if (res.success) {
-              // Disable OTP buttons
               window.lockOtpButtons();
-              state = S.DONE;
-              setText('placeholder_type');
-              hideAttach();
+              // OTP is valid — now ask user to set new PIN
+              pendingOtp = o;
+              state = S.AWAIT_SET_PIN;
+              pinContext = 'reset';
+              pendingPin = '';
+              setNumeric('placeholder_set_pin');
               unlockInput();
-              epic = res.epic_no || '';
-              saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
-
-              // Show new PIN
-              await botReply(t('pin_reset_success', { pin: res.new_pin }), 1000);
-
-              // Show card
-              let h = '\u2705 <strong>Logged in successfully!</strong><br>';
-              if (res.card_url) {
-                h += '<div class="card-preview">';
-                h += '  <img src="' + res.card_url + '" alt="ID Card">';
-                h += '  <div class="card-actions-overlay">';
-                h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-                h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
-                h += '  </div>';
-                h += '</div>';
-              }
-              h += '<div class="vertical-actions">';
-              h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
-              h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
-              h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
-              h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
-              h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
-              h += '</div>';
-              await botReply(h, 800);
+              await botReply(t('ask_set_new_pin'), 800);
             } else {
               unlockInput();
               const err = res.message || t('invalid_otp_res');
@@ -2168,6 +2264,91 @@
           } catch (e) {
             hideTyping(); unlockInput();
             await botReply(t('verif_fail'), 600);
+          }
+
+        } else if (state === S.AWAIT_SET_PIN) {
+          const p = txt.replace(/\D/g, '');
+          if (p.length !== 4) {
+            userMsg(txt);
+            await botReply(t('invalid_pin'), 600);
+            return;
+          }
+          userMsg('\u2022\u2022\u2022\u2022');
+          pendingPin = p;
+          state = S.AWAIT_CONFIRM_PIN;
+          setNumeric('placeholder_confirm_pin');
+          await botReply(t('ask_confirm_pin'), 600);
+
+        } else if (state === S.AWAIT_CONFIRM_PIN) {
+          const p = txt.replace(/\D/g, '');
+          if (p.length !== 4) {
+            userMsg(txt);
+            await botReply(t('invalid_pin'), 600);
+            return;
+          }
+          userMsg('\u2022\u2022\u2022\u2022');
+
+          if (p !== pendingPin) {
+            // Mismatch — go back to set PIN
+            state = S.AWAIT_SET_PIN;
+            pendingPin = '';
+            setNumeric('placeholder_set_pin');
+            await botReply(t('pin_mismatch'), 600);
+            await botReply(pinContext === 'reset' ? t('ask_set_new_pin') : t('ask_set_pin'), 600);
+            return;
+          }
+
+          // PINs match — save
+          lockInput();
+          try {
+            showTyping();
+            let res;
+            if (pinContext === 'reset') {
+              // Forgot-PIN flow: verify OTP + save new PIN atomically
+              res = await api('/api/chat/reset-pin', { mobile, otp: pendingOtp, new_pin: pendingPin });
+            } else {
+              // Registration flow: just save the PIN
+              res = await api('/api/chat/set-pin', { mobile, pin: pendingPin });
+            }
+            hideTyping();
+
+            if (res.success) {
+              const wasReset = (pinContext === 'reset');
+              pendingPin = ''; pendingOtp = ''; pinContext = '';
+              state = S.DONE;
+              setText('placeholder_type');
+              hideAttach();
+              unlockInput();
+
+              if (wasReset) {
+                await botReply(t('pin_reset_success'), 800);
+              } else {
+                await botReply(t('pin_set_success'), 800);
+              }
+
+              // For reset flow, load card info and show it
+              if (res.has_card && res.card_url) {
+                epic = res.epic_no || '';
+                saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
+              }
+
+              // Show action buttons
+              let h = '<div class="vertical-actions">';
+              h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+              h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+              h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+              h += '</div>';
+              await botReply(h, 500);
+              updateSidebar();
+            } else {
+              unlockInput();
+              await botReply('\u274C ' + (res.message || t('went_wrong')), 600);
+            }
+          } catch (e) {
+            hideTyping(); unlockInput();
+            await botReply(t('went_wrong'), 600);
           }
 
         } else if (state === S.AWAIT_OTP) {
@@ -2185,28 +2366,53 @@
               window.lockOtpButtons();
               // Check if mobile already has a generated card
               if (res.has_card && res.card_url) {
-                state = S.DONE;
-                setText('placeholder_type');
-                hideAttach();
-                unlockInput();
                 epic = res.epic_no || '';
                 saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
-                let h = t('otp_verified_exists') + '<br>';
-                h += '<div class="card-preview">';
-                h += '  <img src="' + res.card_url + '" alt="ID Card">';
-                h += '  <div class="card-actions-overlay">';
-                h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-                h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
-                h += '  </div>';
-                h += '</div>';
-                h += '<div class="vertical-actions">';
-                h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
-                h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
-                h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
-                h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
-                h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
-                h += '</div>';
-                await botReply(h, 1200);
+
+                // Check if user needs to set PIN (card exists but no PIN)
+                const pinCheck = await api('/api/chat/check-mobile', { mobile });
+                if (pinCheck.success && pinCheck.has_card && !pinCheck.has_pin) {
+                  // Show card, then ask user to set PIN
+                  let h = t('otp_verified_exists') + '<br>';
+                  h += '<div class="card-preview">';
+                  h += '  <img src="' + res.card_url + '" alt="ID Card">';
+                  h += '  <div class="card-actions-overlay">';
+                  h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+                  h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                  h += '  </div>';
+                  h += '</div>';
+                  await botReply(h, 1000);
+
+                  state = S.AWAIT_SET_PIN;
+                  pinContext = 'register';
+                  pendingPin = '';
+                  setNumeric('placeholder_set_pin');
+                  hideAttach();
+                  unlockInput();
+                  await botReply(t('ask_set_pin'), 800);
+                } else {
+                  // Has card + has PIN — fully logged in
+                  state = S.DONE;
+                  setText('placeholder_type');
+                  hideAttach();
+                  unlockInput();
+                  let h = t('otp_verified_exists') + '<br>';
+                  h += '<div class="card-preview">';
+                  h += '  <img src="' + res.card_url + '" alt="ID Card">';
+                  h += '  <div class="card-actions-overlay">';
+                  h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+                  h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                  h += '  </div>';
+                  h += '</div>';
+                  h += '<div class="vertical-actions">';
+                  h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+                  h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+                  h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+                  h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+                  h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+                  h += '</div>';
+                  await botReply(h, 1200);
+                }
               } else {
                 state = S.AWAIT_EPIC;
                 setText('placeholder_epic');
@@ -2309,14 +2515,7 @@
           hideTyping();
 
           if (res.success) {
-            state = S.DONE;
-            saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: (voter && voter.name) || '', photoUrl: res.photo_url || '' });
-
-            // Show the secret PIN to the user
-            if (res.secret_pin) {
-              await botReply(t('pin_generated', { pin: res.secret_pin }), 1200);
-            }
-
+            // Show card first, then ask user to set their PIN
             let h = t('card_generated') + '<br>';
             if (res.card_url) {
               h += '<div class="card-preview">';
@@ -2327,19 +2526,19 @@
               h += '  </div>';
               h += '</div>';
             }
-            h += '<div class="vertical-actions">';
-            h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
-            h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
-            h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
-            h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
-            h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
-            h += '</div>';
-
             await botReply(h, 1500);
-            setText('placeholder_type');
+
+            // Now ask user to set their own PIN
+            state = S.AWAIT_SET_PIN;
+            pinContext = 'register';
+            pendingPin = '';
+            // Save card data temporarily (will finalize after PIN is set)
+            saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: (voter && voter.name) || '', photoUrl: res.photo_url || '' });
+            setNumeric('placeholder_set_pin');
             hideAttach();
             unlockInput();
             photoFile = null;
+            await botReply(t('ask_set_pin'), 800);
           } else {
             state = S.CONFIRM;
             unlockInput();
@@ -2385,7 +2584,8 @@
       };
 
       window.copyRefLink = function (link, btn) {
-        navigator.clipboard.writeText(link).then(function () {
+        var shareText = '\u{1F1EE}\u{1F1F3} *Become a PuratchiThaai Party Member!*\n\nYour friend has invited you to join PuratchiThaai. Generate your FREE Digital Member ID Card now!\n\n\u{1F449} Click this link to register:\n' + link;
+        navigator.clipboard.writeText(shareText).then(function () {
           btn.innerHTML = t('add_member_copied');
           btn.disabled = true;
           setTimeout(function () { btn.innerHTML = t('add_member_copy'); btn.disabled = false; }, 2000);
@@ -2394,7 +2594,11 @@
 
       window.shareRefLink = function (link) {
         if (navigator.share) {
-          navigator.share({ title: 'PuratchiThaai — Join Now!', text: 'Generate your Member ID Card using my referral link:', url: link });
+          navigator.share({
+            title: 'PuratchiThaai — Become a Member!',
+            text: '\u{1F1EE}\u{1F1F3} *Become a PuratchiThaai Party Member!*\n\nYour friend has invited you to join PuratchiThaai. Generate your FREE Digital Member ID Card now!\n\n\u{1F449} Click this referral link to register:\n',
+            url: link
+          });
         }
       };
 
@@ -2445,10 +2649,10 @@
         try {
           const res = await api('/api/chat/request-volunteer', { mobile });
           hideTyping();
-          if (res.success) {
-            await botReply(t('volunteer_success'), 800);
-          } else if (res.message && res.message.indexOf('already') !== -1) {
+          if (res.success && res.already_requested) {
             await botReply(t('volunteer_already', { status: res.status || 'pending' }), 600);
+          } else if (res.success) {
+            await botReply(t('volunteer_success'), 800);
           } else {
             await botReply(t('volunteer_fail'), 600);
           }
@@ -2474,10 +2678,10 @@
         try {
           const res = await api('/api/chat/request-booth-agent', { mobile });
           hideTyping();
-          if (res.success) {
-            await botReply(t('booth_agent_success'), 800);
-          } else if (res.message && res.message.indexOf('already') !== -1) {
+          if (res.success && res.already_requested) {
             await botReply(t('booth_agent_already', { status: res.status || 'pending' }), 600);
+          } else if (res.success) {
+            await botReply(t('booth_agent_success'), 800);
           } else {
             await botReply(t('booth_agent_fail'), 600);
           }
