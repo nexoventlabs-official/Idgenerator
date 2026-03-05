@@ -25,7 +25,7 @@
   .import-overlay.active { display: flex; }
   .import-overlay-box {
     background: #fff; border-radius: 18px; padding: 2.5rem 2rem;
-    text-align: center; max-width: 380px; width: 90%;
+    text-align: center; max-width: 420px; width: 90%;
     box-shadow: 0 12px 40px rgba(0,0,0,0.25);
   }
   .import-spinner {
@@ -38,8 +38,24 @@
   .import-overlay-box h5 { font-weight: 700; margin-bottom: 0.4rem; }
   .import-overlay-box .sub { font-size: 0.85rem; color: #666; }
   .import-overlay-box .elapsed {
-    font-size: 0.8rem; color: #999; margin-top: 1rem;
+    font-size: 0.8rem; color: #999; margin-top: 0.8rem;
     font-variant-numeric: tabular-nums;
+  }
+  .import-progress-bar {
+    height: 6px; background: #e3e3e3; border-radius: 3px;
+    margin-top: 1rem; overflow: hidden;
+  }
+  .import-progress-bar .fill {
+    height: 100%; background: #1565c0; border-radius: 3px;
+    transition: width 0.5s ease; width: 0%;
+  }
+  .import-counter {
+    font-size: 1.5rem; font-weight: 700; color: #1565c0;
+    margin-top: 0.6rem; font-variant-numeric: tabular-nums;
+  }
+  .import-phase {
+    font-size: 0.78rem; color: #999; margin-top: 0.2rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
   }
 {% endblock %}
 
@@ -48,9 +64,12 @@
 <!-- Import Loading Overlay -->
 <div class="import-overlay" id="importOverlay">
   <div class="import-overlay-box">
-    <div class="import-spinner"></div>
-    <h5>Importing Data…</h5>
-    <div class="sub">Processing your file. This may take a few minutes for large datasets.</div>
+    <div class="import-spinner" id="importSpinner"></div>
+    <h5 id="overlayTitle">Uploading File…</h5>
+    <div class="sub" id="overlaySub">Sending your file to the server.</div>
+    <div class="import-counter" id="overlayCounter" style="display:none;">0</div>
+    <div class="import-phase" id="overlayPhase"></div>
+    <div class="import-progress-bar" id="overlayBar" style="display:none;"><div class="fill" id="overlayBarFill"></div></div>
     <div class="elapsed" id="importElapsed">Elapsed: 0s</div>
   </div>
 </div>
@@ -199,19 +218,114 @@
   });
 
   // Show loading overlay on import
-  document.getElementById('importForm').addEventListener('submit', function() {
+  document.getElementById('importForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
     const overlay = document.getElementById('importOverlay');
     const elapsed = document.getElementById('importElapsed');
+    const title   = document.getElementById('overlayTitle');
+    const sub     = document.getElementById('overlaySub');
+    const counter = document.getElementById('overlayCounter');
+    const phase   = document.getElementById('overlayPhase');
+    const bar     = document.getElementById('overlayBar');
+    const barFill = document.getElementById('overlayBarFill');
+    const spinner = document.getElementById('importSpinner');
+
     overlay.classList.add('active');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Importing…';
+
+    // Elapsed timer
     let seconds = 0;
-    setInterval(() => {
+    const timerInterval = setInterval(() => {
       seconds++;
       const m = Math.floor(seconds / 60);
       const s = seconds % 60;
       elapsed.textContent = 'Elapsed: ' + (m > 0 ? m + 'm ' : '') + s + 's';
     }, 1000);
+
+    // Submit form via AJAX
+    const formData = new FormData(form);
+    fetch(form.action, { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) {
+          clearInterval(timerInterval);
+          overlay.classList.remove('active');
+          alert('Import failed to start.');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i> Import Data';
+          return;
+        }
+
+        title.textContent = 'Importing Data…';
+        sub.textContent = 'Parsing and inserting records into the database.';
+        counter.style.display = 'block';
+        bar.style.display = 'block';
+
+        // Poll for progress
+        const pollInterval = setInterval(() => {
+          fetch('{{ url_for("admin.api_import_status") }}')
+            .then(r => r.json())
+            .then(s => {
+              const processed = s.processed || 0;
+              const inserted  = s.inserted  || 0;
+              counter.textContent = inserted.toLocaleString() + ' records inserted';
+
+              if (s.phase === 'parsing') {
+                phase.textContent = 'Parsing file – ' + processed.toLocaleString() + ' rows read';
+                // Indeterminate progress (pulse)
+                barFill.style.width = '30%';
+                barFill.style.animation = 'importPulse 1.5s ease-in-out infinite';
+              } else if (s.phase === 'inserting') {
+                phase.textContent = 'Inserting – ' + processed.toLocaleString() + ' rows processed';
+                barFill.style.animation = 'none';
+                // Estimate progress (we don't know total upfront, so use processed vs inserted)
+                barFill.style.width = Math.min(90, (inserted / Math.max(processed, 1)) * 100) + '%';
+              } else if (s.phase === 'done') {
+                clearInterval(pollInterval);
+                clearInterval(timerInterval);
+                spinner.style.display = 'none';
+                title.textContent = 'Import Complete!';
+                sub.textContent = s.message || 'All records imported successfully.';
+                counter.textContent = inserted.toLocaleString() + ' records';
+                phase.textContent = '';
+                barFill.style.animation = 'none';
+                barFill.style.width = '100%';
+                barFill.style.background = '#43a047';
+                // Redirect to dashboard after 2s
+                setTimeout(() => { window.location.href = '{{ url_for("admin.dashboard") }}'; }, 2000);
+              } else if (s.phase === 'error') {
+                clearInterval(pollInterval);
+                clearInterval(timerInterval);
+                spinner.style.borderTopColor = '#e53935';
+                spinner.style.animation = 'none';
+                title.textContent = 'Import Failed';
+                sub.textContent = s.error || 'An unknown error occurred.';
+                sub.style.color = '#e53935';
+                phase.textContent = '';
+                barFill.style.animation = 'none';
+                barFill.style.width = '100%';
+                barFill.style.background = '#e53935';
+              }
+            })
+            .catch(() => {});
+        }, 1000);
+      })
+      .catch(err => {
+        clearInterval(timerInterval);
+        overlay.classList.remove('active');
+        alert('Failed to upload file: ' + err.message);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i> Import Data';
+      });
   });
 </script>
+
+<style>
+  @keyframes importPulse {
+    0%, 100% { opacity: 0.4; width: 20%; }
+    50% { opacity: 1; width: 60%; }
+  }
+</style>
 {% endblock %}

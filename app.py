@@ -18,6 +18,7 @@ import re
 import secrets
 import sys
 import time
+import threading
 from datetime import datetime, timezone
 
 from flask import (
@@ -91,6 +92,18 @@ verified_mobiles_col = gen_db['verified_mobiles']
 otp_col = gen_db['otp_sessions']
 volunteer_requests_col = gen_db['volunteer_requests']
 booth_agent_requests_col = gen_db['booth_agent_requests']
+
+# ── Background import state ──
+import_status = {
+    'running': False,
+    'phase': '',        # 'parsing', 'inserting', 'done', 'error'
+    'processed': 0,
+    'inserted': 0,
+    'total': 0,         # 0 until known
+    'message': '',
+    'error': '',
+}
+_import_lock = threading.Lock()
 
 # Ensure indexes (graceful - don't crash if Atlas is unreachable)
 try:
@@ -268,8 +281,8 @@ def _safe_str(val):
     return str(val).strip()
 
 
-def _parse_xlsx(xlsx_path: str) -> list[dict]:
-    """Parse an XLSX file into a list of voter dicts with ALL columns."""
+def _iter_xlsx(xlsx_path: str):
+    """Generator: yield one voter dict at a time from an XLSX file (low memory)."""
     import openpyxl
     wb = openpyxl.load_workbook(xlsx_path, read_only=True)
     ws = wb.active
@@ -285,11 +298,9 @@ def _parse_xlsx(xlsx_path: str) -> list[dict]:
                 col_map[field] = idx
                 break
 
-    # Indices already used for mapped fields
     mapped_indices = set(col_map.values())
-
-    voters = []
     seen_epics = set()
+
     for row in ws.iter_rows(min_row=2):
         cells = [cell.value for cell in row]
         epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
@@ -298,7 +309,6 @@ def _parse_xlsx(xlsx_path: str) -> list[dict]:
         if not epic:
             continue
 
-        # Skip duplicate EPIC numbers within the same file
         epic_upper = epic.strip().upper()
         if epic_upper in seen_epics:
             continue
@@ -307,14 +317,8 @@ def _parse_xlsx(xlsx_path: str) -> list[dict]:
         assembly = _safe_str(cells[col_map['assembly']] if 'assembly' in col_map and col_map['assembly'] < len(cells) else '') if 'assembly' in col_map else ''
         district = _safe_str(cells[col_map['district']] if 'district' in col_map and col_map['district'] < len(cells) else '') if 'district' in col_map else ''
 
-        voter = {
-            'epic_no': epic,
-            'name': name,
-            'assembly': assembly,
-            'district': district,
-        }
+        voter = {'epic_no': epic, 'name': name, 'assembly': assembly, 'district': district}
 
-        # Store ALL remaining columns as extra fields
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
                 key = h.replace(' ', '_').lower()
@@ -322,14 +326,13 @@ def _parse_xlsx(xlsx_path: str) -> list[dict]:
                 if val:
                     voter[key] = val
 
-        voters.append(voter)
+        yield voter
 
     wb.close()
-    return voters
 
 
-def _parse_csv_bytes(raw: bytes) -> list[dict]:
-    """Parse CSV bytes into voter dicts with ALL columns."""
+def _iter_csv_bytes(raw: bytes):
+    """Generator: yield one voter dict at a time from CSV bytes (low memory)."""
     for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
         try:
             text = raw.decode(enc)
@@ -340,11 +343,11 @@ def _parse_csv_bytes(raw: bytes) -> list[dict]:
         text = raw.decode('latin-1')
 
     reader = csv.reader(io.StringIO(text))
-    rows = list(reader)
-    if len(rows) < 2:
-        return []
+    try:
+        headers = [h.strip() for h in next(reader)]
+    except StopIteration:
+        return
 
-    headers = [h.strip() for h in rows[0]]
     col_map = {}
     for field, candidates in config.XLSX_COLUMNS.items():
         for idx, h in enumerate(headers):
@@ -353,26 +356,24 @@ def _parse_csv_bytes(raw: bytes) -> list[dict]:
                 break
 
     mapped_indices = set(col_map.values())
-
-    voters = []
     seen_epics = set()
-    for cells in rows[1:]:
+
+    for cells in reader:
         epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
         name = _safe_str(cells[col_map['name']] if 'name' in col_map and col_map['name'] < len(cells) else '')
         if not epic:
             continue
 
-        # Skip duplicate EPIC numbers within the same file
         epic_upper = epic.strip().upper()
         if epic_upper in seen_epics:
             continue
         seen_epics.add(epic_upper)
+
         assembly = _safe_str(cells[col_map['assembly']] if 'assembly' in col_map and col_map['assembly'] < len(cells) else '') if 'assembly' in col_map else ''
         district = _safe_str(cells[col_map['district']] if 'district' in col_map and col_map['district'] < len(cells) else '') if 'district' in col_map else ''
 
         voter = {'epic_no': epic, 'name': name, 'assembly': assembly, 'district': district}
 
-        # Store ALL remaining columns as extra fields
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
                 key = h.replace(' ', '_').lower()
@@ -380,8 +381,7 @@ def _parse_csv_bytes(raw: bytes) -> list[dict]:
                 if val:
                     voter[key] = val
 
-        voters.append(voter)
-    return voters
+        yield voter
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -399,38 +399,48 @@ def find_voter_by_epic(epic_no: str) -> dict | None:
     return doc
 
 
-def upsert_voters(voter_list: list[dict]) -> int:
-    """Bulk-upsert voters into MongoDB in batches. Returns count inserted/updated."""
+def _stream_upsert(voter_iter, status: dict) -> int:
+    """Stream-upsert voters from an iterator into MongoDB in batches."""
     from pymongo import UpdateOne
-    if not voter_list:
-        return 0
     total = 0
     BATCH = 5000
-    for i in range(0, len(voter_list), BATCH):
-        batch = voter_list[i:i + BATCH]
-        ops = []
-        for v in batch:
-            set_data = {k: val for k, val in v.items() if k != '_id'}
-            ops.append(UpdateOne(
-                {'epic_no': v['epic_no']},
-                {'$set': set_data},
-                upsert=True
-            ))
+    batch = []
+    for v in voter_iter:
+        batch.append(v)
+        status['processed'] += 1
+        if len(batch) >= BATCH:
+            ops = [UpdateOne({'epic_no': d['epic_no']}, {'$set': {k: val for k, val in d.items() if k != '_id'}}, upsert=True) for d in batch]
+            result = voters_col.bulk_write(ops, ordered=False)
+            total += result.upserted_count + result.modified_count
+            status['inserted'] = total
+            batch = []
+    if batch:
+        ops = [UpdateOne({'epic_no': d['epic_no']}, {'$set': {k: val for k, val in d.items() if k != '_id'}}, upsert=True) for d in batch]
         result = voters_col.bulk_write(ops, ordered=False)
         total += result.upserted_count + result.modified_count
+        status['inserted'] = total
     return total
 
 
-def replace_all_voters(voter_list: list[dict]) -> int:
-    """Drop existing voters and insert fresh set in batches."""
+def _stream_replace(voter_iter, status: dict) -> int:
+    """Drop existing voters and stream-insert from iterator in batches."""
     voters_col.delete_many({})
-    if not voter_list:
-        return 0
-    BATCH = 10000
-    for i in range(0, len(voter_list), BATCH):
-        batch = voter_list[i:i + BATCH]
+    total = 0
+    BATCH = 5000
+    batch = []
+    for v in voter_iter:
+        batch.append(v)
+        status['processed'] += 1
+        if len(batch) >= BATCH:
+            voters_col.insert_many(batch, ordered=False)
+            total += len(batch)
+            status['inserted'] = total
+            batch = []
+    if batch:
         voters_col.insert_many(batch, ordered=False)
-    return len(voter_list)
+        total += len(batch)
+        status['inserted'] = total
+    return total
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1483,9 +1493,51 @@ def voters_list():
                            filter_district=filter_district)
 
 
+def _run_import_thread(file_path: str, csv_bytes: bytes, ext: str, import_mode: str):
+    """Background thread: parse file and stream-insert into MongoDB."""
+    global import_status
+    try:
+        import_status['phase'] = 'inserting'
+
+        if ext == 'csv':
+            voter_iter = _iter_csv_bytes(csv_bytes)
+        else:
+            voter_iter = _iter_xlsx(file_path)
+
+        if import_mode == 'replace':
+            count = _stream_replace(voter_iter, import_status)
+            import_status['message'] = f'Data replaced successfully! {count} unique voter records stored.'
+        else:
+            existing_count = voters_col.count_documents({})
+            count = _stream_upsert(voter_iter, import_status)
+            new_total = voters_col.count_documents({})
+            new_added = new_total - existing_count
+            updated = count - new_added if count > new_added else 0
+            import_status['message'] = (
+                f'Import merged! {import_status["processed"]} records processed - '
+                f'{new_added} new added, {updated} updated, '
+                f'{new_total} total in database.'
+            )
+
+        import_status['phase'] = 'done'
+
+    except Exception as e:
+        import_status['phase'] = 'error'
+        import_status['error'] = str(e)
+    finally:
+        import_status['running'] = False
+
+
 @admin_bp.route('/import', methods=['GET', 'POST'])
 def import_xlsx():
+    global import_status
+
     if request.method == 'POST':
+        # Prevent concurrent imports
+        if import_status.get('running'):
+            flash('An import is already in progress. Please wait.', 'warning')
+            return redirect(url_for('admin.import_xlsx'))
+
         if 'file' not in request.files:
             flash('No file selected.', 'danger')
             return redirect(url_for('admin.import_xlsx'))
@@ -1500,47 +1552,42 @@ def import_xlsx():
             return redirect(url_for('admin.import_xlsx'))
 
         ext = file.filename.rsplit('.', 1)[1].lower()
+        import_mode = request.form.get('import_mode', 'merge')
 
+        # Save file / read bytes BEFORE launching thread
+        csv_bytes = None
+        file_path = None
         try:
             if ext == 'csv':
-                raw = file.stream.read()
-                voter_list = _parse_csv_bytes(raw)
+                csv_bytes = file.stream.read()
             else:
-                # Save XLSX temporarily for openpyxl to read
                 os.makedirs(config.DATA_DIR, exist_ok=True)
                 file.save(config.VOTERS_XLSX)
-                voter_list = _parse_xlsx(config.VOTERS_XLSX)
-
-            if not voter_list:
-                flash('No voter records found in the file. Check column headers.', 'warning')
-                return redirect(url_for('admin.import_xlsx'))
-
-            # Check import mode
-            import_mode = request.form.get('import_mode', 'merge')
-
-            if import_mode == 'replace':
-                # Replace all - drop existing and insert fresh
-                count = replace_all_voters(voter_list)
-                flash(f'Data replaced successfully! {count} unique voter records stored.', 'success')
-            else:
-                # Merge - upsert (update existing, insert new, no duplicates)
-                existing_count = voters_col.count_documents({})
-                count = upsert_voters(voter_list)
-                new_total = voters_col.count_documents({})
-                new_added = new_total - existing_count
-                updated = count - new_added if count > new_added else 0
-                flash(
-                    f'Import merged! {len(voter_list)} records processed - '
-                    f'{new_added} new added, {updated} updated, '
-                    f'{new_total} total in database.',
-                    'success'
-                )
-
+                file_path = config.VOTERS_XLSX
         except Exception as e:
-            flash(f'Could not process file: {e}', 'danger')
+            flash(f'Could not read file: {e}', 'danger')
             return redirect(url_for('admin.import_xlsx'))
 
-        return redirect(url_for('admin.dashboard'))
+        # Reset status and launch background thread
+        import_status.update({
+            'running': True,
+            'phase': 'parsing',
+            'processed': 0,
+            'inserted': 0,
+            'total': 0,
+            'message': '',
+            'error': '',
+        })
+
+        t = threading.Thread(
+            target=_run_import_thread,
+            args=(file_path, csv_bytes, ext, import_mode),
+            daemon=True
+        )
+        t.start()
+
+        # Return JSON so the frontend stays on the page and polls
+        return jsonify({'ok': True, 'status': 'started'})
 
     # GET - show current status
     try:
@@ -1548,6 +1595,12 @@ def import_xlsx():
     except Exception:
         voters_count = 0
     return render_template('admin/import.html', voters_count=voters_count)
+
+
+@admin_bp.route('/api/import-status')
+def api_import_status():
+    """Polling endpoint for import progress."""
+    return jsonify(import_status)
 
 
 @admin_bp.route('/api/stats')
