@@ -121,6 +121,9 @@ XLSX_COLUMNS = {
     'name': ['Name', 'Voter Name', 'Full Name', 'applicantFirstName', 'Applicant Name'],
     'assembly': ['Assembly', 'Constituency', 'AC Name', 'asmblyName', 'Assembly Name'],
     'district': ['District', 'Dist', 'districtValue', 'District Value'],
+    'polling_station': ['Polling Station', 'Polling Booth', 'Booth Name', 'PS Name', 'Station Name', 'pollingStationName', 'Polling Station Name'],
+    'part_no': ['Part No', 'Part Number', 'partNumber', 'Part', 'Section No'],
+    'booth_address': ['Booth Address', 'PS Address', 'Polling Station Address', 'Station Address', 'pollingStationAddress', 'Polling Stn Address'],
 }
 
 # ── Output Settings ──────────────────────────────────────────────

@@ -1193,6 +1193,11 @@
           <button class="profile-back-btn" id="cardBackBtn"><i class="bi bi-arrow-left"></i> Back to Menu</button>
           <div id="cardContent"></div>
         </div>
+        <!-- Your Booth View -->
+        <div class="sidebar-profile-view" id="sidebarBoothView">
+          <button class="profile-back-btn" id="boothBackBtn"><i class="bi bi-arrow-left"></i> Back to Menu</button>
+          <div id="boothContent"></div>
+        </div>
       </div>
     </div>
 
@@ -1434,6 +1439,7 @@
           h += '<div class="sidebar-section-label">Account</div>';
           h += '<button class="sidebar-menu-item" id="sidebarProfileBtn"><i class="bi bi-person-circle" style="color:#008069"></i> Profile</button>';
           h += '<button class="sidebar-menu-item" id="sidebarMyCardBtn"><i class="bi bi-card-heading" style="color:#1565c0"></i> My ID Card</button>';
+          h += '<button class="sidebar-menu-item" id="sidebarBoothNavBtn"><i class="bi bi-geo-alt-fill" style="color:#d32f2f"></i> Your Booth</button>';
           h += '<div class="sidebar-divider"></div>';
           h += '<div class="sidebar-section-label">Actions</div>';
           h += '<button class="sidebar-menu-item" id="sidebarAddMemberBtn"><i class="bi bi-person-plus-fill" style="color:#6a1b9a"></i> Add New Member</button>';
@@ -1446,6 +1452,7 @@
 
           document.getElementById('sidebarProfileBtn').onclick = function() { showSidebarProfile(); };
           document.getElementById('sidebarMyCardBtn').onclick = function() { showSidebarCard(); };
+          document.getElementById('sidebarBoothNavBtn').onclick = function() { showSidebarBooth(); };
           document.getElementById('sidebarAddMemberBtn').onclick = function() { closeSidebar(); handleAddMember(); };
           document.getElementById('sidebarVolunteerBtn').onclick = function() { closeSidebar(); handleBecomeVolunteer(); };
           document.getElementById('sidebarBoothAgentBtn').onclick = function() { closeSidebar(); handleBecomeBoothAgent(); };
@@ -1479,11 +1486,13 @@
         document.getElementById('sidebarMainView').style.display = '';
         document.getElementById('sidebarProfileView').classList.remove('active');
         document.getElementById('sidebarCardView').classList.remove('active');
+        document.getElementById('sidebarBoothView').classList.remove('active');
       }
 
       function showSidebarProfile() {
         document.getElementById('sidebarMainView').style.display = 'none';
         document.getElementById('sidebarCardView').classList.remove('active');
+        document.getElementById('sidebarBoothView').classList.remove('active');
         const view = document.getElementById('sidebarProfileView');
         const content = document.getElementById('profileContent');
         view.classList.add('active');
@@ -1545,6 +1554,7 @@
       function showSidebarCard() {
         document.getElementById('sidebarMainView').style.display = 'none';
         document.getElementById('sidebarProfileView').classList.remove('active');
+        document.getElementById('sidebarBoothView').classList.remove('active');
         var view = document.getElementById('sidebarCardView');
         var content = document.getElementById('cardContent');
         view.classList.add('active');
@@ -1571,6 +1581,74 @@
       function closeSidebar() {
         document.getElementById('sidebarPanel').classList.remove('open');
         document.getElementById('sidebarOverlay').classList.remove('open');
+      }
+
+      function showSidebarBooth() {
+        document.getElementById('sidebarMainView').style.display = 'none';
+        document.getElementById('sidebarProfileView').classList.remove('active');
+        document.getElementById('sidebarCardView').classList.remove('active');
+        var view = document.getElementById('sidebarBoothView');
+        var content = document.getElementById('boothContent');
+        view.classList.add('active');
+        content.innerHTML = '<div style="text-align:center; padding:24px;"><span class="spinner-border spinner-border-sm"></span> Loading booth info...</div>';
+
+        var userData = getUserFromStorage();
+        if (!userData || !userData.mobile) {
+          content.innerHTML = '<p style="padding:12px;">Please register first.</p>';
+          return;
+        }
+
+        fetch('/api/chat/booth', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ mobile: userData.mobile })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.success) { content.innerHTML = '<p style="padding:12px;">Could not load booth info.</p>'; return; }
+          var b = d.booth;
+          var h = '<div style="text-align:center; padding:16px 8px;">';
+          h += '<div style="width:64px;height:64px;border-radius:50%;background:#fce4ec;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;"><i class="bi bi-geo-alt-fill" style="font-size:1.8rem;color:#d32f2f;"></i></div>';
+          h += '<div style="font-weight:700;font-size:1.1rem;margin-bottom:4px;">Your Polling Booth</div>';
+
+          if (d.has_booth_data) {
+            h += '</div>';
+            h += '<div class="profile-detail-list" style="margin-top:8px;">';
+            if (b.address) h += '<div class="profile-detail-row"><span class="profile-detail-label">Booth Address</span><span class="profile-detail-value">' + b.address + '</span></div>';
+            if (b.polling_station) h += '<div class="profile-detail-row"><span class="profile-detail-label">Polling Station</span><span class="profile-detail-value">' + b.polling_station + '</span></div>';
+            if (b.part_no) h += '<div class="profile-detail-row"><span class="profile-detail-label">Part No</span><span class="profile-detail-value">' + b.part_no + '</span></div>';
+            if (b.assembly) h += '<div class="profile-detail-row"><span class="profile-detail-label">Assembly</span><span class="profile-detail-value">' + b.assembly + '</span></div>';
+            if (b.district) h += '<div class="profile-detail-row"><span class="profile-detail-label">District</span><span class="profile-detail-value">' + b.district + '</span></div>';
+            if (b.latlong) h += '<div class="profile-detail-row"><span class="profile-detail-label">Coordinates</span><span class="profile-detail-value" style="font-family:monospace;font-size:0.82rem;">' + b.latlong + '</span></div>';
+            h += '</div>';
+            h += '<div style="text-align:center; padding:16px 12px;">';
+            h += '<button class="btn btn-danger" id="boothNavigateBtn" style="border-radius:24px;padding:10px 28px;font-weight:600;font-size:0.95rem;"><i class="bi bi-cursor-fill me-2"></i>Navigate to Booth</button>';
+            h += '<div style="font-size:0.75rem;color:#999;margin-top:8px;">Opens Google Maps with turn-by-turn directions from your location</div>';
+            h += '</div>';
+          } else {
+            h += '<div style="font-size:0.88rem;color:#888;margin-top:8px;">Booth information is not available for your voter record.</div>';
+            h += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">Contact your local election office for polling booth details.</div>';
+            h += '</div>';
+          }
+
+          content.innerHTML = h;
+
+          if (d.has_booth_data) {
+            document.getElementById('boothNavigateBtn').addEventListener('click', function() {
+              var destination;
+              if (b.latlong) {
+                // Use exact lat,long coordinates for precise navigation
+                destination = b.latlong.replace(/\s/g, '');
+              } else {
+                // Fall back to address string
+                destination = encodeURIComponent(b.address);
+              }
+              var url = 'https://www.google.com/maps/dir/?api=1&destination=' + destination + '&travelmode=driving';
+              window.open(url, '_blank');
+            });
+          }
+        })
+        .catch(function() { content.innerHTML = '<p style="padding:12px;">Error loading booth info.</p>'; });
       }
 
       /* ── Referral context from URL ── */
@@ -2527,6 +2605,7 @@
       document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
       document.getElementById('profileBackBtn').addEventListener('click', showSidebarMain);
       document.getElementById('cardBackBtn').addEventListener('click', showSidebarMain);
+      document.getElementById('boothBackBtn').addEventListener('click', showSidebarMain);
 
       /* ── Boot ── */
       window.addEventListener('load', init);

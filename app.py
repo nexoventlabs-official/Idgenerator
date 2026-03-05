@@ -1251,6 +1251,95 @@ def chat_profile():
     return jsonify({'success': True, 'profile': profile})
 
 
+@app.route('/api/chat/booth', methods=['POST'])
+def chat_booth():
+    """Return booth / polling station info for navigation.
+    Auto-detects lat,long and address from any voter field."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'_id': 0})
+    if not gen_doc:
+        return jsonify({'success': False, 'message': 'Profile not found.'}), 404
+
+    epic = gen_doc.get('epic_no', '')
+    voter_doc = voters_col.find_one({'epic_no': epic}, {'_id': 0}) if epic else None
+
+    # Merge to get all fields
+    merged = {}
+    if voter_doc:
+        merged.update(voter_doc)
+    merged.update({k: v for k, v in gen_doc.items() if v})
+
+    # Skip these keys when scanning for booth data
+    skip_keys = {'_id', 'epic_no', 'name', 'mobile', 'photo_url', 'card_url',
+                 'ptc_code', 'secret_pin', 'referral_id', 'referred_by_ptc',
+                 'referred_by_referral_id', 'generated_at', 'referred_members_count'}
+
+    # Regex: lat,long like 13.2296228,79.6741222
+    latlong_re = re.compile(
+        r'^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?)\s*,\s*[-+]?(180(\.0+)?|(1[0-7]\d|\d{1,2})(\.\d+)?)$'
+    )
+    # Address heuristic: contains a 6-digit pincode, or is long text (>30 chars)
+    # with words like school, room, road, street, building, village, panchayat, ward, etc.
+    addr_keywords = re.compile(
+        r'school|room|road|street|building|village|panchayat|ward|nagar|colony|'
+        r'block|floor|hall|office|temple|church|mosque|community|union|elementary|'
+        r'middle|higher|secondary|primary|facing|north|south|east|west',
+        re.IGNORECASE
+    )
+
+    detected_latlong = None
+    detected_address = None
+    latlong_key = None
+    address_key = None
+
+    for key, val in merged.items():
+        if key in skip_keys or not val:
+            continue
+        s = str(val).strip()
+        if not s:
+            continue
+
+        # Check for lat,long pattern
+        if not detected_latlong and latlong_re.match(s):
+            detected_latlong = s
+            latlong_key = key
+            continue
+
+        # Check for address-like value
+        if not detected_address:
+            has_pincode = bool(re.search(r'\b\d{6}\b', s))
+            has_keywords = bool(addr_keywords.search(s))
+            if (has_pincode or has_keywords) and len(s) > 20:
+                detected_address = s
+                address_key = key
+
+    # Also check explicit fields from column mapping
+    if not detected_address:
+        for f in ('polling_station', 'booth_address'):
+            if merged.get(f):
+                detected_address = merged[f]
+                address_key = f
+                break
+
+    booth = {
+        'latlong': detected_latlong or '',
+        'address': detected_address or '',
+        'latlong_field': latlong_key or '',
+        'address_field': address_key or '',
+        'assembly': merged.get('assembly', ''),
+        'district': merged.get('district', ''),
+        'part_no': merged.get('part_no', ''),
+        'polling_station': merged.get('polling_station', ''),
+    }
+
+    has_data = bool(detected_latlong or detected_address)
+    return jsonify({'success': True, 'booth': booth, 'has_booth_data': has_data})
+
+
 @app.route('/api/chat/get-referral-link', methods=['POST'])
 def chat_get_referral_link():
     """Get or create unique referral link for a voter."""
