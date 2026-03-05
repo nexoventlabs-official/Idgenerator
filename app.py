@@ -51,7 +51,7 @@ app = Flask(__name__,
             template_folder=os.path.join(config.BASE_DIR, 'templates'),
             static_folder=os.path.join(config.BASE_DIR, 'static'))
 app.secret_key = os.getenv('FLASK_SECRET', 'voter-id-gen-secret-2026')
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload
 
 for d in [config.MEMBER_PHOTOS_DIR, config.DATA_DIR, config.UPLOADS_DIR]:
     os.makedirs(d, exist_ok=True)
