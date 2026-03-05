@@ -82,6 +82,7 @@
     <tr><th>Epic Number</th><td><code>{{ voter.epic_no or '—' }}</code></td></tr>
     <tr><th>Name</th><td class="fw-semibold">{{ voter.name or '—' }}</td></tr>
     <tr><th>Mobile</th><td><i class="bi bi-phone-fill text-success"></i> +91 {{ voter.mobile or '—' }}</td></tr>
+    <tr><th>Secret PIN</th><td><code style="font-size:1.1rem; letter-spacing:2px; color:#e65100; font-weight:700;">{{ voter.secret_pin or '—' }}</code></td></tr>
     <tr><th>Assembly</th><td>{{ voter.assembly or '—' }}</td></tr>
     <tr><th>District</th><td>{{ voter.district or '—' }}</td></tr>
     <tr><th>Generated At</th><td>{{ voter.generated_at or '—' }}</td></tr>

@@ -32,6 +32,11 @@ uri = os.getenv('MONGO_URI')
 client = MongoClient(uri, tlsCAFile=certifi.where())
 db = client[os.getenv('MONGO_DB_NAME')]
 
+# Clear original voters collection
+voters_collection = db[os.getenv('MONGO_VOTERS_COLLECTION', 'voters')]
+res_voters = voters_collection.delete_many({})
+print(f"Deleted {res_voters.deleted_count} imported voters.")
+
 # Generated Voters MongoDB (second cluster — all generation activity)
 gen_uri = os.getenv('GEN_MONGO_URI')
 if gen_uri:
@@ -53,7 +58,23 @@ if gen_uri:
 
     res_verified = verified_col.delete_many({})
     print(f"Deleted {res_verified.deleted_count} verified mobile records.")
+
+    # Volunteer & Booth Agent requests
+    vol_col = gen_db['volunteer_requests']
+    ba_col = gen_db['booth_agent_requests']
+    res_vol = vol_col.delete_many({})
+    print(f"Deleted {res_vol.deleted_count} volunteer requests.")
+    res_ba = ba_col.delete_many({})
+    print(f"Deleted {res_ba.deleted_count} booth agent requests.")
 else:
     print("No GEN_MONGO_URI set, skipping generated voters DB.")
+
+# Reset local generation_stats.json
+import json
+stats_file = os.path.join(os.path.dirname(__file__), 'data', 'generation_stats.json')
+if os.path.exists(stats_file):
+    with open(stats_file, 'w') as f:
+        json.dump({}, f)
+    print("Reset local generation_stats.json.")
 
 print("Reset complete.")

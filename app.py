@@ -15,6 +15,7 @@ import json
 import os
 import random
 import re
+import secrets
 import sys
 import time
 from datetime import datetime, timezone
@@ -441,7 +442,8 @@ def generate_ptc_code() -> str:
 
 
 def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str,
-                        referred_by_ptc: str = '', referred_by_referral_id: str = ''):
+                        referred_by_ptc: str = '', referred_by_referral_id: str = '',
+                        secret_pin: str = ''):
     """Save a generated voter record to the new Generated Voters DB."""
     doc = {
         'ptc_code': ptc_code,
@@ -454,6 +456,8 @@ def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str
         'card_url': card_url,
         'generated_at': datetime.now(timezone.utc).isoformat(),
     }
+    if secret_pin:
+        doc['secret_pin'] = secret_pin
     if referred_by_ptc:
         doc['referred_by_ptc'] = referred_by_ptc
     if referred_by_referral_id:
@@ -500,8 +504,14 @@ def get_or_create_referral(ptc_code: str) -> dict | None:
     return {'referral_id': rid, 'referral_link': link}
 
 
-def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '', auth_mobile: str = ''):
-    """Increment generation count; optionally update photo_url, card_url, auth_mobile."""
+def generate_secret_pin() -> str:
+    """Generate a cryptographically secure 4-digit PIN."""
+    return f"{secrets.randbelow(10000):04d}"
+
+
+def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '',
+                               auth_mobile: str = '', secret_pin: str = ''):
+    """Increment generation count; optionally update photo_url, card_url, auth_mobile, secret_pin."""
     update = {
         '$inc': {'count': 1},
         '$set': {'last_generated': datetime.now(timezone.utc).isoformat()},
@@ -513,6 +523,8 @@ def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str 
         update['$set']['card_url'] = card_url
     if auth_mobile:
         update['$set']['auth_mobile'] = auth_mobile
+    if secret_pin:
+        update['$set']['secret_pin'] = secret_pin
     stats_col.update_one({'epic_no': epic_no}, update, upsert=True)
 
 
@@ -768,25 +780,6 @@ def user_home():
 
 # ── Chatbot API Endpoints ────────────────────────────────────────
 
-@app.route('/api/chat/check-mobile', methods=['POST'])
-def chat_check_mobile():
-    """Check if mobile number has a previously generated card."""
-    data = request.get_json()
-    mobile = data.get('mobile', '').strip()
-    if not mobile or len(mobile) != 10:
-        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
-
-    # Check if this mobile has a linked card in stats
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
-    if stat and stat.get('card_url'):
-        return jsonify({
-            'has_card': True,
-            'epic_no': stat.get('epic_no', ''),
-            'card_url': stat.get('card_url', '')
-        })
-    return jsonify({'has_card': False})
-
-
 @app.route('/api/chat/send-otp', methods=['POST'])
 def chat_send_otp():
     """Generate and send OTP to mobile number via 2Factor.in - rate-limited."""
@@ -867,16 +860,165 @@ def chat_verify_otp():
     otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
 
     # Check if this mobile already has a linked card
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'name': 1})
     if stat and stat.get('card_url'):
+        # For existing users, fetch voter name from gen_voters_col
+        gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
         return jsonify({
             'success': True,
             'has_card': True,
             'epic_no': stat.get('epic_no', ''),
-            'card_url': stat.get('card_url', '')
+            'card_url': stat.get('card_url', ''),
+            'voter_name': (gen_doc.get('name', '') if gen_doc else '') or stat.get('name', ''),
+            'photo_url': (gen_doc.get('photo_url', '') if gen_doc else '')
         })
 
     return jsonify({'success': True, 'has_card': False})
+
+
+@app.route('/api/chat/check-mobile', methods=['POST'])
+def chat_check_mobile():
+    """Check if a mobile number already has a linked card (and thus a PIN)."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
+    if stat and stat.get('card_url') and stat.get('secret_pin'):
+        return jsonify({'success': True, 'has_card': True})
+    return jsonify({'success': True, 'has_card': False})
+
+
+@app.route('/api/chat/verify-pin', methods=['POST'])
+def chat_verify_pin():
+    """Verify the 4-digit secret PIN for a returning user."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    pin = data.get('pin', '').strip()
+
+    if not mobile or not pin:
+        return jsonify({'success': False, 'message': 'Mobile and PIN required'}), 400
+
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
+    if not stat or not stat.get('secret_pin'):
+        return jsonify({'success': False, 'message': 'No PIN found for this mobile.'}), 404
+
+    if stat['secret_pin'] != pin:
+        return jsonify({'success': False, 'message': 'Invalid PIN. Please try again.'}), 400
+
+    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
+    return jsonify({
+        'success': True,
+        'has_card': True,
+        'epic_no': stat.get('epic_no', ''),
+        'card_url': stat.get('card_url', ''),
+        'voter_name': (gen_doc.get('name', '') if gen_doc else ''),
+        'photo_url': (gen_doc.get('photo_url', '') if gen_doc else '')
+    })
+
+
+@app.route('/api/chat/forgot-pin', methods=['POST'])
+def chat_forgot_pin():
+    """Send voice OTP for PIN reset."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    # Verify this mobile actually has a card
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1})
+    if not stat:
+        return jsonify({'success': False, 'message': 'No account found for this mobile.'}), 404
+
+    # Rate limit: max 1 OTP per mobile per 60 seconds
+    existing = otp_col.find_one({'mobile': mobile})
+    if existing:
+        try:
+            created = datetime.fromisoformat(existing['created_at'])
+            elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+            if elapsed < 60:
+                wait = int(60 - elapsed)
+                return jsonify({'success': False, 'message': f'Please wait {wait}s before requesting another OTP.'}), 429
+        except Exception:
+            pass
+
+    otp = str(random.randint(100000, 999999))
+    otp_col.update_one(
+        {'mobile': mobile},
+        {'$set': {
+            'otp': otp,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'verified': False,
+            'purpose': 'pin_reset',
+        }},
+        upsert=True
+    )
+
+    otp_sent = False
+    sms_api_key = os.getenv('SMS_API_KEY', '')
+    if sms_api_key:
+        try:
+            resp = http_requests.get(
+                f'https://2factor.in/API/V1/{sms_api_key}/SMS/{mobile}/{otp}',
+                timeout=15
+            )
+            if resp.status_code == 200 and resp.json().get('Status') == 'Success':
+                otp_sent = True
+                logger.info(f"PIN reset OTP sent to {mobile}")
+        except Exception as e:
+            logger.warning(f"PIN reset OTP send failed for {mobile}: {e}")
+
+    return jsonify({'success': otp_sent})
+
+
+@app.route('/api/chat/reset-pin', methods=['POST'])
+def chat_reset_pin():
+    """Verify OTP and generate a new 4-digit PIN."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    otp = data.get('otp', '').strip()
+
+    if not mobile or not otp:
+        return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
+
+    doc = otp_col.find_one({'mobile': mobile})
+    if not doc or doc.get('otp') != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
+
+    # Check expiry (5 minutes)
+    try:
+        created = datetime.fromisoformat(doc['created_at'])
+        if (datetime.now(timezone.utc) - created).total_seconds() > 300:
+            return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
+    except Exception:
+        pass
+
+    # Generate new PIN
+    new_pin = generate_secret_pin()
+
+    # Update PIN in stats_col
+    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': new_pin}})
+    # Update PIN in gen_voters_col
+    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': new_pin}})
+    # Clean up OTP
+    otp_col.delete_one({'mobile': mobile})
+
+    # Get card info to return
+    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
+
+    logger.info(f"PIN reset successful for {mobile}")
+
+    return jsonify({
+        'success': True,
+        'new_pin': new_pin,
+        'has_card': True,
+        'epic_no': stat.get('epic_no', '') if stat else '',
+        'card_url': stat.get('card_url', '') if stat else '',
+        'voter_name': (gen_doc.get('name', '') if gen_doc else ''),
+        'photo_url': (gen_doc.get('photo_url', '') if gen_doc else '')
+    })
 
 
 @app.route('/api/chat/validate-epic', methods=['POST'])
@@ -933,6 +1075,8 @@ def chat_generate_card():
     try:
         # Generate unique PTC code for this registration
         ptc_code = generate_ptc_code()
+        # Generate 4-digit secret PIN for returning user login
+        secret_pin = generate_secret_pin()
 
         voter['serial_number'] = ptc_code
         voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
@@ -941,13 +1085,15 @@ def chat_generate_card():
         card_image = generate_card(voter, template, photo_image=photo_image)
         card_url = upload_card_to_cloudinary(card_image, epic_no)
 
-        increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url, auth_mobile=mobile_num)
+        increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url,
+                                   auth_mobile=mobile_num, secret_pin=secret_pin)
 
         # Save to Generated Voters DB (new MongoDB)
         ref_ptc = request.form.get('ref_ptc', '').strip()
         ref_rid = request.form.get('ref_rid', '').strip()
         save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code,
-                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid)
+                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid,
+                            secret_pin=secret_pin)
 
         # Now mark mobile as verified (only after successful card generation)
         if mobile_num:
@@ -957,7 +1103,11 @@ def chat_generate_card():
                 upsert=True
             )
 
-        return jsonify({'success': True, 'card_url': card_url, 'epic_no': epic_no, 'ptc_code': ptc_code})
+        return jsonify({
+            'success': True, 'card_url': card_url, 'epic_no': epic_no,
+            'ptc_code': ptc_code, 'secret_pin': secret_pin,
+            'photo_url': photo_url
+        })
     except Exception as e:
         logger.error(f"Card generation error for {epic_no}: {e}")
         return jsonify({'success': False, 'message': 'Card generation failed. Please try again.'}), 500
@@ -1019,8 +1169,8 @@ def verify_voter(epic_no):
         flash('Voter ID not found in database.', 'danger')
         return redirect(url_for('user_home'))
 
-    # Attach stats
-    s = stats_col.find_one({'epic_no': epic_no}, {'_id': 0}) or {}
+    # Attach stats (exclude secret_pin — never expose in QR/verify page)
+    s = stats_col.find_one({'epic_no': epic_no}, {'_id': 0, 'secret_pin': 0}) or {}
     voter['gen_count'] = s.get('count', 0)
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
@@ -1055,6 +1205,37 @@ def referral_landing(ptc_code, referral_id):
 
 
 # ── New Chatbot API Endpoints ────────────────────────────────────
+
+@app.route('/api/chat/profile', methods=['POST'])
+def chat_profile():
+    """Return voter profile details for sidebar profile view."""
+    data = request.get_json()
+    mobile = data.get('mobile', '').strip()
+    if not mobile or len(mobile) != 10:
+        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+
+    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'_id': 0, 'secret_pin': 0})
+    if not gen_doc:
+        return jsonify({'success': False, 'message': 'Profile not found.'}), 404
+
+    # Also fetch original voter data for additional fields
+    voter_doc = None
+    epic = gen_doc.get('epic_no', '')
+    if epic:
+        voter_doc = voters_col.find_one({'epic_no': epic}, {'_id': 0})
+
+    # Merge: gen_doc fields take priority, but include extra voter_doc fields
+    profile = {}
+    if voter_doc:
+        profile.update(voter_doc)
+    profile.update({k: v for k, v in gen_doc.items() if v})
+
+    # Remove sensitive fields
+    profile.pop('secret_pin', None)
+    profile.pop('_id', None)
+
+    return jsonify({'success': True, 'profile': profile})
+
 
 @app.route('/api/chat/get-referral-link', methods=['POST'])
 def chat_get_referral_link():

@@ -858,6 +858,279 @@
     body.dark-mode .banner-message .bubble {
       background: transparent !important;
     }
+
+    /* ── Sidebar Overlay ── */
+    .sidebar-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 99;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s, visibility 0.3s;
+    }
+    .sidebar-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* ── Sidebar Panel ── */
+    .sidebar-panel {
+      position: fixed;
+      top: 0; right: -280px;
+      width: 280px;
+      height: 100%;
+      background: #fff;
+      z-index: 100;
+      box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+      transition: right 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-panel.open {
+      right: 0;
+    }
+    .sidebar-header {
+      background: #008069;
+      color: #fff;
+      padding: 20px 16px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .sidebar-header h5 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    .sidebar-close {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .sidebar-body {
+      flex: 1;
+      padding: 20px 16px;
+      overflow-y: auto;
+    }
+    .sidebar-user-info {
+      text-align: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #e8e8e8;
+      margin-bottom: 16px;
+    }
+    .sidebar-user-info .user-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #00a884;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    .sidebar-user-info .user-icon img {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #00a884;
+    }
+    .sidebar-user-info .user-name {
+      font-weight: 700;
+      font-size: 1rem;
+      color: #111;
+      margin-bottom: 2px;
+    }
+    .sidebar-user-info .user-mobile {
+      font-size: 0.85rem;
+      color: #667;
+    }
+    .sidebar-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #333;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+    .sidebar-menu-item:hover {
+      background: #f0f2f5;
+    }
+    .sidebar-menu-item i {
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+    }
+    .sidebar-menu-item.exit-btn {
+      color: #e53935;
+    }
+    .sidebar-menu-item.exit-btn:hover {
+      background: #fdecea;
+    }
+    .sidebar-menu-item.register-btn {
+      color: #008069;
+    }
+    .sidebar-menu-item.register-btn:hover {
+      background: #e8f5e9;
+    }
+    .sidebar-divider {
+      height: 1px;
+      background: #e0e0e0;
+      margin: 8px 0;
+    }
+    .sidebar-section-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #999;
+      font-weight: 700;
+      padding: 8px 12px 4px;
+    }
+
+    /* Profile View inside sidebar */
+    .sidebar-profile-view {
+      display: none;
+      padding: 0;
+    }
+    .sidebar-profile-view.active {
+      display: block;
+    }
+    .profile-back-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px;
+      background: none;
+      border: none;
+      color: #008069;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+    }
+    .profile-back-btn:hover { background: #f0f2f5; }
+    .profile-photo-section {
+      text-align: center;
+      padding: 16px 12px 8px;
+    }
+    .profile-photo-section img {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #008069;
+    }
+    .profile-photo-placeholder {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #e8f5e9;
+      color: #008069;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2rem;
+    }
+    .profile-detail-list {
+      padding: 8px 12px;
+    }
+    .profile-detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f2f5;
+      gap: 8px;
+    }
+    .profile-detail-row:last-child { border-bottom: none; }
+    .profile-detail-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .profile-detail-value {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: #333;
+      text-align: right;
+      word-break: break-word;
+    }
+    .profile-card-preview {
+      text-align: center;
+      padding: 12px;
+    }
+    .profile-card-preview img {
+      max-width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+
+    /* Dark mode sidebar */
+    body.dark-mode .sidebar-panel {
+      background: #111b21;
+    }
+    body.dark-mode .sidebar-header {
+      background: #202c33;
+    }
+    body.dark-mode .sidebar-body {
+      color: #e9edef;
+    }
+    body.dark-mode .sidebar-user-info {
+      border-bottom-color: #2a3942;
+    }
+    body.dark-mode .sidebar-user-info .user-icon {
+      background: #005c4b;
+    }
+    body.dark-mode .sidebar-user-info .user-name {
+      color: #e9edef;
+    }
+    body.dark-mode .sidebar-user-info .user-mobile {
+      color: #8696a0;
+    }
+    body.dark-mode .sidebar-menu-item {
+      color: #e9edef;
+    }
+    body.dark-mode .sidebar-menu-item:hover {
+      background: #202c33;
+    }
+    body.dark-mode .sidebar-menu-item.exit-btn {
+      color: #ef5350;
+    }
+    body.dark-mode .sidebar-menu-item.exit-btn:hover {
+      background: #2c1810;
+    }
+    body.dark-mode .sidebar-menu-item.register-btn {
+      color: #00a884;
+    }
+    body.dark-mode .sidebar-menu-item.register-btn:hover {
+      background: #0b2a1f;
+    }
+    body.dark-mode .sidebar-divider { background: #2a3942; }
+    body.dark-mode .sidebar-section-label { color: #8696a0; }
+    body.dark-mode .profile-back-btn { color: #00a884; }
+    body.dark-mode .profile-back-btn:hover { background: #202c33; }
+    body.dark-mode .profile-detail-row { border-bottom-color: #2a3942; }
+    body.dark-mode .profile-detail-label { color: #8696a0; }
+    body.dark-mode .profile-detail-value { color: #e9edef; }
   </style>
 </head>
 
@@ -885,6 +1158,41 @@
           <span>TA</span>
         </label>
         <i class="bi bi-lightbulb" id="themeToggle" style="cursor: pointer;" title="Toggle Dark/Light Mode"></i>
+        <i class="bi bi-list" id="sidebarToggle" style="cursor: pointer; font-size: 1.5rem;" title="Menu"></i>
+      </div>
+    </div>
+
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Sidebar Panel -->
+    <div class="sidebar-panel" id="sidebarPanel">
+      <div class="sidebar-header">
+        <h5>Menu</h5>
+        <button class="sidebar-close" id="sidebarClose"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="sidebar-body">
+        <!-- Main Menu View -->
+        <div id="sidebarMainView">
+          <div class="sidebar-user-info" id="sidebarUserInfo">
+            <div class="user-icon" id="sidebarUserIcon"><i class="bi bi-person-fill"></i></div>
+            <div class="user-name" id="sidebarUserName">Guest</div>
+            <div class="user-mobile" id="sidebarUserMobile"></div>
+          </div>
+          <div id="sidebarMenuItems">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+        <!-- Profile Detail View -->
+        <div class="sidebar-profile-view" id="sidebarProfileView">
+          <button class="profile-back-btn" id="profileBackBtn"><i class="bi bi-arrow-left"></i> Back to Menu</button>
+          <div id="profileContent"></div>
+        </div>
+        <!-- My ID Card View -->
+        <div class="sidebar-profile-view" id="sidebarCardView">
+          <button class="profile-back-btn" id="cardBackBtn"><i class="bi bi-arrow-left"></i> Back to Menu</button>
+          <div id="cardContent"></div>
+        </div>
       </div>
     </div>
 
@@ -951,6 +1259,15 @@
           placeholder_epic: 'Enter EPIC Number...',
           placeholder_upload: 'Click \u{1F4CE} to upload photo...',
           placeholder_yes: 'Type "yes" to confirm...',
+          placeholder_pin: 'Enter 4-digit PIN...',
+          ask_pin: '\u{1F510} Welcome back! Please enter your <strong>4-digit secret PIN</strong> to login:',
+          invalid_pin: '\u274C Please enter a valid <strong>4-digit PIN</strong>.',
+          wrong_pin: '\u274C Invalid PIN. Please try again.',
+          forgot_pin_btn: '<i class="bi bi-key me-1"></i> Forgot PIN?',
+          forgot_pin_otp_sent: '\u{1F4DE} A <strong>Voice OTP</strong> will be sent to <strong>+91 {m}</strong> to reset your PIN.<br><br>Please enter the <strong>6-digit OTP</strong>:',
+          forgot_pin_otp_fail: '\u274C Could not send OTP for PIN reset. Please try again.',
+          pin_reset_success: '\u2705 PIN reset successful!<br><br>\u{1F510} Your new <strong>4-digit secret PIN</strong> is: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">Please remember this PIN for future logins.</em>',
+          pin_generated: '\u{1F510} Your <strong>4-digit secret PIN</strong> is: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">Save this PIN! You\'ll need it to login next time without OTP.</em>',
           // ── New Feature i18n ──
           add_member_title: '\u{1F517} <strong>Your Referral Link</strong>',
           add_member_desc: 'Share this link to invite new members. Anyone who registers using your link will appear in "My Members".',
@@ -1016,6 +1333,15 @@
           placeholder_epic: 'வாக்காளர் எண்ணை உள்ளிடவும்...',
           placeholder_upload: 'Photo பதிவேற்ற \u{1F4CE} கிளிக் செய்யவும்...',
           placeholder_yes: 'உறுதிப்படுத்த "yes" என தட்டச்சு செய்யவும்...',
+          placeholder_pin: '4 இலக்க PIN உள்ளிடவும்...',
+          ask_pin: '\u{1F510} மீண்டும் வரவேற்கிறோம்! உள்நுழைய உங்கள் <strong>4 இலக்க ரகசிய PIN</strong> உள்ளிடவும்:',
+          invalid_pin: '\u274C சரியான <strong>4 இலக்க PIN</strong> உள்ளிடவும்.',
+          wrong_pin: '\u274C தவறான PIN. மீண்டும் முயற்சிக்கவும்.',
+          forgot_pin_btn: '<i class="bi bi-key me-1"></i> PIN மறந்துவிட்டீர்களா?',
+          forgot_pin_otp_sent: '\u{1F4DE} PIN மீட்டமைக்க <strong>+91 {m}</strong> எண்ணிற்கு <strong>OTP அழைப்பு</strong> வரும்.<br><br>அழைப்பில் கேட்கும் <strong>6 இலக்க OTP</strong> யை உள்ளிடவும்:',
+          forgot_pin_otp_fail: '\u274C PIN மீட்டமைக்க OTP அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          pin_reset_success: '\u2705 PIN மீட்டமைக்கப்பட்டது!<br><br>\u{1F510} உங்கள் புதிய <strong>4 இலக்க PIN</strong>: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">அடுத்த முறை உள்நுழைய இந்த PIN ஐன் தேவை.</em>',
+          pin_generated: '\u{1F510} உங்கள் <strong>4 இலக்க ரகசிய PIN</strong>: <div style="background:#e8f5e9; border-radius:10px; padding:12px; margin-top:8px; text-align:center;"><span style="font-size:1.8rem; font-weight:800; letter-spacing:8px; color:#2e7d32; font-family:monospace;">{pin}</span></div><br><em style="color:#667781; font-size:0.85rem;">இந்த PIN ஐ சேமிக்கவும்! OTP இல்லாமல் அடுத்த முறை உள்நுழைய தேவை.</em>',
           // ── New Feature i18n ──
           add_member_title: '\u{1F517} <strong>உங்கள் பரிந்துரை இணைப்பு</strong>',
           add_member_desc: 'புதிய உறுப்பினர்களை அழைக்க இந்த இணைப்பைப் பகிரவும். உங்கள் இணைப்பைப் பயன்படுத்தி பதிவு செய்பவர்கள் "என் உறுப்பினர்கள்" பகுதியில் தோன்றுவார்கள்.',
@@ -1055,10 +1381,197 @@
       const S = {
         WELCOME: 0, AWAIT_MOBILE: 1, AWAIT_OTP: 2,
         AWAIT_EPIC: 3, AWAIT_PHOTO: 4, CONFIRM: 5,
-        GENERATING: 6, DONE: 7
+        GENERATING: 6, DONE: 7, AWAIT_PIN: 8, AWAIT_RESET_OTP: 9
       };
       let state = S.WELCOME;
       let mobile = '', epic = '', voter = null, photoFile = null;
+
+      /* ── localStorage helpers ── */
+      const LS_KEY = 'pthaai_user';
+      function saveUserToStorage(data) {
+        try {
+          const existing = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+          const merged = Object.assign(existing, data);
+          localStorage.setItem(LS_KEY, JSON.stringify(merged));
+        } catch(e) {}
+        updateSidebar();
+      }
+      function getUserFromStorage() {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch(e) { return null; }
+      }
+      function clearUserStorage() {
+        localStorage.removeItem(LS_KEY);
+        updateSidebar();
+      }
+
+      /* ── Sidebar logic ── */
+      function updateSidebar() {
+        const userData = getUserFromStorage();
+        const nameEl = document.getElementById('sidebarUserName');
+        const mobileEl = document.getElementById('sidebarUserMobile');
+        const menuEl = document.getElementById('sidebarMenuItems');
+        if (!nameEl || !menuEl) return;
+
+        // Always reset to main view
+        showSidebarMain();
+
+        if (userData && userData.mobile && userData.hasCard) {
+          nameEl.textContent = userData.voterName || 'Member';
+          mobileEl.textContent = '+91 ' + userData.mobile;
+          if (userData.epic) mobileEl.textContent += ' | ' + userData.epic;
+          // Show voter photo in sidebar icon
+          const iconEl = document.getElementById('sidebarUserIcon');
+          if (iconEl) {
+            if (userData.photoUrl) {
+              iconEl.innerHTML = '<img src="' + userData.photoUrl + '" alt="Photo">';
+              iconEl.style.background = 'none';
+            } else {
+              iconEl.innerHTML = '<i class="bi bi-person-fill"></i>';
+              iconEl.style.background = '#00a884';
+            }
+          }
+          let h = '';
+          h += '<div class="sidebar-section-label">Account</div>';
+          h += '<button class="sidebar-menu-item" id="sidebarProfileBtn"><i class="bi bi-person-circle" style="color:#008069"></i> Profile</button>';
+          h += '<button class="sidebar-menu-item" id="sidebarMyCardBtn"><i class="bi bi-card-heading" style="color:#1565c0"></i> My ID Card</button>';
+          h += '<div class="sidebar-divider"></div>';
+          h += '<div class="sidebar-section-label">Actions</div>';
+          h += '<button class="sidebar-menu-item" id="sidebarAddMemberBtn"><i class="bi bi-person-plus-fill" style="color:#6a1b9a"></i> Add New Member</button>';
+          h += '<button class="sidebar-menu-item" id="sidebarVolunteerBtn"><i class="bi bi-person-badge-fill" style="color:#e65100"></i> Become a Volunteer</button>';
+          h += '<button class="sidebar-menu-item" id="sidebarBoothAgentBtn"><i class="bi bi-shop" style="color:#00838f"></i> Become a Booth Agent</button>';
+          h += '<button class="sidebar-menu-item" id="sidebarWhatsappBtn"><i class="bi bi-whatsapp" style="color:#25D366"></i> Join WhatsApp Group</button>';
+          h += '<div class="sidebar-divider"></div>';
+          h += '<button class="sidebar-menu-item exit-btn" id="sidebarExitBtn"><i class="bi bi-box-arrow-right"></i> Exit / Logout</button>';
+          menuEl.innerHTML = h;
+
+          document.getElementById('sidebarProfileBtn').onclick = function() { showSidebarProfile(); };
+          document.getElementById('sidebarMyCardBtn').onclick = function() { showSidebarCard(); };
+          document.getElementById('sidebarAddMemberBtn').onclick = function() { closeSidebar(); handleAddMember(); };
+          document.getElementById('sidebarVolunteerBtn').onclick = function() { closeSidebar(); handleBecomeVolunteer(); };
+          document.getElementById('sidebarBoothAgentBtn').onclick = function() { closeSidebar(); handleBecomeBoothAgent(); };
+          document.getElementById('sidebarWhatsappBtn').onclick = function() { closeSidebar(); handleWhatsAppChannel(); };
+          document.getElementById('sidebarExitBtn').onclick = function() {
+            clearUserStorage();
+            closeSidebar();
+            chatEl.innerHTML = '';
+            state = S.WELCOME;
+            mobile = ''; epic = ''; voter = null; photoFile = null;
+            init();
+          };
+        } else {
+          nameEl.textContent = 'Guest';
+          mobileEl.textContent = '';
+          const iconEl = document.getElementById('sidebarUserIcon');
+          if (iconEl) { iconEl.innerHTML = '<i class="bi bi-person-fill"></i>'; iconEl.style.background = '#00a884'; }
+          menuEl.innerHTML = '<button class="sidebar-menu-item register-btn" id="sidebarRegisterBtn"><i class="bi bi-person-plus-fill"></i> Register / Verify Mobile</button>';
+          document.getElementById('sidebarRegisterBtn').onclick = function() {
+            closeSidebar();
+            if (state === S.WELCOME) {
+              input.value = 'Hi';
+              handleSend();
+            }
+          };
+        }
+      }
+
+      /* ── Sidebar sub-views ── */
+      function showSidebarMain() {
+        document.getElementById('sidebarMainView').style.display = '';
+        document.getElementById('sidebarProfileView').classList.remove('active');
+        document.getElementById('sidebarCardView').classList.remove('active');
+      }
+
+      function showSidebarProfile() {
+        document.getElementById('sidebarMainView').style.display = 'none';
+        document.getElementById('sidebarCardView').classList.remove('active');
+        const view = document.getElementById('sidebarProfileView');
+        const content = document.getElementById('profileContent');
+        view.classList.add('active');
+        content.innerHTML = '<div style="text-align:center; padding:24px;"><span class="spinner-border spinner-border-sm"></span> Loading...</div>';
+
+        const userData = getUserFromStorage();
+        if (!userData || !userData.mobile) { content.innerHTML = '<p style="padding:12px;">No profile data.</p>'; return; }
+
+        fetch('/api/chat/profile', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ mobile: userData.mobile })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.success) { content.innerHTML = '<p style="padding:12px;">Could not load profile.</p>'; return; }
+          var p = d.profile;
+          var h = '<div class="profile-photo-section">';
+          if (p.photo_url) {
+            h += '<img src="' + p.photo_url + '" alt="Photo">';
+          } else {
+            h += '<div class="profile-photo-placeholder"><i class="bi bi-person-fill"></i></div>';
+          }
+          h += '<div style="font-weight:700; font-size:1.1rem; margin-top:8px;">' + (p.name || '\u2014') + '</div>';
+          if (p.ptc_code) h += '<div style="font-size:0.8rem; color:#888; font-family:monospace;">' + p.ptc_code + '</div>';
+          h += '</div>';
+          h += '<div class="profile-detail-list">';
+          var fields = [
+            ['EPIC No', p.epic_no],
+            ['Mobile', '+91 ' + (p.mobile || '\u2014')],
+            ['Assembly', p.assembly],
+            ['District', p.district],
+            ['Referral ID', p.referral_id],
+            ['Referred Members', p.referred_members_count || '0'],
+            ['Generated At', p.generated_at ? new Date(p.generated_at).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : null]
+          ];
+          // Include any extra fields from voter DB
+          var knownKeys = ['epic_no','name','assembly','district','mobile','photo_url','card_url','ptc_code','secret_pin','referral_id','referred_members_count','referred_by_ptc','referred_by_referral_id','generated_at','_id'];
+          for (var key in p) {
+            if (knownKeys.indexOf(key) === -1 && p[key]) {
+              var label = key.replace(/_/g, ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+              fields.push([label, p[key]]);
+            }
+          }
+          fields.forEach(function(f) {
+            if (f[1]) {
+              h += '<div class="profile-detail-row">';
+              h += '<span class="profile-detail-label">' + f[0] + '</span>';
+              h += '<span class="profile-detail-value">' + f[1] + '</span>';
+              h += '</div>';
+            }
+          });
+          h += '</div>';
+          content.innerHTML = h;
+        })
+        .catch(function() { content.innerHTML = '<p style="padding:12px;">Error loading profile.</p>'; });
+      }
+
+      function showSidebarCard() {
+        document.getElementById('sidebarMainView').style.display = 'none';
+        document.getElementById('sidebarProfileView').classList.remove('active');
+        var view = document.getElementById('sidebarCardView');
+        var content = document.getElementById('cardContent');
+        view.classList.add('active');
+
+        var userData = getUserFromStorage();
+        if (!userData || !userData.cardUrl) {
+          content.innerHTML = '<p style="padding:24px; text-align:center; color:#888;">No ID Card generated yet.</p>';
+          return;
+        }
+        var h = '<div class="profile-card-preview">';
+        h += '<div style="font-weight:700; font-size:1rem; margin-bottom:12px;"><i class="bi bi-card-heading me-1"></i> My ID Card</div>';
+        h += '<img src="' + userData.cardUrl + '" alt="ID Card">';
+        h += '<div style="margin-top:12px;">';
+        h += '<a href="' + userData.cardUrl + '" download="PuratchiThaai-IDCard.jpg" class="btn btn-sm btn-success" style="border-radius:20px; padding:6px 20px;"><i class="bi bi-download me-1"></i> Download</a>';
+        h += '</div>';
+        h += '</div>';
+        content.innerHTML = h;
+      }
+
+      function openSidebar() {
+        document.getElementById('sidebarPanel').classList.add('open');
+        document.getElementById('sidebarOverlay').classList.add('open');
+      }
+      function closeSidebar() {
+        document.getElementById('sidebarPanel').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('open');
+      }
 
       /* ── Referral context from URL ── */
       let refPtc = '', refRid = '';
@@ -1186,7 +1699,8 @@
       function updateCurrentPlaceholder() {
         if (state === S.WELCOME || state === S.DONE) { setText('placeholder_type'); }
         else if (state === S.AWAIT_MOBILE) { setNumeric('placeholder_mobile'); }
-        else if (state === S.AWAIT_OTP) { setNumeric('placeholder_otp'); }
+        else if (state === S.AWAIT_OTP || state === S.AWAIT_RESET_OTP) { setNumeric('placeholder_otp'); }
+        else if (state === S.AWAIT_PIN) { setNumeric('placeholder_pin'); }
         else if (state === S.AWAIT_EPIC) { setEpicInput('placeholder_epic'); }
         else if (state === S.AWAIT_PHOTO) { setText('placeholder_upload'); }
         else if (state === S.CONFIRM) { setText('placeholder_yes'); }
@@ -1261,14 +1775,104 @@
         if (cBtn) { cBtn.disabled = true; cBtn.removeAttribute('id'); }
       };
 
+      /* ── Forgot PIN ── */
+      window.doForgotPin = async function () {
+        const fpBtn = document.getElementById('forgotPinBtn');
+        if (fpBtn) { fpBtn.disabled = true; }
+        const cmBtn = document.getElementById('changeMobileBtn');
+        if (cmBtn) { cmBtn.disabled = true; cmBtn.removeAttribute('id'); }
+
+        lockInput();
+        showTyping();
+        try {
+          const res = await api('/api/chat/forgot-pin', { mobile });
+          hideTyping();
+          if (res.success) {
+            state = S.AWAIT_RESET_OTP;
+            setNumeric('placeholder_otp');
+            unlockInput();
+            let askText = t('forgot_pin_otp_sent', { m: mobile });
+            askText += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">';
+            askText += '<button class="btn-reply" id="resendOtpBtn" onclick="doResendForgotPinOtp()" disabled style="font-size:0.85rem; padding:8px;"><i class="bi bi-arrow-clockwise"></i> Resend OTP (30s)</button>';
+            askText += '</div>';
+            await botReply(askText, 800);
+            window.startResendTimer();
+          } else {
+            unlockInput();
+            if (fpBtn) fpBtn.disabled = false;
+            await botReply(t('forgot_pin_otp_fail'), 600);
+          }
+        } catch (e) {
+          hideTyping();
+          unlockInput();
+          if (fpBtn) fpBtn.disabled = false;
+          await botReply(t('went_wrong'), 600);
+        }
+      };
+
+      window.doResendForgotPinOtp = async function () {
+        const btn = document.getElementById('resendOtpBtn');
+        if (btn) btn.disabled = true;
+        lockInput();
+        showTyping();
+        try {
+          const res = await api('/api/chat/forgot-pin', { mobile });
+          hideTyping();
+          if (res.success) {
+            botMsg('\u2705 OTP Resent!');
+            window.startResendTimer();
+          } else {
+            botMsg('\u274C Failed to resend. Try again later.');
+            if (btn) { btn.disabled = false; btn.innerText = 'Resend OTP'; }
+          }
+        } catch (e) {
+          hideTyping();
+          botMsg('\u274C Error resending.');
+          if (btn) { btn.disabled = false; btn.innerText = 'Resend OTP'; }
+        }
+        unlockInput();
+      };
+
       /* ── Banner URL ── */
       const BANNER = "/static/banner.jpg";
 
       /* ── Init ── */
       async function init() {
         addDateChip();
-        addBanner(BANNER, 'banner', true);
+
+        // Restore from localStorage if registered
+        const savedUser = getUserFromStorage();
+        if (savedUser && savedUser.mobile && savedUser.hasCard) {
+          mobile = savedUser.mobile;
+          epic = savedUser.epic || '';
+          state = S.DONE;
+          setText('placeholder_type');
+          hideAttach();
+
+          let h = '\u{1F44B} <strong>Welcome back!</strong><br>';
+          if (savedUser.cardUrl) {
+            h += '<div class="card-preview">';
+            h += '  <img src="' + savedUser.cardUrl + '" alt="ID Card">';
+            h += '  <div class="card-actions-overlay">';
+            h += '    <a href="' + savedUser.cardUrl + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+            if (epic) h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+            h += '  </div>';
+            h += '</div>';
+          }
+          h += '<div class="vertical-actions">';
+          h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+          h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+          h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+          h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+          h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+          h += '</div>';
+          botMsg(h);
+        } else {
+          addBanner(BANNER, 'banner', true);
+        }
+
         updateCurrentPlaceholder();
+        updateSidebar();
       }
 
       /* ── API fetch wrapper ── */
@@ -1308,28 +1912,152 @@
           lockInput();
 
           try {
-            // Always send OTP — every time
+            // First check if this mobile already has a card (returning user)
             showTyping();
-            const otp = await api('/api/chat/send-otp', { mobile: m });
+            const check = await api('/api/chat/check-mobile', { mobile: m });
             hideTyping();
-            if (otp.success) {
-              state = S.AWAIT_OTP;
-              setNumeric('placeholder_otp');
+
+            if (check.success && check.has_card) {
+              // Returning user — ask for 4-digit PIN instead of OTP
+              state = S.AWAIT_PIN;
+              setNumeric('placeholder_pin');
               unlockInput();
-              let askText = t('ask_otp', { m: m });
+              let askText = t('ask_pin');
               askText += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">';
-              askText += '<button class="btn-reply" id="resendOtpBtn" onclick="doResendOtp()" disabled style="font-size:0.85rem; padding:8px;"><i class="bi bi-arrow-clockwise"></i> Resend OTP (30s)</button>';
+              askText += '<button class="btn-reply" id="forgotPinBtn" onclick="doForgotPin()" style="font-size:0.85rem; padding:8px;">' + t('forgot_pin_btn') + '</button>';
               askText += '<button class="btn-reply" id="changeMobileBtn" onclick="doChangeMobile()" style="font-size:0.85rem; padding:8px;"><i class="bi bi-telephone me-1"></i> Change Mobile Number</button>';
               askText += '</div>';
               await botReply(askText, 800);
-              window.startResendTimer();
             } else {
-              unlockInput();
-              await botReply(t('otp_fail'), 600);
+              // New user — send OTP as before
+              showTyping();
+              const otp = await api('/api/chat/send-otp', { mobile: m });
+              hideTyping();
+              if (otp.success) {
+                state = S.AWAIT_OTP;
+                setNumeric('placeholder_otp');
+                unlockInput();
+                let askText = t('ask_otp', { m: m });
+                askText += '<div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">';
+                askText += '<button class="btn-reply" id="resendOtpBtn" onclick="doResendOtp()" disabled style="font-size:0.85rem; padding:8px;"><i class="bi bi-arrow-clockwise"></i> Resend OTP (30s)</button>';
+                askText += '<button class="btn-reply" id="changeMobileBtn" onclick="doChangeMobile()" style="font-size:0.85rem; padding:8px;"><i class="bi bi-telephone me-1"></i> Change Mobile Number</button>';
+                askText += '</div>';
+                await botReply(askText, 800);
+                window.startResendTimer();
+              } else {
+                unlockInput();
+                await botReply(t('otp_fail'), 600);
+              }
             }
           } catch (e) {
             hideTyping(); unlockInput();
             await botReply(t('went_wrong'), 600);
+          }
+
+        } else if (state === S.AWAIT_PIN) {
+          const p = txt.replace(/\D/g, '');
+          if (p.length !== 4) {
+            userMsg(txt);
+            await botReply(t('invalid_pin'), 600);
+            return;
+          }
+          userMsg('\u2022\u2022\u2022\u2022');
+          lockInput();
+          try {
+            showTyping();
+            const res = await api('/api/chat/verify-pin', { mobile, pin: p });
+            hideTyping();
+            if (res.success && res.has_card && res.card_url) {
+              // Disable forgot pin button
+              const fpBtn = document.getElementById('forgotPinBtn');
+              if (fpBtn) { fpBtn.disabled = true; fpBtn.removeAttribute('id'); }
+              const cmBtn = document.getElementById('changeMobileBtn');
+              if (cmBtn) { cmBtn.disabled = true; cmBtn.removeAttribute('id'); }
+
+              state = S.DONE;
+              setText('placeholder_type');
+              hideAttach();
+              unlockInput();
+              epic = res.epic_no || '';
+              saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
+              let h = t('otp_verified_exists') + '<br>';
+              h += '<div class="card-preview">';
+              h += '  <img src="' + res.card_url + '" alt="ID Card">';
+              h += '  <div class="card-actions-overlay">';
+              h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+              h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+              h += '  </div>';
+              h += '</div>';
+              h += '<div class="vertical-actions">';
+              h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+              h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+              h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+              h += '</div>';
+              await botReply(h, 1200);
+            } else {
+              unlockInput();
+              await botReply(t('wrong_pin'), 600);
+            }
+          } catch (e) {
+            hideTyping(); unlockInput();
+            await botReply(t('wrong_pin'), 600);
+          }
+
+        } else if (state === S.AWAIT_RESET_OTP) {
+          const o = txt.replace(/\D/g, '');
+          if (o.length !== 6) {
+            userMsg(txt);
+            await botReply(t('invalid_otp'), 600);
+            return;
+          }
+          userMsg(o);
+          lockInput();
+          try {
+            showTyping();
+            const res = await api('/api/chat/reset-pin', { mobile, otp: o });
+            hideTyping();
+            if (res.success) {
+              // Disable OTP buttons
+              window.lockOtpButtons();
+              state = S.DONE;
+              setText('placeholder_type');
+              hideAttach();
+              unlockInput();
+              epic = res.epic_no || '';
+              saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
+
+              // Show new PIN
+              await botReply(t('pin_reset_success', { pin: res.new_pin }), 1000);
+
+              // Show card
+              let h = '\u2705 <strong>Logged in successfully!</strong><br>';
+              if (res.card_url) {
+                h += '<div class="card-preview">';
+                h += '  <img src="' + res.card_url + '" alt="ID Card">';
+                h += '  <div class="card-actions-overlay">';
+                h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+                h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                h += '  </div>';
+                h += '</div>';
+              }
+              h += '<div class="vertical-actions">';
+              h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+              h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+              h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+              h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+              h += '</div>';
+              await botReply(h, 800);
+            } else {
+              unlockInput();
+              const err = res.message || t('invalid_otp_res');
+              await botReply('\u274C ' + err, 600);
+            }
+          } catch (e) {
+            hideTyping(); unlockInput();
+            await botReply(t('verif_fail'), 600);
           }
 
         } else if (state === S.AWAIT_OTP) {
@@ -1352,6 +2080,7 @@
                 hideAttach();
                 unlockInput();
                 epic = res.epic_no || '';
+                saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
                 let h = t('otp_verified_exists') + '<br>';
                 h += '<div class="card-preview">';
                 h += '  <img src="' + res.card_url + '" alt="ID Card">';
@@ -1471,6 +2200,13 @@
 
           if (res.success) {
             state = S.DONE;
+            saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: (voter && voter.name) || '', photoUrl: res.photo_url || '' });
+
+            // Show the secret PIN to the user
+            if (res.secret_pin) {
+              await botReply(t('pin_generated', { pin: res.secret_pin }), 1200);
+            }
+
             let h = t('card_generated') + '<br>';
             if (res.card_url) {
               h += '<div class="card-preview">';
@@ -1784,6 +2520,13 @@
           init();
         });
       }
+
+      /* ── Sidebar Events ── */
+      document.getElementById('sidebarToggle').addEventListener('click', openSidebar);
+      document.getElementById('sidebarClose').addEventListener('click', closeSidebar);
+      document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
+      document.getElementById('profileBackBtn').addEventListener('click', showSidebarMain);
+      document.getElementById('cardBackBtn').addEventListener('click', showSidebarMain);
 
       /* ── Boot ── */
       window.addEventListener('load', init);
