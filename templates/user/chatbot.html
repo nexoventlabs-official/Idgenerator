@@ -708,7 +708,7 @@
       gap: 6px;
       font-size: 0.8rem;
       font-weight: 700;
-      color: rgba(255, 255, 255, 0.9);
+      color: #333;
       cursor: pointer;
     }
 
@@ -732,7 +732,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: rgba(255, 255, 255, 0.3);
+      background-color: #ccc;
       transition: .3s;
       border-radius: 24px;
     }
@@ -763,8 +763,36 @@
     }
 
     body.dark-mode .slider {
-      background-color: #444;
+      background-color: #555;
     }
+
+    /* Sidebar settings row */
+    .sidebar-settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      font-size: 0.88rem;
+      color: #333;
+    }
+    .sidebar-settings-row .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+    }
+    .sidebar-settings-row .setting-label i {
+      font-size: 1.1rem;
+    }
+    .sidebar-theme-btn {
+      background: none; border: 1px solid #ddd; border-radius: 20px;
+      padding: 5px 14px; font-size: 0.8rem; cursor: pointer;
+      display: flex; align-items: center; gap: 5px; color: #333;
+    }
+    .sidebar-theme-btn:hover { background: #f0f0f0; }
+    body.dark-mode .sidebar-settings-row { color: #ccc; }
+    body.dark-mode .sidebar-theme-btn { border-color: #555; color: #ccc; }
+    body.dark-mode .sidebar-theme-btn:hover { background: #333; }
 
     body.dark-mode input:checked+.slider {
       background-color: #00a884;
@@ -1149,15 +1177,6 @@
           style="height: 46px; width: auto;">
       </div>
       <div class="actions" style="display: flex; align-items: center; gap: 12px;">
-        <label class="lang-toggle-wrapper" title="Toggle English/Tamil">
-          <span>EN</span>
-          <div class="lang-toggle">
-            <input type="checkbox" id="langToggle">
-            <span class="slider"></span>
-          </div>
-          <span>TA</span>
-        </label>
-        <i class="bi bi-lightbulb" id="themeToggle" style="cursor: pointer;" title="Toggle Dark/Light Mode"></i>
         <i class="bi bi-list" id="sidebarToggle" style="cursor: pointer; font-size: 1.5rem;" title="Menu"></i>
       </div>
     </div>
@@ -1448,6 +1467,12 @@
           h += '<button class="sidebar-menu-item" id="sidebarWhatsappBtn"><i class="bi bi-whatsapp" style="color:#25D366"></i> Join WhatsApp Group</button>';
           h += '<div class="sidebar-divider"></div>';
           h += '<button class="sidebar-menu-item exit-btn" id="sidebarExitBtn"><i class="bi bi-box-arrow-right"></i> Exit / Logout</button>';
+          h += '<div class="sidebar-divider"></div>';
+          h += '<div class="sidebar-section-label">Settings</div>';
+          h += '<div class="sidebar-settings-row"><span class="setting-label"><i class="bi bi-translate" style="color:#1565c0"></i> Language</span>';
+          h += '<label class="lang-toggle-wrapper" title="Toggle English/Tamil"><span>EN</span><div class="lang-toggle"><input type="checkbox" id="langToggle"><span class="slider"></span></div><span>TA</span></label></div>';
+          h += '<div class="sidebar-settings-row"><span class="setting-label"><i class="bi bi-lightbulb" style="color:#f9a825"></i> Theme</span>';
+          h += '<button class="sidebar-theme-btn" id="themeToggle"><i class="bi bi-lightbulb"></i> <span>Light</span></button></div>';
           menuEl.innerHTML = h;
 
           document.getElementById('sidebarProfileBtn').onclick = function() { showSidebarProfile(); };
@@ -1465,12 +1490,19 @@
             mobile = ''; epic = ''; voter = null; photoFile = null;
             init();
           };
+          bindSidebarSettings();
         } else {
           nameEl.textContent = 'Guest';
           mobileEl.textContent = '';
           const iconEl = document.getElementById('sidebarUserIcon');
           if (iconEl) { iconEl.innerHTML = '<i class="bi bi-person-fill"></i>'; iconEl.style.background = '#00a884'; }
-          menuEl.innerHTML = '<button class="sidebar-menu-item register-btn" id="sidebarRegisterBtn"><i class="bi bi-person-plus-fill"></i> Register / Verify Mobile</button>';
+          menuEl.innerHTML = '<button class="sidebar-menu-item register-btn" id="sidebarRegisterBtn"><i class="bi bi-person-plus-fill"></i> Register / Verify Mobile</button>'
+            + '<div class="sidebar-divider"></div>'
+            + '<div class="sidebar-section-label">Settings</div>'
+            + '<div class="sidebar-settings-row"><span class="setting-label"><i class="bi bi-translate" style="color:#1565c0"></i> Language</span>'
+            + '<label class="lang-toggle-wrapper" title="Toggle English/Tamil"><span>EN</span><div class="lang-toggle"><input type="checkbox" id="langToggle"><span class="slider"></span></div><span>TA</span></label></div>'
+            + '<div class="sidebar-settings-row"><span class="setting-label"><i class="bi bi-lightbulb" style="color:#f9a825"></i> Theme</span>'
+            + '<button class="sidebar-theme-btn" id="themeToggle"><i class="bi bi-lightbulb"></i> <span>Light</span></button></div>';
           document.getElementById('sidebarRegisterBtn').onclick = function() {
             closeSidebar();
             if (state === S.WELCOME) {
@@ -1478,6 +1510,7 @@
               handleSend();
             }
           };
+          bindSidebarSettings();
         }
       }
 
@@ -1665,7 +1698,6 @@
       const sendBtn = document.getElementById('sendBtn');
       const attachBtn = document.getElementById('attachBtn');
       const photoInput = document.getElementById('photoInput');
-      const langToggleBtn = document.getElementById('langToggle');
 
       /* ── Helpers ── */
       const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2567,36 +2599,38 @@
         }
       });
 
-      /* ── Theme Toggle ── */
-      const themeToggleBtn = document.getElementById('themeToggle');
-      themeToggleBtn.addEventListener('click', () => {
-        document.body.classList.toggle('dark-mode');
-        if (document.body.classList.contains('dark-mode')) {
-          themeToggleBtn.classList.replace('bi-lightbulb', 'bi-moon-stars-fill');
-        } else {
-          themeToggleBtn.classList.replace('bi-moon-stars-fill', 'bi-lightbulb');
+      /* ── Theme & Language Toggle (bound after sidebar renders) ── */
+      function bindSidebarSettings() {
+        var themeBtn = document.getElementById('themeToggle');
+        var langCb = document.getElementById('langToggle');
+        if (themeBtn) {
+          // Update button label to current state
+          var isDark = document.body.classList.contains('dark-mode');
+          var icon = themeBtn.querySelector('i');
+          var label = themeBtn.querySelector('span');
+          if (icon) { icon.className = isDark ? 'bi bi-moon-stars-fill' : 'bi bi-lightbulb'; }
+          if (label) { label.textContent = isDark ? 'Dark' : 'Light'; }
+          themeBtn.onclick = function() {
+            document.body.classList.toggle('dark-mode');
+            var dark = document.body.classList.contains('dark-mode');
+            var i = this.querySelector('i');
+            var s = this.querySelector('span');
+            if (i) { i.className = dark ? 'bi bi-moon-stars-fill' : 'bi bi-lightbulb'; }
+            if (s) { s.textContent = dark ? 'Dark' : 'Light'; }
+          };
         }
-      });
-
-      /* ── Language Toggle ── */
-      if (langToggleBtn) {
-        langToggleBtn.addEventListener('click', () => {
-          if (lang === 'en') {
-            lang = 'ta';
-            langToggleBtn.textContent = 'TA';
-          } else {
-            lang = 'en';
-            langToggleBtn.textContent = 'EN';
-          }
-          updateCurrentPlaceholder();
-
-          // Re-trigger the whole process so bot messages restart via user action language selected
-          chatEl.innerHTML = '';
-          state = S.WELCOME;
-          epic = ''; mobile = ''; photoFile = null;
-          input.value = '';
-          init();
-        });
+        if (langCb) {
+          langCb.checked = (lang === 'ta');
+          langCb.onchange = function() {
+            lang = this.checked ? 'ta' : 'en';
+            updateCurrentPlaceholder();
+            chatEl.innerHTML = '';
+            state = S.WELCOME;
+            epic = ''; mobile = ''; photoFile = null;
+            input.value = '';
+            init();
+          };
+        }
       }
 
       /* ── Sidebar Events ── */
