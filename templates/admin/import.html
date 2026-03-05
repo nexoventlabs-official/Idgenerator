@@ -15,9 +15,45 @@
     position: absolute; inset: 0; opacity: 0; cursor: pointer;
   }
   #file-name { font-size: 0.88rem; color: #1565c0; font-weight: 600; }
+
+  /* Import loading overlay */
+  .import-overlay {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+    justify-content: center; align-items: center;
+  }
+  .import-overlay.active { display: flex; }
+  .import-overlay-box {
+    background: #fff; border-radius: 18px; padding: 2.5rem 2rem;
+    text-align: center; max-width: 380px; width: 90%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  .import-spinner {
+    width: 56px; height: 56px; border: 5px solid #e3e3e3;
+    border-top-color: #1565c0; border-radius: 50%;
+    animation: importSpin 0.9s linear infinite;
+    margin: 0 auto 1.2rem;
+  }
+  @keyframes importSpin { to { transform: rotate(360deg); } }
+  .import-overlay-box h5 { font-weight: 700; margin-bottom: 0.4rem; }
+  .import-overlay-box .sub { font-size: 0.85rem; color: #666; }
+  .import-overlay-box .elapsed {
+    font-size: 0.8rem; color: #999; margin-top: 1rem;
+    font-variant-numeric: tabular-nums;
+  }
 {% endblock %}
 
 {% block content %}
+
+<!-- Import Loading Overlay -->
+<div class="import-overlay" id="importOverlay">
+  <div class="import-overlay-box">
+    <div class="import-spinner"></div>
+    <h5>Importing Data…</h5>
+    <div class="sub">Processing your file. This may take a few minutes for large datasets.</div>
+    <div class="elapsed" id="importElapsed">Elapsed: 0s</div>
+  </div>
+</div>
 
 <div class="row g-4">
   <!-- Upload Card -->
@@ -160,6 +196,22 @@
       fileInput.files = e.dataTransfer.files;
       fileInput.dispatchEvent(new Event('change'));
     }
+  });
+
+  // Show loading overlay on import
+  document.getElementById('importForm').addEventListener('submit', function() {
+    const overlay = document.getElementById('importOverlay');
+    const elapsed = document.getElementById('importElapsed');
+    overlay.classList.add('active');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Importing…';
+    let seconds = 0;
+    setInterval(() => {
+      seconds++;
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      elapsed.textContent = 'Elapsed: ' + (m > 0 ? m + 'm ' : '') + s + 's';
+    }, 1000);
   });
 </script>
 {% endblock %}

@@ -68,8 +68,8 @@ mongo_client = MongoClient(
     maxPoolSize=50,          # Handle 50 concurrent connections per worker
     minPoolSize=5,           # Keep 5 connections warm
     maxIdleTimeMS=30000,     # Close idle connections after 30s
-    connectTimeoutMS=5000,
-    socketTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=300000,  # 5 min for large bulk imports
 )
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
@@ -400,32 +400,36 @@ def find_voter_by_epic(epic_no: str) -> dict | None:
 
 
 def upsert_voters(voter_list: list[dict]) -> int:
-    """Bulk-upsert voters into MongoDB. Returns count inserted/updated."""
+    """Bulk-upsert voters into MongoDB in batches. Returns count inserted/updated."""
     from pymongo import UpdateOne
     if not voter_list:
         return 0
-    ops = []
-    for v in voter_list:
-        set_data = {k: val for k, val in v.items() if k != '_id'}
-        ops.append(UpdateOne(
-            {'epic_no': v['epic_no']},
-            {'$set': set_data},
-            upsert=True
-        ))
-    result = voters_col.bulk_write(ops)
-    return result.upserted_count + result.modified_count
+    total = 0
+    BATCH = 5000
+    for i in range(0, len(voter_list), BATCH):
+        batch = voter_list[i:i + BATCH]
+        ops = []
+        for v in batch:
+            set_data = {k: val for k, val in v.items() if k != '_id'}
+            ops.append(UpdateOne(
+                {'epic_no': v['epic_no']},
+                {'$set': set_data},
+                upsert=True
+            ))
+        result = voters_col.bulk_write(ops, ordered=False)
+        total += result.upserted_count + result.modified_count
+    return total
 
 
 def replace_all_voters(voter_list: list[dict]) -> int:
-    """Drop existing voters and insert fresh set."""
+    """Drop existing voters and insert fresh set in batches."""
     voters_col.delete_many({})
-    if voter_list:
-        # Preserve any existing photo_url from stats
-        for v in voter_list:
-            existing_stat = stats_col.find_one({'epic_no': v['epic_no']}, {'photo_url': 1})
-            if existing_stat and existing_stat.get('photo_url'):
-                v['photo_url'] = existing_stat['photo_url']
-        voters_col.insert_many(voter_list)
+    if not voter_list:
+        return 0
+    BATCH = 10000
+    for i in range(0, len(voter_list), BATCH):
+        batch = voter_list[i:i + BATCH]
+        voters_col.insert_many(batch, ordered=False)
     return len(voter_list)
 
 
