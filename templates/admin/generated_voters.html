@@ -1,112 +1,8 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Generated Voters{% endblock %}
 {% block page_title %}Generated Voters (<span id="countLabel">{{ total }}</span>){% endblock %}
 
-{% block extra_css %}
-  .voters-table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
-  .voters-table td { font-size: 0.88rem; vertical-align: middle; }
-  .voters-table tbody tr.voter-row { cursor: pointer; transition: background 0.15s; }
-  .voters-table tbody tr.voter-row:hover { background: #f0f4ff !important; }
-  .ptc-badge {
-    display: inline-flex; align-items: center; gap: 3px;
-    padding: 2px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;
-    background: #e8f5e9; color: #2e7d32; font-family: monospace; letter-spacing: 0.5px;
-  }
-  .voter-avatar {
-    width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-    border: 2px solid #e0e0e0;
-  }
-  .voter-avatar-placeholder {
-    width: 36px; height: 36px; border-radius: 50%;
-    background: #f0f0f0; color: #bbb;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; border: 2px solid #e0e0e0;
-  }
-  .filter-bar {
-    background: #f8f9fa; border-radius: 12px; padding: 0.75rem 1rem;
-  }
-  .filter-bar input, .filter-bar select { font-size: 0.85rem; border-radius: 8px; }
-  .no-results { padding: 3rem 1rem; text-align: center; color: #999; }
-  .no-results i { font-size: 2.5rem; opacity: 0.3; }
-  .loading-spinner {
-    display: none; text-align: center; padding: 2rem;
-    color: #aaa; font-size: 0.88rem;
-  }
-  .loading-spinner.active { display: block; }
-  .loading-spinner .spinner-border { width: 1.2rem; height: 1.2rem; border-width: 2px; }
-  mark { background: #fff3cd; padding: 0 2px; border-radius: 2px; }
-
-  /* ── Detail Modal ── */
-  .detail-overlay {
-    position: fixed; inset: 0; z-index: 1050;
-    background: rgba(0,0,0,0.45); backdrop-filter: blur(3px);
-    display: none; align-items: center; justify-content: center;
-  }
-  .detail-overlay.show { display: flex; }
-  .detail-panel {
-    background: #fff; border-radius: 16px; width: 560px; max-width: 95vw;
-    max-height: 90vh; overflow-y: auto;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-    animation: slideUp 0.25s ease;
-  }
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(30px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .detail-header {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    color: #fff; padding: 1.5rem; text-align: center;
-    border-radius: 16px 16px 0 0; position: relative;
-  }
-  .detail-close {
-    position: absolute; top: 12px; right: 16px;
-    background: rgba(255,255,255,0.15); border: none; color: #fff;
-    width: 32px; height: 32px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1rem; cursor: pointer; transition: background 0.2s;
-  }
-  .detail-close:hover { background: rgba(255,255,255,0.3); }
-  .detail-photo {
-    width: 90px; height: 90px; border-radius: 50%; object-fit: cover;
-    border: 3px solid rgba(255,255,255,0.3); margin-bottom: 0.6rem;
-  }
-  .detail-photo-placeholder {
-    width: 90px; height: 90px; border-radius: 50%;
-    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.5);
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 2.2rem; margin-bottom: 0.6rem;
-    border: 3px solid rgba(255,255,255,0.2);
-  }
-  .detail-name { font-size: 1.25rem; font-weight: 700; }
-  .detail-ptc { font-size: 0.85rem; opacity: 0.8; font-family: monospace; letter-spacing: 1px; margin-top: 2px; }
-  .detail-body { padding: 0; }
-  .detail-section-label {
-    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px;
-    color: #aaa; font-weight: 700; padding: 0.8rem 1.2rem 0.3rem;
-    background: #f8f9fa;
-  }
-  .detail-table { margin-bottom: 0; }
-  .detail-table th {
-    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px;
-    color: #888; font-weight: 600; width: 160px; background: #fafafa;
-    white-space: nowrap; padding: 0.55rem 1.2rem;
-  }
-  .detail-table td { font-size: 0.88rem; padding: 0.55rem 1.2rem; }
-  .detail-card-preview {
-    max-width: 100%; border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  }
-  .detail-actions {
-    padding: 1rem 1.2rem; display: flex; gap: 8px; flex-wrap: wrap;
-    border-top: 1px solid #eee;
-  }
-  .filter-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: 12px; font-size: 0.78rem;
-    background: #e3f2fd; color: #1565c0; font-weight: 600; margin-right: 4px;
-  }
-  .filter-badge .bi-x { cursor: pointer; font-size: 0.85rem; }
-{% endblock %}
+{% block extra_css %}{% endblock %}
 
 {% block content %}
 
@@ -117,9 +13,9 @@
       <div class="input-group input-group-sm">
         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
         <input type="text" id="searchInput" class="form-control border-start-0"
-               placeholder="Search by name, EPIC, PTC code, mobile..." autocomplete="off">
-        <button id="clearSearch" class="btn btn-outline-secondary border-start-0 d-none"
-                type="button" title="Clear"><i class="bi bi-x-lg"></i></button>
+          placeholder="Search by name, EPIC, PTC code, mobile..." autocomplete="off">
+        <button id="clearSearch" class="btn btn-outline-secondary border-start-0 d-none" type="button" title="Clear"><i
+            class="bi bi-x-lg"></i></button>
       </div>
     </div>
     <div class="col-lg-2 col-md-3 col-6">
@@ -138,7 +34,7 @@
         <span class="text-muted">Show</span>
         {% for pp in [20, 50, 100] %}
         <button class="btn btn-sm pp-btn {{ 'btn-dark' if per_page == pp else 'btn-outline-secondary' }}"
-                data-pp="{{ pp }}">{{ pp }}</button>
+          data-pp="{{ pp }}">{{ pp }}</button>
         {% endfor %}
       </div>
     </div>
@@ -187,471 +83,471 @@
 
 {% block extra_js %}
 <script>
-(function() {
-  var API_URL         = '{{ url_for("admin.api_generated_voters") }}';
-  var searchInput     = document.getElementById('searchInput');
-  var clearBtn        = document.getElementById('clearSearch');
-  var tbody           = document.getElementById('votersBody');
-  var countLabel      = document.getElementById('countLabel');
-  var paginationNav   = document.getElementById('paginationNav');
-  var spinner         = document.getElementById('loadingSpinner');
-  var assemblyFilter  = document.getElementById('assemblyFilter');
-  var districtFilter  = document.getElementById('districtFilter');
-  var activeFiltersEl = document.getElementById('activeFilters');
-  var detailOverlay   = document.getElementById('detailOverlay');
-  var detailPanel     = document.getElementById('detailPanel');
+  (function () {
+    var API_URL = '{{ url_for("admin.api_generated_voters") }}';
+    var searchInput = document.getElementById('searchInput');
+    var clearBtn = document.getElementById('clearSearch');
+    var tbody = document.getElementById('votersBody');
+    var countLabel = document.getElementById('countLabel');
+    var paginationNav = document.getElementById('paginationNav');
+    var spinner = document.getElementById('loadingSpinner');
+    var assemblyFilter = document.getElementById('assemblyFilter');
+    var districtFilter = document.getElementById('districtFilter');
+    var activeFiltersEl = document.getElementById('activeFilters');
+    var detailOverlay = document.getElementById('detailOverlay');
+    var detailPanel = document.getElementById('detailPanel');
 
-  var currentPage     = 1;
-  var perPage         = {{ per_page }};
-  var debounceTimer   = null;
-  var fetchController = null;
-  var allVotersCache  = [];  // Cache for detail lookup
-  var pageCache       = {};  // Client-side page cache to avoid re-fetching
-  var dropdownsCached = false; // Cache filter dropdown options (rarely change)
-  var nextCursor      = null;  // P2: cursor-based pagination
-  var prevCursor      = null;
-  var cursorMode      = false; // Switches after first page load
+    var currentPage = 1;
+    var perPage = parseInt("{{ per_page }}") || 20;
+    var debounceTimer = null;
+    var fetchController = null;
+    var allVotersCache = [];  // Cache for detail lookup
+    var pageCache = {};  // Client-side page cache to avoid re-fetching
+    var dropdownsCached = false; // Cache filter dropdown options (rarely change)
+    var nextCursor = null;  // P2: cursor-based pagination
+    var prevCursor = null;
+    var cursorMode = false; // Switches after first page load
 
-  /* ── Fetch generated voters from API (cursor-based or page-based) ── */
-  function fetchVoters(opts) {
-    opts = opts || {};
-    if (fetchController) fetchController.abort();
-    fetchController = new AbortController();
+    /* â”€â”€ Fetch generated voters from API (cursor-based or page-based) â”€â”€ */
+    function fetchVoters(opts) {
+      opts = opts || {};
+      if (fetchController) fetchController.abort();
+      fetchController = new AbortController();
 
-    var q = searchInput.value.trim();
-    var params = new URLSearchParams();
-    if (q) params.set('search', q);
-    if (assemblyFilter.value) params.set('assembly', assemblyFilter.value);
-    if (districtFilter.value) params.set('district', districtFilter.value);
-    params.set('per_page', perPage);
+      var q = searchInput.value.trim();
+      var params = new URLSearchParams();
+      if (q) params.set('search', q);
+      if (assemblyFilter.value) params.set('assembly', assemblyFilter.value);
+      if (districtFilter.value) params.set('district', districtFilter.value);
+      params.set('per_page', perPage);
 
-    // Use cursor if navigating with cursor-based pagination
-    if (opts.cursor) {
-      params.set('cursor', opts.cursor);
-      params.set('direction', opts.direction || 'next');
-    } else {
-      params.set('page', currentPage);
-    }
-
-    var cacheKey = params.toString();
-
-    // Return cached data if available
-    if (!opts.skipCache && pageCache[cacheKey]) {
-      var cached = pageCache[cacheKey];
-      allVotersCache = cached.voters;
-      nextCursor = cached.next_cursor || null;
-      prevCursor = cached.prev_cursor || null;
-      cursorMode = cached.cursor_mode || false;
-      renderTable(cached.voters, cached.page || 1, cached.per_page, cached.total, q);
-      renderPagination(cached);
-      countLabel.textContent = cached.total;
-      updateFilterDropdowns(cached.assemblies || [], cached.districts || []);
-      updateClearBtn(q);
-      updateActiveFilters();
-      return;
-    }
-
-    spinner.classList.add('active');
-
-    fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        pageCache[cacheKey] = data;
-        allVotersCache = data.voters;
-        nextCursor = data.next_cursor || null;
-        prevCursor = data.prev_cursor || null;
-        cursorMode = data.cursor_mode || false;
-        renderTable(data.voters, data.page || 1, data.per_page, data.total, q);
-        renderPagination(data);
-        countLabel.textContent = data.total;
-        updateFilterDropdowns(data.assemblies || [], data.districts || []);
-        spinner.classList.remove('active');
-      })
-      .catch(function(err) {
-        if (err.name !== 'AbortError') {
-          spinner.classList.remove('active');
-          console.error('Fetch error:', err);
-        }
-      });
-
-    updateClearBtn(q);
-    updateActiveFilters();
-  }
-
-  /* ── Update filter dropdowns (cache after first load — values rarely change) ── */
-  function updateFilterDropdowns(assemblies, districts) {
-    if (dropdownsCached) return;
-    dropdownsCached = true;
-
-    var curA = assemblyFilter.value;
-    var curD = districtFilter.value;
-
-    assemblyFilter.innerHTML = '<option value="">All Assemblies</option>';
-    assemblies.forEach(function(a) {
-      var opt = document.createElement('option');
-      opt.value = a; opt.textContent = a;
-      if (a === curA) opt.selected = true;
-      assemblyFilter.appendChild(opt);
-    });
-
-    districtFilter.innerHTML = '<option value="">All Districts</option>';
-    districts.forEach(function(d) {
-      var opt = document.createElement('option');
-      opt.value = d; opt.textContent = d;
-      if (d === curD) opt.selected = true;
-      districtFilter.appendChild(opt);
-    });
-  }
-
-  /* ── Show active filter badges ── */
-  function updateActiveFilters() {
-    var html = '';
-    if (assemblyFilter.value) {
-      html += '<span class="filter-badge"><i class="bi bi-geo-alt-fill"></i> ' +
-        escHtml(assemblyFilter.value) +
-        ' <i class="bi bi-x" onclick="document.getElementById(\'assemblyFilter\').value=\'\';triggerFilterChange();"></i></span>';
-    }
-    if (districtFilter.value) {
-      html += '<span class="filter-badge"><i class="bi bi-pin-map-fill"></i> ' +
-        escHtml(districtFilter.value) +
-        ' <i class="bi bi-x" onclick="document.getElementById(\'districtFilter\').value=\'\';triggerFilterChange();"></i></span>';
-    }
-    activeFiltersEl.innerHTML = html;
-  }
-
-  window.triggerFilterChange = function() {
-    currentPage = 1;
-    nextCursor = null;
-    prevCursor = null;
-    cursorMode = false;
-    pageCache = {};  // Clear page cache when filters change
-    fetchVoters();
-  };
-
-  /* ── Render table rows ── */
-  function renderTable(voters, page, pp, total, query) {
-    if (!voters.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="no-results">' +
-        '<i class="bi bi-inbox d-block mb-2"></i>No generated voters found.</td></tr>';
-      return;
-    }
-
-    var hl = query ? query.toLowerCase() : '';
-    var html = '';
-    voters.forEach(function(v, i) {
-      var num = (page - 1) * pp + i + 1;
-
-      var photoCell;
-      if (v.photo_url) {
-        photoCell = '<img src="' + escHtml(v.photo_url) + '" class="voter-avatar">';
+      // Use cursor if navigating with cursor-based pagination
+      if (opts.cursor) {
+        params.set('cursor', opts.cursor);
+        params.set('direction', opts.direction || 'next');
       } else {
-        photoCell = '<span class="voter-avatar-placeholder"><i class="bi bi-person-fill"></i></span>';
+        params.set('page', currentPage);
       }
 
-      var genAt = v.generated_at ? v.generated_at.substring(0, 19).replace('T', ' ') : '—';
-      var refId = v.referral_id || '—';
-      var refCount = v.referred_members_count || 0;
+      var cacheKey = params.toString();
 
-      html += '<tr class="voter-row" data-idx="' + i + '">' +
-        '<td class="text-muted">' + num + '</td>' +
-        '<td>' + photoCell + '</td>' +
-        '<td><span class="ptc-badge">' + highlight(v.ptc_code || '—', hl) + '</span></td>' +
-        '<td><code>' + highlight(v.epic_no || '—', hl) + '</code></td>' +
-        '<td class="fw-semibold">' + highlight(v.name || '—', hl) + '</td>' +
-        '<td>' + highlight(v.mobile || '—', hl) + '</td>' +
-        '<td>' + highlight(v.assembly || '—', hl) + '</td>' +
-        '<td><code style="font-size:0.78rem;">' + highlight(refId, hl) + '</code></td>' +
-        '<td class="ref-count-cell" data-ptc="' + escHtml(v.ptc_code) + '" style="cursor:pointer;" title="View referred voters"><span class="badge bg-' + (refCount > 0 ? 'success' : 'secondary') + '">' + refCount + '</span></td>' +
-        '<td style="font-size:0.8rem;color:#888;">' + genAt + '</td>' +
-        '</tr>';
-    });
-    tbody.innerHTML = html;
+      // Return cached data if available
+      if (!opts.skipCache && pageCache[cacheKey]) {
+        var cached = pageCache[cacheKey];
+        allVotersCache = cached.voters;
+        nextCursor = cached.next_cursor || null;
+        prevCursor = cached.prev_cursor || null;
+        cursorMode = cached.cursor_mode || false;
+        renderTable(cached.voters, cached.page || 1, cached.per_page, cached.total, q);
+        renderPagination(cached);
+        countLabel.textContent = cached.total;
+        updateFilterDropdowns(cached.assemblies || [], cached.districts || []);
+        updateClearBtn(q);
+        updateActiveFilters();
+        return;
+      }
 
-    // Attach click handlers for referred count — navigate to detail page
-    tbody.querySelectorAll('.ref-count-cell').forEach(function(cell) {
-      cell.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var ptc = this.dataset.ptc;
-        if (ptc) window.location.href = '/admin/generated-voters/' + encodeURIComponent(ptc);
-      });
-    });
+      spinner.classList.add('active');
 
-    // Attach click handlers for detail view (row click → modal)
-    tbody.querySelectorAll('.voter-row').forEach(function(row) {
-      row.addEventListener('click', function() {
-        var idx = parseInt(this.dataset.idx);
-        if (allVotersCache[idx]) showDetail(allVotersCache[idx]);
-      });
-    });
-  }
+      fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          pageCache[cacheKey] = data;
+          allVotersCache = data.voters;
+          nextCursor = data.next_cursor || null;
+          prevCursor = data.prev_cursor || null;
+          cursorMode = data.cursor_mode || false;
+          renderTable(data.voters, data.page || 1, data.per_page, data.total, q);
+          renderPagination(data);
+          countLabel.textContent = data.total;
+          updateFilterDropdowns(data.assemblies || [], data.districts || []);
+          spinner.classList.remove('active');
+        })
+        .catch(function (err) {
+          if (err.name !== 'AbortError') {
+            spinner.classList.remove('active');
+            console.error('Fetch error:', err);
+          }
+        });
 
-  /* ── Voter Detail Modal ── */
-  function showDetail(v) {
-    var photoHtml;
-    if (v.photo_url) {
-      photoHtml = '<img src="' + escHtml(v.photo_url) + '" class="detail-photo d-block mx-auto">';
-    } else {
-      photoHtml = '<div class="detail-photo-placeholder mx-auto"><i class="bi bi-person-fill"></i></div>';
+      updateClearBtn(q);
+      updateActiveFilters();
     }
 
-    var genAt = v.generated_at ? v.generated_at.substring(0, 19).replace('T', ' ') : '—';
+    /* â”€â”€ Update filter dropdowns (cache after first load - values rarely change) â”€â”€ */
+    function updateFilterDropdowns(assemblies, districts) {
+      if (dropdownsCached) return;
+      dropdownsCached = true;
 
-    var html = '';
-    // Header
-    html += '<div class="detail-header">';
-    html += '  <button class="detail-close" onclick="closeDetail()"><i class="bi bi-x-lg"></i></button>';
-    html += '  ' + photoHtml;
-    html += '  <div class="detail-name">' + escHtml(v.name || '—') + '</div>';
-    html += '  <div class="detail-ptc">' + escHtml(v.ptc_code || '') + '</div>';
-    html += '</div>';
+      var curA = assemblyFilter.value;
+      var curD = districtFilter.value;
 
-    // Body — Core Info
-    html += '<div class="detail-body">';
-    html += '<div class="detail-section-label">Core Information</div>';
-    html += '<table class="table detail-table">';
-    html += '<tr><th>PTC Code</th><td><span class="ptc-badge">' + escHtml(v.ptc_code || '—') + '</span></td></tr>';
-    html += '<tr><th>Epic Number</th><td><code>' + escHtml(v.epic_no || '—') + '</code></td></tr>';
-    html += '<tr><th>Name</th><td class="fw-semibold">' + escHtml(v.name || '—') + '</td></tr>';
-    html += '<tr><th>Mobile</th><td><i class="bi bi-phone-fill text-success"></i> +91 ' + escHtml(v.mobile || '—') + '</td></tr>';
-    html += '<tr><th>Secret PIN</th><td><code style="font-size:1.1rem; letter-spacing:2px; color:#e65100; font-weight:700;">' + escHtml(v.secret_pin || '—') + '</code></td></tr>';
-    html += '<tr><th>Assembly</th><td>' + escHtml(v.assembly || '—') + '</td></tr>';
-    html += '<tr><th>District</th><td>' + escHtml(v.district || '—') + '</td></tr>';
-    html += '<tr><th>Generated At</th><td>' + genAt + '</td></tr>';
-    html += '</table>';
+      assemblyFilter.innerHTML = '<option value="">All Assemblies</option>';
+      assemblies.forEach(function (a) {
+        var opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        if (a === curA) opt.selected = true;
+        assemblyFilter.appendChild(opt);
+      });
 
-    // Referral info
-    html += '<div class="detail-section-label">Referral Information</div>';
-    html += '<table class="table detail-table">';
-    html += '<tr><th>Referral ID</th><td><code>' + escHtml(v.referral_id || 'Not generated') + '</code></td></tr>';
-    html += '<tr><th>Referred Members</th><td><span class="badge bg-' + ((v.referred_members_count || 0) > 0 ? 'success' : 'secondary') + '">' + (v.referred_members_count || 0) + '</span></td></tr>';
-    if (v.referred_by_ptc) {
-      html += '<tr><th>Referred By</th><td><span class="ptc-badge">' + escHtml(v.referred_by_ptc) + '</span></td></tr>';
+      districtFilter.innerHTML = '<option value="">All Districts</option>';
+      districts.forEach(function (d) {
+        var opt = document.createElement('option');
+        opt.value = d; opt.textContent = d;
+        if (d === curD) opt.selected = true;
+        districtFilter.appendChild(opt);
+      });
     }
-    html += '</table>';
 
-    // Card preview if available
-    if (v.card_url) {
-      html += '<div class="detail-section-label">Generated Card</div>';
-      html += '<div style="padding:1rem 1.2rem; text-align:center;">';
-      html += '<img src="' + escHtml(v.card_url) + '" class="detail-card-preview img-fluid">';
+    /* â”€â”€ Show active filter badges â”€â”€ */
+    function updateActiveFilters() {
+      var html = '';
+      if (assemblyFilter.value) {
+        html += '<span class="filter-badge"><i class="bi bi-geo-alt-fill"></i> ' +
+          escHtml(assemblyFilter.value) +
+          ' <i class="bi bi-x" onclick="document.getElementById(\'assemblyFilter\').value=\'\';triggerFilterChange();"></i></span>';
+      }
+      if (districtFilter.value) {
+        html += '<span class="filter-badge"><i class="bi bi-pin-map-fill"></i> ' +
+          escHtml(districtFilter.value) +
+          ' <i class="bi bi-x" onclick="document.getElementById(\'districtFilter\').value=\'\';triggerFilterChange();"></i></span>';
+      }
+      activeFiltersEl.innerHTML = html;
+    }
+
+    window.triggerFilterChange = function () {
+      currentPage = 1;
+      nextCursor = null;
+      prevCursor = null;
+      cursorMode = false;
+      pageCache = {};  // Clear page cache when filters change
+      fetchVoters();
+    };
+
+    /* â”€â”€ Render table rows â”€â”€ */
+    function renderTable(voters, page, pp, total, query) {
+      if (!voters.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="no-results">' +
+          '<i class="bi bi-inbox d-block mb-2"></i>No generated voters found.</td></tr>';
+        return;
+      }
+
+      var hl = query ? query.toLowerCase() : '';
+      var html = '';
+      voters.forEach(function (v, i) {
+        var num = (page - 1) * pp + i + 1;
+
+        var photoCell;
+        if (v.photo_url) {
+          photoCell = '<img src="' + escHtml(v.photo_url) + '" class="voter-avatar">';
+        } else {
+          photoCell = '<span class="voter-avatar-placeholder"><i class="bi bi-person-fill"></i></span>';
+        }
+
+        var genAt = toIST(v.generated_at);
+        var refId = v.referral_id || '-';
+        var refCount = v.referred_members_count || 0;
+
+        html += '<tr class="voter-row" data-idx="' + i + '">' +
+          '<td class="text-muted">' + num + '</td>' +
+          '<td>' + photoCell + '</td>' +
+          '<td><span class="ptc-badge">' + highlight(v.ptc_code || '-', hl) + '</span></td>' +
+          '<td><code>' + highlight(v.epic_no || '-', hl) + '</code></td>' +
+          '<td class="fw-semibold">' + highlight(v.name || '-', hl) + '</td>' +
+          '<td>' + highlight(v.mobile || '-', hl) + '</td>' +
+          '<td>' + highlight(v.assembly || '-', hl) + '</td>' +
+          '<td><code style="font-size:0.78rem;">' + highlight(refId, hl) + '</code></td>' +
+          '<td class="ref-count-cell" data-ptc="' + escHtml(v.ptc_code) + '" style="cursor:pointer;" title="View referred voters"><span class="badge bg-' + (refCount > 0 ? 'success' : 'secondary') + '">' + refCount + '</span></td>' +
+          '<td style="font-size:0.8rem;color:#888;">' + genAt + '</td>' +
+          '</tr>';
+      });
+      tbody.innerHTML = html;
+
+      // Attach click handlers for referred count - navigate to detail page
+      tbody.querySelectorAll('.ref-count-cell').forEach(function (cell) {
+        cell.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var ptc = this.dataset.ptc;
+          if (ptc) window.location.href = '/admin/generated-voters/' + encodeURIComponent(ptc);
+        });
+      });
+
+      // Attach click handlers for detail view (row click â†’ modal)
+      tbody.querySelectorAll('.voter-row').forEach(function (row) {
+        row.addEventListener('click', function () {
+          var idx = parseInt(this.dataset.idx);
+          if (allVotersCache[idx]) showDetail(allVotersCache[idx]);
+        });
+      });
+    }
+
+    /* â”€â”€ Voter Detail Modal â”€â”€ */
+    function showDetail(v) {
+      var photoHtml;
+      if (v.photo_url) {
+        photoHtml = '<img src="' + escHtml(v.photo_url) + '" class="detail-photo d-block mx-auto">';
+      } else {
+        photoHtml = '<div class="detail-photo-placeholder mx-auto"><i class="bi bi-person-fill"></i></div>';
+      }
+
+      var genAt = toIST(v.generated_at);
+
+      var html = '';
+      // Header
+      html += '<div class="detail-header">';
+      html += '  <button class="detail-close" onclick="closeDetail()"><i class="bi bi-x-lg"></i></button>';
+      html += '  ' + photoHtml;
+      html += '  <div class="detail-name">' + escHtml(v.name || '-') + '</div>';
+      html += '  <div class="detail-ptc">' + escHtml(v.ptc_code || '') + '</div>';
       html += '</div>';
+
+      // Body - Core Info
+      html += '<div class="detail-body">';
+      html += '<div class="detail-section-label">Core Information</div>';
+      html += '<table class="table detail-table">';
+      html += '<tr><th>PTC Code</th><td><span class="ptc-badge">' + escHtml(v.ptc_code || '-') + '</span></td></tr>';
+      html += '<tr><th>Epic Number</th><td><code>' + escHtml(v.epic_no || '-') + '</code></td></tr>';
+      html += '<tr><th>Name</th><td class="fw-semibold">' + escHtml(v.name || '-') + '</td></tr>';
+      html += '<tr><th>Mobile</th><td><i class="bi bi-phone-fill text-success"></i> +91 ' + escHtml(v.mobile || '-') + '</td></tr>';
+      html += '<tr><th>Secret PIN</th><td><code style="font-size:1.1rem; letter-spacing:2px; color:#e65100; font-weight:700;">' + escHtml(v.secret_pin || '-') + '</code></td></tr>';
+      html += '<tr><th>Assembly</th><td>' + escHtml(v.assembly || '-') + '</td></tr>';
+      html += '<tr><th>District</th><td>' + escHtml(v.district || '-') + '</td></tr>';
+      html += '<tr><th>Generated At</th><td>' + genAt + '</td></tr>';
+      html += '</table>';
+
+      // Referral info
+      html += '<div class="detail-section-label">Referral Information</div>';
+      html += '<table class="table detail-table">';
+      html += '<tr><th>Referral ID</th><td><code>' + escHtml(v.referral_id || 'Not generated') + '</code></td></tr>';
+      html += '<tr><th>Referred Members</th><td><span class="badge bg-' + ((v.referred_members_count || 0) > 0 ? 'success' : 'secondary') + '">' + (v.referred_members_count || 0) + '</span></td></tr>';
+      if (v.referred_by_ptc) {
+        html += '<tr><th>Referred By</th><td><span class="ptc-badge">' + escHtml(v.referred_by_ptc) + '</span></td></tr>';
+      }
+      html += '</table>';
+
+      // Card preview if available
+      if (v.card_url) {
+        html += '<div class="detail-section-label">Generated Card</div>';
+        html += '<div style="padding:1rem 1.2rem; text-align:center;">';
+        html += '<img src="' + escHtml(v.card_url) + '" class="detail-card-preview img-fluid">';
+        html += '</div>';
+      }
+
+      // Actions
+      html += '<div class="detail-actions">';
+      if (v.ptc_code) {
+        html += '<a href="/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '" class="btn btn-sm btn-outline-dark"><i class="bi bi-box-arrow-up-right me-1"></i>Full Detail</a>';
+      }
+      if (v.card_url) {
+        html += '<a href="' + escHtml(v.card_url) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View Card</a>';
+        html += '<a href="' + escHtml(v.card_url) + '" download class="btn btn-sm btn-outline-success"><i class="bi bi-download me-1"></i>Download</a>';
+      }
+      if (v.photo_url) {
+        html += '<a href="' + escHtml(v.photo_url) + '" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-image me-1"></i>View Photo</a>';
+      }
+      html += '</div>';
+
+      html += '</div>'; // end detail-body
+
+      detailPanel.innerHTML = html;
+      detailOverlay.classList.add('show');
+      document.body.style.overflow = 'hidden';
     }
 
-    // Actions
-    html += '<div class="detail-actions">';
-    if (v.ptc_code) {
-      html += '<a href="/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '" class="btn btn-sm btn-outline-dark"><i class="bi bi-box-arrow-up-right me-1"></i>Full Detail</a>';
+    window.closeDetail = function () {
+      detailOverlay.classList.remove('show');
+      document.body.style.overflow = '';
+    };
+
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && detailOverlay.classList.contains('show')) {
+        closeDetail();
+      }
+    });
+
+    /* â”€â”€ Highlight matching text â”€â”€ */
+    function highlight(text, query) {
+      if (!query || !text) return escHtml(text);
+      var safe = escHtml(text);
+      var idx = safe.toLowerCase().indexOf(query);
+      if (idx === -1) return safe;
+      return safe.substring(0, idx) + '<mark>' + safe.substring(idx, idx + query.length) + '</mark>' + safe.substring(idx + query.length);
     }
-    if (v.card_url) {
-      html += '<a href="' + escHtml(v.card_url) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View Card</a>';
-      html += '<a href="' + escHtml(v.card_url) + '" download class="btn btn-sm btn-outline-success"><i class="bi bi-download me-1"></i>Download</a>';
+
+    function escHtml(s) {
+      var d = document.createElement('div');
+      d.textContent = s || '';
+      return d.innerHTML;
     }
-    if (v.photo_url) {
-      html += '<a href="' + escHtml(v.photo_url) + '" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-image me-1"></i>View Photo</a>';
-    }
-    html += '</div>';
 
-    html += '</div>'; // end detail-body
+    /* â”€â”€ Render pagination (cursor-based or page-based) â”€â”€ */
+    function renderPagination(data) {
+      if (data.cursor_mode || nextCursor || prevCursor) {
+        // â”€â”€ Cursor-based: Prev / Next only (O(log n) at any depth) â”€â”€
+        var hasPrev = data.has_prev && prevCursor;
+        var hasNext = data.has_next !== false && nextCursor;
+        if (!hasPrev && !hasNext) {
+          paginationNav.style.display = 'none';
+          return;
+        }
+        paginationNav.style.cssText = '';
+        var html = '<ul class="pagination pagination-sm mb-0">';
+        html += '<li class="page-item ' + (hasPrev ? '' : 'disabled') + '">' +
+          '<a class="page-link" href="#" id="cursorPrev"><i class="bi bi-chevron-left"></i> Prev</a></li>';
+        html += '<li class="page-item disabled"><span class="page-link text-muted" style="min-width:120px;text-align:center;">Total: ' + (data.total || 0).toLocaleString() + '</span></li>';
+        html += '<li class="page-item ' + (hasNext ? '' : 'disabled') + '">' +
+          '<a class="page-link" href="#" id="cursorNext">Next <i class="bi bi-chevron-right"></i></a></li>';
+        html += '</ul>';
+        paginationNav.innerHTML = html;
 
-    detailPanel.innerHTML = html;
-    detailOverlay.classList.add('show');
-    document.body.style.overflow = 'hidden';
-  }
+        var prevBtn = document.getElementById('cursorPrev');
+        var nextBtn = document.getElementById('cursorNext');
+        if (prevBtn && hasPrev) {
+          prevBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            fetchVoters({ cursor: prevCursor, direction: 'prev' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        }
+        if (nextBtn && hasNext) {
+          nextBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            fetchVoters({ cursor: nextCursor, direction: 'next' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        }
+        return;
+      }
 
-  window.closeDetail = function() {
-    detailOverlay.classList.remove('show');
-    document.body.style.overflow = '';
-  };
-
-  // Close on Escape key
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && detailOverlay.classList.contains('show')) {
-      closeDetail();
-    }
-  });
-
-  /* ── Highlight matching text ── */
-  function highlight(text, query) {
-    if (!query || !text) return escHtml(text);
-    var safe = escHtml(text);
-    var idx = safe.toLowerCase().indexOf(query);
-    if (idx === -1) return safe;
-    return safe.substring(0, idx) + '<mark>' + safe.substring(idx, idx + query.length) + '</mark>' + safe.substring(idx + query.length);
-  }
-
-  function escHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
-  }
-
-  /* ── Render pagination (cursor-based or page-based) ── */
-  function renderPagination(data) {
-    if (data.cursor_mode || nextCursor || prevCursor) {
-      // ── Cursor-based: Prev / Next only (O(log n) at any depth) ──
-      var hasPrev = data.has_prev && prevCursor;
-      var hasNext = data.has_next !== false && nextCursor;
-      if (!hasPrev && !hasNext) {
+      // â”€â”€ Page-based (first load) â”€â”€
+      var page = data.page || 1;
+      var totalPages = data.total_pages || 1;
+      if (totalPages <= 1) {
         paginationNav.style.display = 'none';
         return;
       }
       paginationNav.style.cssText = '';
+
+      var start = Math.max(1, page - 3);
+      var end = Math.min(totalPages, page + 3);
       var html = '<ul class="pagination pagination-sm mb-0">';
-      html += '<li class="page-item ' + (hasPrev ? '' : 'disabled') + '">' +
-        '<a class="page-link" href="#" id="cursorPrev"><i class="bi bi-chevron-left"></i> Prev</a></li>';
-      html += '<li class="page-item disabled"><span class="page-link text-muted" style="min-width:120px;text-align:center;">Total: ' + (data.total || 0).toLocaleString() + '</span></li>';
-      html += '<li class="page-item ' + (hasNext ? '' : 'disabled') + '">' +
-        '<a class="page-link" href="#" id="cursorNext">Next <i class="bi bi-chevron-right"></i></a></li>';
+
+      html += '<li class="page-item ' + (page <= 1 ? 'disabled' : '') + '">' +
+        '<a class="page-link" href="#" data-page="' + (page - 1) + '"><i class="bi bi-chevron-left"></i></a></li>';
+
+      if (start > 1) {
+        html += '<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>';
+        if (start > 2) html += '<li class="page-item disabled"><span class="page-link">â€¦</span></li>';
+      }
+      for (var p = start; p <= end; p++) {
+        html += '<li class="page-item ' + (p === page ? 'active' : '') + '">' +
+          '<a class="page-link" href="#" data-page="' + p + '">' + p + '</a></li>';
+      }
+      if (end < totalPages) {
+        if (end < totalPages - 1) html += '<li class="page-item disabled"><span class="page-link">â€¦</span></li>';
+        html += '<li class="page-item"><a class="page-link" href="#" data-page="' + totalPages + '">' + totalPages + '</a></li>';
+      }
+
+      html += '<li class="page-item ' + (page >= totalPages ? 'disabled' : '') + '">' +
+        '<a class="page-link" href="#" data-page="' + (page + 1) + '"><i class="bi bi-chevron-right"></i></a></li>';
       html += '</ul>';
+
       paginationNav.innerHTML = html;
 
-      var prevBtn = document.getElementById('cursorPrev');
-      var nextBtn = document.getElementById('cursorNext');
-      if (prevBtn && hasPrev) {
-        prevBtn.addEventListener('click', function(e) {
+      paginationNav.querySelectorAll('a[data-page]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
           e.preventDefault();
-          fetchVoters({ cursor: prevCursor, direction: 'prev' });
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-      }
-      if (nextBtn && hasNext) {
-        nextBtn.addEventListener('click', function(e) {
-          e.preventDefault();
-          fetchVoters({ cursor: nextCursor, direction: 'next' });
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-      }
-      return;
-    }
-
-    // ── Page-based (first load) ──
-    var page = data.page || 1;
-    var totalPages = data.total_pages || 1;
-    if (totalPages <= 1) {
-      paginationNav.style.display = 'none';
-      return;
-    }
-    paginationNav.style.cssText = '';
-
-    var start = Math.max(1, page - 3);
-    var end   = Math.min(totalPages, page + 3);
-    var html  = '<ul class="pagination pagination-sm mb-0">';
-
-    html += '<li class="page-item ' + (page <= 1 ? 'disabled' : '') + '">' +
-      '<a class="page-link" href="#" data-page="' + (page - 1) + '"><i class="bi bi-chevron-left"></i></a></li>';
-
-    if (start > 1) {
-      html += '<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>';
-      if (start > 2) html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
-    }
-    for (var p = start; p <= end; p++) {
-      html += '<li class="page-item ' + (p === page ? 'active' : '') + '">' +
-        '<a class="page-link" href="#" data-page="' + p + '">' + p + '</a></li>';
-    }
-    if (end < totalPages) {
-      if (end < totalPages - 1) html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
-      html += '<li class="page-item"><a class="page-link" href="#" data-page="' + totalPages + '">' + totalPages + '</a></li>';
-    }
-
-    html += '<li class="page-item ' + (page >= totalPages ? 'disabled' : '') + '">' +
-      '<a class="page-link" href="#" data-page="' + (page + 1) + '"><i class="bi bi-chevron-right"></i></a></li>';
-    html += '</ul>';
-
-    paginationNav.innerHTML = html;
-
-    paginationNav.querySelectorAll('a[data-page]').forEach(function(a) {
-      a.addEventListener('click', function(e) {
-        e.preventDefault();
-        var pg = parseInt(this.dataset.page);
-        if (pg >= 1 && pg <= totalPages && pg !== page) {
-          // After first page, switch to cursor-based when cursors available
-          if (pg === page + 1 && nextCursor) {
-            fetchVoters({ cursor: nextCursor, direction: 'next' });
-          } else if (pg === page - 1 && prevCursor) {
-            fetchVoters({ cursor: prevCursor, direction: 'prev' });
-          } else {
-            currentPage = pg;
-            fetchVoters();
+          var pg = parseInt(this.dataset.page);
+          if (pg >= 1 && pg <= totalPages && pg !== page) {
+            // After first page, switch to cursor-based when cursors available
+            if (pg === page + 1 && nextCursor) {
+              fetchVoters({ cursor: nextCursor, direction: 'next' });
+            } else if (pg === page - 1 && prevCursor) {
+              fetchVoters({ cursor: prevCursor, direction: 'prev' });
+            } else {
+              currentPage = pg;
+              fetchVoters();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           }
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+        });
       });
-    });
-  }
-
-  function updateClearBtn(q) {
-    clearBtn.classList.toggle('d-none', !q);
-  }
-
-  function triggerSearch(delay) {
-    currentPage = 1;
-    nextCursor = null;
-    prevCursor = null;
-    cursorMode = false;
-    pageCache = {};  // Clear page cache when search changes
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fetchVoters, delay);
-  }
-
-  /* ── Event Listeners ── */
-  searchInput.addEventListener('input', function() {
-    updateClearBtn(this.value.trim());
-    triggerSearch(250);
-  });
-
-  searchInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      currentPage = 1;
-      clearTimeout(debounceTimer);
-      fetchVoters();
     }
-  });
 
-  clearBtn.addEventListener('click', function() {
-    searchInput.value = '';
-    updateClearBtn('');
-    currentPage = 1;
-    nextCursor = null;
-    prevCursor = null;
-    cursorMode = false;
-    pageCache = {};
-    clearTimeout(debounceTimer);
-    fetchVoters();
-    searchInput.focus();
-  });
+    function updateClearBtn(q) {
+      clearBtn.classList.toggle('d-none', !q);
+    }
 
-  assemblyFilter.addEventListener('change', function() {
-    currentPage = 1;
-    fetchVoters();
-  });
+    function triggerSearch(delay) {
+      currentPage = 1;
+      nextCursor = null;
+      prevCursor = null;
+      cursorMode = false;
+      pageCache = {};  // Clear page cache when search changes
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchVoters, delay);
+    }
 
-  districtFilter.addEventListener('change', function() {
-    currentPage = 1;
-    fetchVoters();
-  });
+    /* â”€â”€ Event Listeners â”€â”€ */
+    searchInput.addEventListener('input', function () {
+      updateClearBtn(this.value.trim());
+      triggerSearch(250);
+    });
 
-  document.querySelectorAll('.pp-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('.pp-btn').forEach(function(b) {
-        b.classList.remove('btn-dark');
-        b.classList.add('btn-outline-secondary');
-      });
-      this.classList.remove('btn-outline-secondary');
-      this.classList.add('btn-dark');
-      perPage = parseInt(this.dataset.pp);
+    searchInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        currentPage = 1;
+        clearTimeout(debounceTimer);
+        fetchVoters();
+      }
+    });
+
+    clearBtn.addEventListener('click', function () {
+      searchInput.value = '';
+      updateClearBtn('');
       currentPage = 1;
       nextCursor = null;
       prevCursor = null;
       cursorMode = false;
       pageCache = {};
+      clearTimeout(debounceTimer);
+      fetchVoters();
+      searchInput.focus();
+    });
+
+    assemblyFilter.addEventListener('change', function () {
+      currentPage = 1;
       fetchVoters();
     });
-  });
 
-  /* ── Initial load ── */
-  searchInput.focus();
-  fetchVoters();
-})();
+    districtFilter.addEventListener('change', function () {
+      currentPage = 1;
+      fetchVoters();
+    });
+
+    document.querySelectorAll('.pp-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.pp-btn').forEach(function (b) {
+          b.classList.remove('btn-dark');
+          b.classList.add('btn-outline-secondary');
+        });
+        this.classList.remove('btn-outline-secondary');
+        this.classList.add('btn-dark');
+        perPage = parseInt(this.dataset.pp);
+        currentPage = 1;
+        nextCursor = null;
+        prevCursor = null;
+        cursorMode = false;
+        pageCache = {};
+        fetchVoters();
+      });
+    });
+
+    /* â”€â”€ Initial load â”€â”€ */
+    searchInput.focus();
+    fetchVoters();
+  })();
 </script>
 {% endblock %}

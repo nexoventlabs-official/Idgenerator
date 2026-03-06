@@ -57,6 +57,25 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload
 for d in [config.MEMBER_PHOTOS_DIR, config.DATA_DIR, config.UPLOADS_DIR]:
     os.makedirs(d, exist_ok=True)
 
+# ── IST Timezone Filter ──────────────────────────────────────
+from datetime import timedelta
+IST = timezone(timedelta(hours=5, minutes=30))
+
+@app.template_filter('to_ist')
+def to_ist(dt_str):
+    """Convert a UTC ISO timestamp string to IST formatted string."""
+    if not dt_str:
+        return '-'
+    try:
+        s = str(dt_str).replace('Z', '+00:00')
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        ist_dt = dt.astimezone(IST)
+        return ist_dt.strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return str(dt_str)[:19].replace('T', ' ') if dt_str else '-'
+
 ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'bmp'}
 ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 

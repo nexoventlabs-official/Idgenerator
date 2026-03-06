@@ -1,156 +1,221 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Import XLSX{% endblock %}
 {% block page_title %}Import Voter Data{% endblock %}
 
 {% block extra_css %}
-  .upload-zone {
-    border: 2px dashed #ccc; border-radius: 16px; padding: 2.5rem 1.5rem;
-    text-align: center; background: #fafafa; transition: all 0.2s; cursor: pointer;
-    position: relative;
-  }
-  .upload-zone:hover, .upload-zone.drag-over { border-color: #1565c0; background: #e3f2fd; }
-  .upload-zone i.icon { font-size: 3rem; color: #90caf9; display: block; margin-bottom: 0.5rem; }
-  .upload-zone .hint { font-size: 0.85rem; color: #999; }
-  .upload-zone input[type="file"] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer;
-  }
-  #file-name { font-size: 0.88rem; color: #1565c0; font-weight: 600; }
+.import-status-header {
+display: none; margin-bottom: 2rem; animation: fadeIn 0.3s ease;
+}
+.import-status-header.active {
+display: block;
+}
+.import-status-header h3 {
+font-family: var(--font-display); font-weight: 700; color: #fff; margin-bottom: 0.3rem; letter-spacing:
+-0.5px;
+}
+.import-status-header .sub { color: #fff; font-size: 1rem; font-weight: 400; }
+.import-status-header .elapsed { color: #fff; font-size: 1.05rem; margin-top: 0.2rem; font-weight: 400;
+font-variant-numeric: tabular-nums; }
 
-  /* Import loading overlay */
-  .import-overlay {
-    display: none; position: fixed; inset: 0; z-index: 9999;
-    background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
-    justify-content: center; align-items: center;
-  }
-  .import-overlay.active { display: flex; }
-  .import-overlay-box {
-    background: #fff; border-radius: 18px; padding: 2.5rem 2rem;
-    text-align: center; max-width: 420px; width: 90%;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
-  }
-  .import-spinner {
-    width: 56px; height: 56px; border: 5px solid #e3e3e3;
-    border-top-color: #1565c0; border-radius: 50%;
-    animation: importSpin 0.9s linear infinite;
-    margin: 0 auto 1.2rem;
-  }
-  @keyframes importSpin { to { transform: rotate(360deg); } }
-  .import-overlay-box h5 { font-weight: 700; margin-bottom: 0.4rem; }
-  .import-overlay-box .sub { font-size: 0.85rem; color: #666; }
-  .import-overlay-box .elapsed {
-    font-size: 0.8rem; color: #999; margin-top: 0.8rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .import-progress-bar {
-    height: 6px; background: #e3e3e3; border-radius: 3px;
-    margin-top: 1rem; overflow: hidden;
-  }
-  .import-progress-bar .fill {
-    height: 100%; background: #1565c0; border-radius: 3px;
-    transition: width 0.5s ease; width: 0%;
-  }
-  .import-counter {
-    font-size: 1.5rem; font-weight: 700; color: #1565c0;
-    margin-top: 0.6rem; font-variant-numeric: tabular-nums;
-  }
-  .import-phase {
-    font-size: 0.78rem; color: #999; margin-top: 0.2rem;
-    text-transform: uppercase; letter-spacing: 0.5px;
-  }
+.modern-card {
+background: inherit;
+border: none;
+border-radius: 0;
+padding: 0;
+box-shadow: none;
+}
+.modern-card h6 {
+font-family: var(--font-body); font-weight: 700; font-size: 1rem; margin-bottom: 0.5rem; display: flex;
+align-items: center; gap: 8px; color: #fff;
+}
+.modern-card p {
+color: #a1a1aa; font-size: 0.9rem; line-height: 1.5;
+}
+
+/* Upload zone */
+.upload-zone {
+border: 0;
+border-radius: 12px;
+padding: 1rem 0rem;
+text-align: left;
+background: transparent;
+transition: all 0.2s;
+position: relative;
+display: flex;
+flex-direction: column;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+background: rgba(255,255,255,0.01);
+}
+.upload-zone i.icon {
+font-size: 1.1rem;
+color: var(--text-primary);
+display: inline-block;
+margin-bottom: 0.2rem;
+}
+.upload-zone .drop-title {
+font-size: 1.15rem; font-weight: 700; font-family: var(--font-display); color: #fff; margin-bottom: 0.3rem;
+}
+.upload-zone .hint {
+font-size: 0.95rem; color: #fff; margin-bottom: 0.8rem; font-weight: 500;
+}
+.upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+#file-name { font-size: 0.95rem; color: #fff; font-weight: 500; margin-top: 0; }
+.btn-browse {
+background: rgba(255,255,255,0.25); border: none; color: #fff; padding: 5px 12px; border-radius: 4px; font-size: 0.9rem;
+font-weight: 500; pointer-events: none;
+}
+
+/* Import Mode */
+.import-mode-box {
+background: #0A0A0B;
+border-radius: 12px;
+padding: 1.2rem;
+margin-top: 1rem;
+}
+.import-mode-box h6 {
+font-size: 0.95rem; margin-bottom: 1rem; font-family: var(--font-display); color: #fff; font-weight: 700;
+}
+.import-mode-box h6 i {
+color: var(--text-secondary); font-size: 1.1rem; display: none;
+}
+.custom-radio {
+display: flex; align-items: center; gap: 10px; margin-bottom: 0.8rem; cursor: pointer;
+}
+.custom-radio input {
+appearance: none; width: 16px; height: 16px; border: 2px solid #52525b; border-radius: 50%; outline: none; transition:
+0.2s; margin:0; cursor: pointer; position: relative;
+}
+.custom-radio input:checked {
+border-color: #3b82f6; background: #3b82f6; box-shadow: inset 0 0 0 3px #0A0A0A;
+}
+.custom-radio label { cursor: pointer; font-size: 0.95rem; color: #f4f4f5; font-weight: 600; }
+.custom-radio label span { color: #a1a1aa; font-weight: 400; }
+
+/* Import Button */
+.btn-import {
+background: transparent; color: #52525b; font-weight: 600; padding: 0.4rem 0.8rem; border-radius: 4px; border: 1px solid
+#27272a;
+transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; font-size: 0.95rem; box-shadow: none;
+}
+.btn-import:hover { background: rgba(255,255,255,0.02); color: #fff; border-color: #52525b; }
+.btn-import:disabled { background: transparent; opacity: 0.5; color: #52525b; border-color: #27272a; cursor:
+not-allowed; box-shadow:
+none; }
+
+/* Right side badges */
+.badge-db {
+background: #22c55e; color: #fff; font-size: 0.95rem; padding: 3px 8px; border-radius: 4px; font-family:
+var(--font-display); margin-right: 8px; font-weight: 700;
+}
+.badge-req-yes {
+background: #dc2626; color: #fff; font-size: 0.65rem; padding: 3px 6px; border-radius: 4px; text-transform: uppercase;
+font-weight: 700; letter-spacing: 0.5px;
+}
+.badge-req-opt {
+background: rgba(255, 255, 255, 0.15); color: #d4d4d8; font-size: 0.65rem; padding: 3px 6px; border-radius: 4px;
+text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;
+}
+.table-format {
+border-color: rgba(255,255,255,0.08); margin-bottom: 0; border-collapse: separate; border-spacing: 0;
+}
+.table-format th {
+background: transparent !important; color: #a1a1aa; font-size: 0.8rem; font-weight: 600; border-bottom: 1px solid
+rgba(255,255,255,0.08) !important; padding: 12px 14px; border:none; text-transform: none;
+}
+.table-format td {
+border-bottom: 1px solid rgba(255,255,255,0.08) !important; padding: 12px 14px; font-size: 0.85rem; border:none;
+vertical-align: middle; background: transparent; color: #fff; font-weight: 500;
+}
+.table-format tr:last-child td { border-bottom: none !important; }
+.code-tag {
+color: #fff; font-family: var(--font-body); font-size: 0.85rem; background: transparent; font-weight: 400;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 {% endblock %}
 
 {% block content %}
-
-<!-- Import Loading Overlay -->
-<div class="import-overlay" id="importOverlay">
-  <div class="import-overlay-box">
-    <div class="import-spinner" id="importSpinner"></div>
-    <h5 id="overlayTitle">Uploading File…</h5>
-    <div class="sub" id="overlaySub">Sending your file to the server.</div>
-    <div class="import-counter" id="overlayCounter" style="display:none;">0</div>
-    <div class="import-phase" id="overlayPhase"></div>
-    <div class="import-progress-bar" id="overlayBar" style="display:none;"><div class="fill" id="overlayBarFill"></div></div>
-    <div class="elapsed" id="importElapsed">Elapsed: 0s</div>
-  </div>
+<!-- Inline Loading Header -->
+<div class="import-status-header" id="importHeader">
+  <h3 id="overlayTitle">Uploading File...</h3>
+  <div class="sub" id="overlaySub">Sending your file to the server.</div>
+  <div class="elapsed" id="importElapsed">Elapsed: 0s</div>
+  <div id="overlayPhase" class="elapsed mt-1" style="color: #3b82f6;"></div>
 </div>
 
-<div class="row g-4">
+<div class="row g-4" id="mainImportContent" style="transition: opacity 0.3s ease;">
   <!-- Upload Card -->
   <div class="col-lg-7">
-    <div class="card border-0 shadow-sm" style="border-radius:14px;">
-      <div class="card-body p-4">
-        <h6 class="fw-bold mb-1"><i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i> Upload Voter Data</h6>
-        <p class="text-muted mb-3" style="font-size:0.85rem;">
-          Upload an Excel or CSV file containing voter data. Duplicate EPIC numbers are automatically skipped.
-        </p>
+    <div class="modern-card h-100">
+      <h6><i class="bi bi-file-earmark-text" style="color: #3b82f6; margin-right:4px;"></i> Upload Voter Data</h6>
+      <p class="mb-4">
+        Upload an Excel or CSV file containing voter data. Duplicate EPIC numbers are automatically skipped.
+      </p>
 
-        <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.import_xlsx') }}" id="importForm">
-          <div class="upload-zone" id="dropZone">
-            <i class="bi bi-file-earmark-arrow-up icon"></i>
-            <div class="fw-semibold mb-1">Drop your file here</div>
-            <div class="hint">or click to browse &nbsp;·&nbsp; .xlsx, .xls, .csv</div>
-            <div id="file-name" class="mt-2" style="display:none;"></div>
-            <input type="file" name="file" accept=".xlsx,.xls,.csv" id="fileInput" required>
+      <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.import_xlsx') }}" id="importForm">
+        <div class="upload-zone" id="dropZone">
+          <div><i class="bi bi-file-arrow-up icon"></i></div>
+          <div class="drop-title">Drop your file here</div>
+          <div class="hint">or click to browse &nbsp;&middot;&nbsp; .xlsx, .xls, .csv</div>
+
+          <div class="d-flex align-items-center gap-2 mt-1">
+            <span class="btn-browse">Choose file</span>
+            <span id="file-name" class="m-0" style="color:#a1a1aa;">No file chosen</span>
           </div>
 
-          <!-- Import Mode -->
-          <div class="mt-3 p-3" style="background:#f8f9fa; border-radius:12px;">
-            <div class="fw-semibold mb-2" style="font-size:0.85rem;"><i class="bi bi-gear me-1"></i> Import Mode</div>
-            <div class="form-check mb-1">
-              <input class="form-check-input" type="radio" name="import_mode" id="modeMerge" value="merge" checked>
-              <label class="form-check-label" for="modeMerge" style="font-size:0.85rem;">
-                <strong>Merge</strong> — Add new voters, update existing (no duplicates)
-              </label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="import_mode" id="modeReplace" value="replace">
-              <label class="form-check-label" for="modeReplace" style="font-size:0.85rem;">
-                <strong>Replace All</strong> — Delete all existing data and import fresh
-              </label>
-            </div>
-          </div>
+          <input type="file" name="file" accept=".xlsx,.xls,.csv" id="fileInput" required>
+        </div>
 
-          <button type="submit" class="btn btn-primary mt-3 px-4" id="submitBtn" disabled>
-            <i class="bi bi-upload me-1"></i> Import Data
-          </button>
-        </form>
-      </div>
+        <div class="import-mode-box">
+          <h6><i class="bi bi-gear"></i> Import Mode</h6>
+
+          <label class="custom-radio">
+            <input type="radio" name="import_mode" id="modeMerge" value="merge" checked>
+            <div><span style="color:#fff; font-weight:600;">Merge</span> <span style="color:#a1a1aa;">- Add new voters,
+                update existing (no duplicates)</span></div>
+          </label>
+
+          <label class="custom-radio mb-0">
+            <input type="radio" name="import_mode" id="modeReplace" value="replace">
+            <div><span style="color:#fff; font-weight:600;">Replace All</span> <span style="color:#a1a1aa;">- Delete all
+                existing data and import fresh</span></div>
+          </label>
+        </div>
+
+        <button type="submit" class="btn-import mt-3" id="submitBtn" disabled>
+          <i class="bi bi-upload"></i> Import Data
+        </button>
+      </form>
     </div>
   </div>
 
   <!-- Info Panel -->
   <div class="col-lg-5">
     <!-- Current Status -->
-    <div class="card border-0 shadow-sm mb-3" style="border-radius:14px;">
-      <div class="card-body">
-        <h6 class="fw-bold mb-2"><i class="bi bi-database-fill text-success me-1"></i> Current Database</h6>
-        {% if voters_count > 0 %}
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <span class="badge bg-success fs-6 px-3 py-2">{{ voters_count }}</span>
-          <span class="text-muted" style="font-size:0.88rem;">voter records loaded</span>
-        </div>
-        <p class="text-muted mb-0" style="font-size:0.82rem;">
-          Use <strong>Merge</strong> to add new data without losing existing records,
-          or <strong>Replace All</strong> to start fresh.
-        </p>
-        {% else %}
-        <p class="text-muted mb-0" style="font-size:0.88rem;">
-          <i class="bi bi-exclamation-triangle text-warning me-1"></i>
-          No data loaded yet. Upload a file to get started.
-        </p>
-        {% endif %}
+    <div class="modern-card mb-4 mt-1">
+      <h6><i class="bi bi-server" style="color:#22c55e; margin-right:4px;"></i> Current Database</h6>
+      <div class="d-flex align-items-center mt-3 mb-2">
+        <span style="color: #fff; font-size:0.95rem; font-weight:500;">{{ voters_count|default(0) }} voter records
+          loaded</span>
       </div>
+      <p class="mb-0 mt-2">
+        Use <span style="color:#fff; font-weight:600;">Merge</span> to add new data without losing existing records, or
+        <span style="color:#fff; font-weight:600;">Replace All</span> to start fresh.
+      </p>
     </div>
 
     <!-- Format Guide -->
-    <div class="card border-0 shadow-sm" style="border-radius:14px;">
-      <div class="card-body">
-        <h6 class="fw-bold mb-2"><i class="bi bi-table text-info me-1"></i> Expected Format</h6>
-        <p class="text-muted mb-2" style="font-size:0.82rem;">
-          Your file (Excel or CSV) should have a header row with these columns:
-        </p>
-        <table class="table table-sm table-bordered mb-2" style="font-size:0.8rem;">
-          <thead class="table-light">
+    <div class="modern-card">
+      <h6><i class="bi bi-grid-3x3" style="color:#0ea5e9; margin-right:4px;"></i> Expected Format</h6>
+      <p class="mb-3">
+        Your file (Excel or CSV) should have a header row with these columns:
+      </p>
+
+      <div
+        style="border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; overflow: hidden; background: transparent;">
+        <table class="table table-format w-100 mb-0">
+          <thead>
             <tr>
               <th>Column</th>
               <th>Required</th>
@@ -159,49 +224,48 @@
           </thead>
           <tbody>
             <tr>
-              <td class="fw-semibold">Epic Number</td>
-              <td><span class="badge bg-danger">Yes</span></td>
-              <td><code>Epic Number</code>, <code>Epic No</code>, <code>EPIC</code></td>
+              <td style="color:#fff; font-weight:600;">Epic Number</td>
+              <td><span class="badge-req-yes">Yes</span></td>
+              <td><span class="code-tag">Epic Number, Epic No, EPIC</span></td>
             </tr>
             <tr>
-              <td class="fw-semibold">Name</td>
-              <td><span class="badge bg-danger">Yes</span></td>
-              <td><code>Name</code>, <code>Voter Name</code>, <code>Full Name</code></td>
+              <td style="color:#fff; font-weight:600;">Name</td>
+              <td><span class="badge-req-yes">Yes</span></td>
+              <td><span class="code-tag">Name, Voter Name, Full Name</span></td>
             </tr>
             <tr>
-              <td>Assembly</td>
-              <td><span class="badge bg-secondary">Optional</span></td>
-              <td><code>Assembly</code>, <code>Constituency</code>, <code>AC Name</code></td>
+              <td style="color:#fff; font-weight:600;">Assembly</td>
+              <td><span class="badge-req-opt">Optional</span></td>
+              <td><span class="code-tag">Assembly, Constituency, AC Name</span></td>
             </tr>
             <tr>
-              <td>District</td>
-              <td><span class="badge bg-secondary">Optional</span></td>
-              <td><code>District</code>, <code>Dist</code></td>
+              <td style="color:#fff; font-weight:600;">District</td>
+              <td><span class="badge-req-opt">Optional</span></td>
+              <td><span class="code-tag">District, Dist</span></td>
             </tr>
           </tbody>
         </table>
-        <p class="text-muted mb-0" style="font-size:0.78rem;">
-          Column headers are matched case-insensitively. For Excel files, the first sheet is used.
-          CSV files should use comma separators and UTF-8 encoding.
-        </p>
       </div>
+      <p class="mb-0 mt-3" style="font-size:0.8rem;">
+        Column headers are matched case-insensitively. For Excel files, the first sheet is used. CSV files should use
+        comma separators and UTF-8 encoding.
+      </p>
     </div>
   </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
   const fileInput = document.getElementById('fileInput');
-  const dropZone  = document.getElementById('dropZone');
-  const fileName  = document.getElementById('file-name');
+  const dropZone = document.getElementById('dropZone');
+  const fileName = document.getElementById('file-name');
   const submitBtn = document.getElementById('submitBtn');
 
   fileInput.addEventListener('change', () => {
     if (fileInput.files.length) {
       fileName.textContent = fileInput.files[0].name;
-      fileName.style.display = 'block';
+      fileName.style.color = '#fff';
       submitBtn.disabled = false;
     }
   });
@@ -217,23 +281,27 @@
     }
   });
 
-  // Show loading overlay on import
-  document.getElementById('importForm').addEventListener('submit', function(e) {
+  document.getElementById('importForm').addEventListener('submit', function (e) {
     e.preventDefault();
     const form = this;
-    const overlay = document.getElementById('importOverlay');
-    const elapsed = document.getElementById('importElapsed');
-    const title   = document.getElementById('overlayTitle');
-    const sub     = document.getElementById('overlaySub');
-    const counter = document.getElementById('overlayCounter');
-    const phase   = document.getElementById('overlayPhase');
-    const bar     = document.getElementById('overlayBar');
-    const barFill = document.getElementById('overlayBarFill');
-    const spinner = document.getElementById('importSpinner');
 
-    overlay.classList.add('active');
+    // UI Transitions
+    const mainContent = document.getElementById('mainImportContent');
+    const header = document.getElementById('importHeader');
+    const elapsed = document.getElementById('importElapsed');
+    const title = document.getElementById('overlayTitle');
+    const sub = document.getElementById('overlaySub');
+    const phase = document.getElementById('overlayPhase');
+
+    // Fade out main content slightly and show header
+    mainContent.style.opacity = '0.15';
+    mainContent.style.pointerEvents = 'none';
+    header.classList.add('active');
+
+    // Scroll to top to see progress immediately
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Importing…';
 
     // Elapsed timer
     let seconds = 0;
@@ -251,81 +319,59 @@
       .then(data => {
         if (!data.ok) {
           clearInterval(timerInterval);
-          overlay.classList.remove('active');
-          alert('Import failed to start.');
+          mainContent.style.opacity = '1';
+          mainContent.style.pointerEvents = 'auto';
+          header.classList.remove('active');
+          alert('Import failed to start: ' + (data.error || 'Check server logs'));
           submitBtn.disabled = false;
-          submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i> Import Data';
           return;
         }
 
-        title.textContent = 'Importing Data…';
+        title.textContent = 'Importing Data...';
         sub.textContent = 'Parsing and inserting records into the database.';
-        counter.style.display = 'block';
-        bar.style.display = 'block';
 
-        // Poll for progress
         const pollInterval = setInterval(() => {
           fetch('{{ url_for("admin.api_import_status") }}')
             .then(r => r.json())
             .then(s => {
               const processed = s.processed || 0;
-              const inserted  = s.inserted  || 0;
-              counter.textContent = inserted.toLocaleString() + ' records inserted';
+              const inserted = s.inserted || 0;
 
               if (s.phase === 'parsing') {
-                phase.textContent = 'Parsing file – ' + processed.toLocaleString() + ' rows read';
-                // Indeterminate progress (pulse)
-                barFill.style.width = '30%';
-                barFill.style.animation = 'importPulse 1.5s ease-in-out infinite';
+                phase.textContent = 'Parsing file - ' + processed.toLocaleString() + ' rows read';
               } else if (s.phase === 'inserting') {
-                phase.textContent = 'Inserting – ' + processed.toLocaleString() + ' rows processed';
-                barFill.style.animation = 'none';
-                // Estimate progress (we don't know total upfront, so use processed vs inserted)
-                barFill.style.width = Math.min(90, (inserted / Math.max(processed, 1)) * 100) + '%';
+                phase.textContent = 'Inserting - ' + inserted.toLocaleString() + ' inserted successfully';
               } else if (s.phase === 'done') {
                 clearInterval(pollInterval);
                 clearInterval(timerInterval);
-                spinner.style.display = 'none';
                 title.textContent = 'Import Complete!';
+                title.style.color = '#4ade80';
                 sub.textContent = s.message || 'All records imported successfully.';
-                counter.textContent = inserted.toLocaleString() + ' records';
-                phase.textContent = '';
-                barFill.style.animation = 'none';
-                barFill.style.width = '100%';
-                barFill.style.background = '#43a047';
-                // Redirect to dashboard after 2s
+                phase.textContent = inserted.toLocaleString() + ' final records inserted.';
+                phase.style.color = '#4ade80';
                 setTimeout(() => { window.location.href = '{{ url_for("admin.dashboard") }}'; }, 2000);
               } else if (s.phase === 'error') {
                 clearInterval(pollInterval);
                 clearInterval(timerInterval);
-                spinner.style.borderTopColor = '#e53935';
-                spinner.style.animation = 'none';
                 title.textContent = 'Import Failed';
+                title.style.color = '#ef4444';
                 sub.textContent = s.error || 'An unknown error occurred.';
-                sub.style.color = '#e53935';
                 phase.textContent = '';
-                barFill.style.animation = 'none';
-                barFill.style.width = '100%';
-                barFill.style.background = '#e53935';
+                mainContent.style.opacity = '1';
+                mainContent.style.pointerEvents = 'auto';
               }
             })
-            .catch(() => {});
+            .catch(() => { });
         }, 1000);
       })
       .catch(err => {
         clearInterval(timerInterval);
-        overlay.classList.remove('active');
+        mainContent.style.opacity = '1';
+        mainContent.style.pointerEvents = 'auto';
+        header.classList.remove('active');
         alert('Failed to upload file: ' + err.message);
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="bi bi-upload me-1"></i> Import Data';
       });
   });
 </script>
-
-<style>
-  @keyframes importPulse {
-    0%, 100% { opacity: 0.4; width: 20%; }
-    50% { opacity: 1; width: 60%; }
-  }
-</style>
 {% endblock %}
