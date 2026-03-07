@@ -105,70 +105,126 @@
 <div class="row g-3 mb-4">
   <div class="col-lg-6">
     <div class="card border-0 shadow-sm" style="border-radius:14px;">
-      <div class="card-body">
-        <h6 class="fw-bold mb-3"><i class="bi bi-info-circle text-primary me-1"></i> System Status</h6>
-        <table class="table table-sm mb-0" style="font-size:0.9rem;">
-          <tbody>
-            <tr>
-              <td class="text-muted" style="width:180px;">Database Data Size</td>
-              <td>
-                {% if stats.db_connected %}
-                <span class="badge bg-success"><i class="bi bi-check-circle"></i> MongoDB Connected</span>
-                - <span id="ext-db-size">{{ stats.mongodb_size_mb }}</span> MB ({{ stats.total_voters }} records)
-                {% else %}
-                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Disconnected</span>
-                {% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-muted">Cloudinary Quota</td>
-              <td><span class="badge bg-info text-dark">Credits Used</span> - <span id="ext-cloudinary">{{
-                  stats.cloudinary_credits }}</span> / 25
-                Monthly Limit</td>
-            </tr>
-            <tr>
-              <td class="text-muted">SMS Balance (2Factor)</td>
-              <td><span class="badge bg-warning text-dark">Available SMS</span> - <span id="ext-sms">{{
-                  stats.sms_balance }}</span></td>
-            </tr>
-            <tr>
-              <td class="text-muted">Card Storage</td>
-              <td><span class="badge bg-info text-dark">Cloudinary</span> - {{ stats.cards_on_cloud }} card{{ 's' if
-                stats.cards_on_cloud != 1 }}</td>
-            </tr>
-            <tr>
-              <td class="text-muted">Generation Rate</td>
-              <td>
-                {% if stats.total_voters > 0 %}
-                {{ ((stats.total_generated / stats.total_voters) * 100) | round(1) }}% of voters generated
-                {% else %}
-                N/A
-                {% endif %}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+      <div class="card-body" style="padding:1.4rem;">
+        <h6 class="fw-bold mb-3" style="font-family:var(--font-display);font-size:1.05rem;display:flex;align-items:center;gap:8px;">
+          <i class="bi bi-activity" style="color:#3b82f6;"></i> System Status
+        </h6>
 
-  <div class="col-lg-6">
-    <div class="card border-0 shadow-sm" style="border-radius:14px;">
-      <div class="card-body">
-        <h6 class="fw-bold mb-3"><i class="bi bi-lightning-fill text-warning me-1"></i> Quick Actions</h6>
-        <div class="d-flex flex-wrap gap-2">
-          <a href="{{ url_for('admin.import_xlsx') }}" class="btn btn-outline-primary btn-sm">
-            <i class="bi bi-upload me-1"></i> Import XLSX
-          </a>
-          <a href="{{ url_for('admin.voters_list') }}" class="btn btn-outline-success btn-sm">
-            <i class="bi bi-people me-1"></i> View Voters
-          </a>
-          <a href="{{ url_for('admin.generated_voters_list') }}" class="btn btn-outline-info btn-sm">
-            <i class="bi bi-person-vcard me-1"></i> Generated Voters
-          </a>
-          <a href="{{ url_for('user_home') }}" target="_blank" class="btn btn-outline-danger btn-sm">
-            <i class="bi bi-box-arrow-up-right me-1"></i> Open User Site
-          </a>
+        <div class="d-flex flex-column gap-3">
+
+          <!-- MongoDB -->
+          <div style="background:var(--bg-root);border-radius:10px;padding:0.9rem 1rem;border:1px solid var(--border);">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <div class="d-flex align-items-center gap-2">
+                <div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+                  {% if stats.db_connected %}background:rgba(34,197,94,0.12);color:#22c55e;{% else %}background:rgba(239,68,68,0.12);color:#ef4444;{% endif %}">
+                  <i class="bi bi-database-fill" style="font-size:1rem;"></i>
+                </div>
+                <div>
+                  <div style="font-size:0.82rem;font-weight:600;color:var(--text-primary);">MongoDB</div>
+                  <div style="font-size:0.72rem;color:var(--text-secondary);">Database</div>
+                </div>
+              </div>
+              {% if stats.db_connected %}
+              <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,0.1);color:#22c55e;font-size:0.72rem;font-weight:600;padding:3px 10px;border-radius:20px;border:1px solid rgba(34,197,94,0.15);">
+                <span style="width:6px;height:6px;background:#22c55e;border-radius:50%;display:inline-block;box-shadow:0 0 6px #22c55e;"></span> Connected
+              </span>
+              {% else %}
+              <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:0.72rem;font-weight:600;padding:3px 10px;border-radius:20px;border:1px solid rgba(239,68,68,0.15);">
+                <span style="width:6px;height:6px;background:#ef4444;border-radius:50%;display:inline-block;"></span> Disconnected
+              </span>
+              {% endif %}
+            </div>
+            {% if stats.db_connected %}
+            <div class="d-flex align-items-center gap-3 mt-2" style="padding-left:40px;">
+              <div style="font-size:0.8rem;color:var(--text-secondary);">
+                <span style="color:var(--text-primary);font-weight:700;font-family:var(--font-display);font-size:0.95rem;" id="ext-db-size">{{ stats.mongodb_size_mb }}</span>
+                <span style="font-size:0.72rem;"> MB</span>
+              </div>
+              <span style="width:1px;height:14px;background:var(--border);"></span>
+              <div style="font-size:0.8rem;color:var(--text-secondary);">
+                <span style="color:var(--text-primary);font-weight:700;font-family:var(--font-display);font-size:0.95rem;">{{ stats.total_voters }}</span>
+                <span style="font-size:0.72rem;"> records</span>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Cloudinary Quota -->
+          {% set cloud_pct = ((stats.cloudinary_credits | float / 25) * 100) | round(1) if stats.cloudinary_credits else 0 %}
+          <div style="background:var(--bg-root);border-radius:10px;padding:0.9rem 1rem;border:1px solid var(--border);">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="d-flex align-items-center gap-2">
+                <div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(99,102,241,0.12);color:#818cf8;">
+                  <i class="bi bi-cloud-fill" style="font-size:1rem;"></i>
+                </div>
+                <div>
+                  <div style="font-size:0.82rem;font-weight:600;color:var(--text-primary);">Cloudinary</div>
+                  <div style="font-size:0.72rem;color:var(--text-secondary);">Monthly Credits</div>
+                </div>
+              </div>
+              <div style="text-align:right;">
+                <span style="font-family:var(--font-display);font-weight:700;font-size:0.95rem;color:var(--text-primary);" id="ext-cloudinary">{{ stats.cloudinary_credits }}</span>
+                <span style="font-size:0.75rem;color:var(--text-secondary);"> / 25</span>
+              </div>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;margin-left:40px;">
+              <div id="cloudinary-bar" style="height:100%;width:{{ cloud_pct }}%;border-radius:3px;transition:width 0.6s ease;
+                {% if cloud_pct < 50 %}background:linear-gradient(90deg,#818cf8,#6366f1);{% elif cloud_pct < 80 %}background:linear-gradient(90deg,#fbbf24,#f59e0b);{% else %}background:linear-gradient(90deg,#f87171,#ef4444);{% endif %}"></div>
+            </div>
+          </div>
+
+          <!-- SMS Balance -->
+          <div style="background:var(--bg-root);border-radius:10px;padding:0.9rem 1rem;border:1px solid var(--border);">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-2">
+                <div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(16,185,129,0.12);color:#34d399;">
+                  <i class="bi bi-chat-dots-fill" style="font-size:1rem;"></i>
+                </div>
+                <div>
+                  <div style="font-size:0.82rem;font-weight:600;color:var(--text-primary);">SMS Balance</div>
+                  <div style="font-size:0.72rem;color:var(--text-secondary);">2Factor API</div>
+                </div>
+              </div>
+              <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:var(--text-primary);" id="ext-sms">{{ stats.sms_balance }}</div>
+            </div>
+          </div>
+
+          <!-- Cards + Generation Rate -->
+          <div class="d-flex gap-3">
+            <div style="flex:1;background:var(--bg-root);border-radius:10px;padding:0.9rem 1rem;border:1px solid var(--border);">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:rgba(244,114,182,0.12);color:#f472b6;">
+                  <i class="bi bi-image-fill" style="font-size:0.85rem;"></i>
+                </div>
+                <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:500;">Card Storage</span>
+              </div>
+              <div style="padding-left:36px;">
+                <span style="font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:var(--text-primary);">{{ stats.cards_on_cloud }}</span>
+                <span style="font-size:0.75rem;color:var(--text-secondary);"> card{{ 's' if stats.cards_on_cloud != 1 }}</span>
+              </div>
+            </div>
+            <div style="flex:1;background:var(--bg-root);border-radius:10px;padding:0.9rem 1rem;border:1px solid var(--border);">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:rgba(251,191,36,0.12);color:#fbbf24;">
+                  <i class="bi bi-graph-up" style="font-size:0.85rem;"></i>
+                </div>
+                <span style="font-size:0.72rem;color:var(--text-secondary);font-weight:500;">Generation Rate</span>
+              </div>
+              <div style="padding-left:36px;">
+                {% if stats.total_voters > 0 %}
+                {% set gen_pct = ((stats.total_generated / stats.total_voters) * 100) | round(1) %}
+                <span style="font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:var(--text-primary);">{{ gen_pct }}%</span>
+                <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:6px;">
+                  <div style="height:100%;width:{{ gen_pct }}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);border-radius:2px;transition:width 0.6s ease;"></div>
+                </div>
+                {% else %}
+                <span style="font-size:0.85rem;color:var(--text-muted);">N/A</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -188,7 +244,17 @@
         el = document.getElementById('ext-db-size');
         if (el && d.mongodb_size_mb !== undefined) el.textContent = d.mongodb_size_mb;
         el = document.getElementById('ext-cloudinary');
-        if (el && d.cloudinary_credits) el.textContent = d.cloudinary_credits;
+        if (el && d.cloudinary_credits) {
+          el.textContent = d.cloudinary_credits;
+          var bar = document.getElementById('cloudinary-bar');
+          if (bar) {
+            var pct = Math.min((parseFloat(d.cloudinary_credits) / 25) * 100, 100).toFixed(1);
+            bar.style.width = pct + '%';
+            if (pct < 50) bar.style.background = 'linear-gradient(90deg,#818cf8,#6366f1)';
+            else if (pct < 80) bar.style.background = 'linear-gradient(90deg,#fbbf24,#f59e0b)';
+            else bar.style.background = 'linear-gradient(90deg,#f87171,#ef4444)';
+          }
+        }
         el = document.getElementById('ext-sms');
         if (el && d.sms_balance) el.textContent = d.sms_balance;
       })

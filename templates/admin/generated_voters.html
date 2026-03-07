@@ -336,14 +336,14 @@
       // Actions
       html += '<div class="detail-actions">';
       if (v.ptc_code) {
-        html += '<a href="/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '" class="btn btn-sm btn-outline-dark"><i class="bi bi-box-arrow-up-right me-1"></i>Full Detail</a>';
+        html += '<a href="/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '" class="detail-action-btn action-fulldetail"><i class="bi bi-arrow-up-right-square"></i> Full Detail</a>';
       }
       if (v.card_url) {
-        html += '<a href="' + escHtml(v.card_url) + '" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View Card</a>';
-        html += '<a href="' + escHtml(v.card_url) + '" download class="btn btn-sm btn-outline-success"><i class="bi bi-download me-1"></i>Download</a>';
+        html += '<a href="' + escHtml(v.card_url) + '" target="_blank" class="detail-action-btn action-viewcard"><i class="bi bi-credit-card-2-front"></i> View Card</a>';
+        html += '<a href="' + escHtml(v.card_url) + '" download class="detail-action-btn action-download"><i class="bi bi-cloud-arrow-down"></i> Download</a>';
       }
       if (v.photo_url) {
-        html += '<a href="' + escHtml(v.photo_url) + '" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-image me-1"></i>View Photo</a>';
+        html += '<a href="' + escHtml(v.photo_url) + '" target="_blank" class="detail-action-btn action-viewphoto"><i class="bi bi-person-bounding-box"></i> View Photo</a>';
       }
       html += '</div>';
 
