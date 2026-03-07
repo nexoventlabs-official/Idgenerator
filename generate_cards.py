@@ -272,9 +272,10 @@ def generate_card(voter: dict, template: Image.Image,
     card.paste(qr_img, (config.QR_BOX[0], config.QR_BOX[1]))
 
     # ── 4. Text below QR ─────────────────────────────────────────
-    # Show only the PTC unique code below QR (no EPIC number)
+    # Show PTC code below QR (or fallback to serial number)
+    ptc_code = voter.get('ptc_code', '')
     vid_font = load_bold_font(config.QR_ID_FONT_SIZE)
-    vid_text = serial  # PTC-XXXXXXX code
+    vid_text = ptc_code if ptc_code else serial
     vid_w = get_text_width(vid_text, vid_font)
     vid_x = config.QR_ID_XY[0] - vid_w // 2
     draw.text((vid_x, config.QR_ID_XY[1]), vid_text, fill=config.QR_FONT_COLOR, font=vid_font)

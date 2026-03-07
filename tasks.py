@@ -138,6 +138,10 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
         # Update task state
         self.update_state(state='PROCESSING', meta={'status': 'Generating card'})
         
+        # Set verify URL and PTC code on voter for QR code generation
+        voter['ptc_code'] = ptc_code
+        voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
+        
         # Load template
         template_path = os.path.join(config.BASE_DIR, 'template.jpeg')
         template = Image.open(template_path)

@@ -1495,6 +1495,11 @@ def chat_generate_card():
         except Exception as e:
             logger.error(f"Photo upload failed for {epic_no}: {e}")
 
+        # Generate unique PTC code and set verify URL before card generation
+        ptc_code = generate_ptc_code()
+        voter['ptc_code'] = ptc_code
+        voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
+
         # Generate card image
         template = Image.open(config.TEMPLATE_PATH)
         card_image = generate_card(voter, template, photo_image)
@@ -1514,9 +1519,6 @@ def chat_generate_card():
         card_url = card_upload['secure_url']
         logger.info(f"Card generated for {epic_no}: {card_url}")
 
-        # Generate unique PTC code
-        ptc_code = generate_ptc_code()
-        
         # Get referral info
         ref_ptc = request.form.get('ref_ptc', '').strip()
         ref_rid = request.form.get('ref_rid', '').strip()
