@@ -995,6 +995,38 @@ def favicon():
     return send_from_directory(app.static_folder, 'favicon.jpg', mimetype='image/jpeg')
 
 
+@app.route('/google17d450ee87a4cb34.html')
+def google_site_verification():
+    return 'google-site-verification: google17d450ee87a4cb34.html', 200, {'Content-Type': 'text/html'}
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    robots_content = """User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /card/
+
+Sitemap: https://www.puratchithaai.org/sitemap.xml
+"""
+    return robots_content, 200, {'Content-Type': 'text/plain'}
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    sitemap_content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.puratchithaai.org/</loc>
+    <lastmod>2026-03-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>"""
+    return sitemap_content, 200, {'Content-Type': 'application/xml'}
+
+
 @app.route('/cronjob')
 def cronjob():
     return 'OK', 200, {'Content-Type': 'text/plain'}
