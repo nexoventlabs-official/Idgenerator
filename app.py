@@ -46,6 +46,38 @@ from generate_cards import (
     setup_logging, generate_card, generate_serial_number,
     load_bold_font, get_text_width, load_member_photo
 )
+from security_fixes import (
+    hash_pin, verify_pin, rate_limit, rate_limiter,
+    validate_mobile, validate_epic, validate_pin, validate_otp,
+    sanitize_search, validate_file_upload, login_tracker
+)
+from health_check import health_bp
+from cloudinary_secure import generate_signed_url, generate_download_url
+from face_detection import validate_photo_for_id_card, detect_face_in_image
+
+# ══════════════════════════════════════════════════════════════════
+#  PHASE 1: CELERY & CIRCUIT BREAKERS
+# ══════════════════════════════════════════════════════════════════
+
+# Import Celery tasks
+from tasks import celery, generate_card_async
+
+# Circuit breakers for external services
+from pybreaker import CircuitBreaker
+
+# Cloudinary circuit breaker
+cloudinary_breaker = CircuitBreaker(
+    fail_max=5,  # Open circuit after 5 failures
+    timeout_duration=60,  # Keep circuit open for 60 seconds
+    name='cloudinary'
+)
+
+# SMS API circuit breaker
+sms_breaker = CircuitBreaker(
+    fail_max=3,
+    timeout_duration=120,
+    name='sms_api'
+)
 
 # ── App Setup ────────────────────────────────────────────────────
 app = Flask(__name__,
@@ -53,6 +85,102 @@ app = Flask(__name__,
             static_folder=os.path.join(config.BASE_DIR, 'static'))
 app.secret_key = os.getenv('FLASK_SECRET', 'voter-id-gen-secret-2026')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload
+
+# ══════════════════════════════════════════════════════════════════
+#  PHASE 1: REDIS-BASED RATE LIMITER
+# ══════════════════════════════════════════════════════════════════
+
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+# Replace in-memory rate limiter with Redis-based limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    storage_uri=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    default_limits=["200 per day", "50 per hour"],
+    storage_options={"socket_connect_timeout": 30},
+    strategy="fixed-window"
+)
+
+# ══════════════════════════════════════════════════════════════════
+#  PHASE 2: REDIS SESSION STORE (For Horizontal Scaling)
+# ══════════════════════════════════════════════════════════════════
+
+from flask_session import Session
+
+# Configure Redis-based session storage for multi-instance deployment
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_PERMANENT'] = True
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'voter_session:'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+
+# Connect to Redis for sessions
+if os.getenv('REDIS_URL'):
+    import redis
+    app.config['SESSION_REDIS'] = redis.from_url(
+        os.getenv('REDIS_URL'),
+        decode_responses=False  # Keep binary for session data
+    )
+    Session(app)
+    logger.info("Redis session store configured for horizontal scaling")
+else:
+    logger.warning("REDIS_URL not set - using default Flask sessions (not suitable for multi-instance)")
+
+# ══════════════════════════════════════════════════════════════════
+#  SECURITY: HTTPS ENFORCEMENT & CORS
+# ══════════════════════════════════════════════════════════════════
+
+# SECURITY FIX: Enforce HTTPS in production
+from flask_talisman import Talisman
+if os.getenv('FLASK_ENV') != 'development':
+    Talisman(app, 
+             force_https=True,
+             strict_transport_security=True,
+             strict_transport_security_max_age=31536000,
+             content_security_policy={
+                 'default-src': ["'self'", 'https://res.cloudinary.com', 'https://2factor.in'],
+                 'img-src': ["'self'", 'https://res.cloudinary.com', 'data:'],
+                 'style-src': ["'self'", "'unsafe-inline'"],
+                 'script-src': ["'self'", "'unsafe-inline'"]
+             })
+
+# SECURITY FIX: Configure CORS for API endpoints
+from flask_cors import CORS
+CORS(app, resources={
+    r"/api/*": {
+        "origins": os.getenv('ALLOWED_ORIGINS', '*').split(','),
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+# ══════════════════════════════════════════════════════════════════
+#  SECURITY HEADERS & CDN CACHE CONTROL
+# ══════════════════════════════════════════════════════════════════
+
+@app.after_request
+def set_security_headers(response):
+    """SECURITY FIX: Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    
+    # PHASE 2: Add cache control headers for CDN
+    # Static assets get long cache
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    # API responses should not be cached
+    elif request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    # HTML pages get short cache
+    else:
+        response.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes
+    
+    return response
 
 for d in [config.MEMBER_PHOTOS_DIR, config.DATA_DIR, config.UPLOADS_DIR]:
     os.makedirs(d, exist_ok=True)
@@ -82,14 +210,22 @@ ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 logger = setup_logging()
 
 # ── MongoDB Setup (Main DB - voter data from XLSX imports, READ-ONLY after import) ──
+# PHASE 2: Configure read preference for read replicas
+from pymongo import ReadPreference
+
 mongo_client = MongoClient(
     config.MONGO_URI,
     serverSelectionTimeoutMS=5000,
-    maxPoolSize=50,          # Handle 50 concurrent connections per worker
-    minPoolSize=5,           # Keep 5 connections warm
-    maxIdleTimeMS=30000,     # Close idle connections after 30s
+    maxPoolSize=200,         # SCALABILITY FIX: Increased from 50 to handle more concurrent connections
+    minPoolSize=20,          # SCALABILITY FIX: Increased from 5 for better burst handling
+    maxIdleTimeMS=30000,
     connectTimeoutMS=10000,
     socketTimeoutMS=300000,  # 5 min for large bulk imports
+    # PHASE 2: Use secondary preferred for read-heavy operations
+    readPreference='secondaryPreferred',
+    # PHASE 2: Enable retryable reads for better reliability
+    retryReads=True,
+    retryWrites=True,
 )
 db = mongo_client[config.MONGO_DB_NAME]
 voters_col = db[config.MONGO_VOTERS_COLLECTION]
@@ -98,11 +234,16 @@ voters_col = db[config.MONGO_VOTERS_COLLECTION]
 gen_mongo_client = MongoClient(
     config.GEN_MONGO_URI,
     serverSelectionTimeoutMS=5000,
-    maxPoolSize=50,
-    minPoolSize=5,
+    maxPoolSize=200,         # SCALABILITY FIX: Increased from 50
+    minPoolSize=20,          # SCALABILITY FIX: Increased from 5
     maxIdleTimeMS=30000,
     connectTimeoutMS=5000,
     socketTimeoutMS=10000,
+    # PHASE 2: Use secondary preferred for read-heavy operations
+    readPreference='secondaryPreferred',
+    # PHASE 2: Enable retryable reads/writes
+    retryReads=True,
+    retryWrites=True,
 )
 gen_db = gen_mongo_client[config.GEN_MONGO_DB_NAME]
 gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
@@ -148,12 +289,14 @@ try:
     # 2nd MongoDB - all generation activity
     stats_col.create_index('epic_no', unique=True)
     stats_col.create_index([('count', 1)])
-    stats_col.create_index([('auth_mobile', 1)])
+    stats_col.create_index([('auth_mobile', 1)])  # SCALABILITY FIX: Index for PIN verification
     gen_voters_col.create_index('ptc_code', unique=True)
     gen_voters_col.create_index('epic_no')
     gen_voters_col.create_index('mobile')
     gen_voters_col.create_index('referral_id', unique=True, sparse=True)
     gen_voters_col.create_index('referred_by_ptc')
+    # CONCURRENCY FIX: Unique compound index to prevent race conditions
+    gen_voters_col.create_index([('epic_no', 1), ('mobile', 1)], unique=True, name='epic_mobile_unique')
     # Compound indexes for filter, search & sort at scale
     gen_voters_col.create_index([('assembly', 1), ('district', 1)])
     gen_voters_col.create_index([('generated_at', -1)])
@@ -477,7 +620,9 @@ def generate_ptc_code() -> str:
 def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str,
                         referred_by_ptc: str = '', referred_by_referral_id: str = '',
                         secret_pin: str = ''):
-    """Save a generated voter record to the new Generated Voters DB."""
+    """Save a generated voter record to the new Generated Voters DB with atomic upsert."""
+    import pymongo.errors
+    
     doc = {
         'ptc_code': ptc_code,
         'epic_no': voter.get('epic_no', ''),
@@ -490,17 +635,28 @@ def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str
         'generated_at': datetime.now(timezone.utc).isoformat(),
     }
     if secret_pin:
-        doc['secret_pin'] = secret_pin
+        # SECURITY: Hash PIN before storing
+        doc['secret_pin'] = hash_pin(secret_pin)
     if referred_by_ptc:
         doc['referred_by_ptc'] = referred_by_ptc
     if referred_by_referral_id:
         doc['referred_by_referral_id'] = referred_by_referral_id
-    gen_voters_col.update_one(
-        {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
-        {'$set': doc},
-        upsert=True
-    )
-    # If referred, increment referrer's count
+    
+    # CONCURRENCY FIX: Atomic upsert with duplicate key handling
+    try:
+        gen_voters_col.update_one(
+            {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
+            {'$set': doc, '$setOnInsert': {'created_at': datetime.now(timezone.utc).isoformat()}},
+            upsert=True
+        )
+    except pymongo.errors.DuplicateKeyError:
+        # Race condition: record already exists, just update it
+        gen_voters_col.update_one(
+            {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
+            {'$set': doc}
+        )
+    
+    # CONCURRENCY FIX: Atomic referral count increment
     if referred_by_ptc:
         gen_voters_col.update_one(
             {'ptc_code': referred_by_ptc},
@@ -557,7 +713,8 @@ def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str 
     if auth_mobile:
         update['$set']['auth_mobile'] = auth_mobile
     if secret_pin:
-        update['$set']['secret_pin'] = secret_pin
+        # SECURITY: Hash PIN before storing
+        update['$set']['secret_pin'] = hash_pin(secret_pin)
     stats_col.update_one({'epic_no': epic_no}, update, upsert=True)
 
 
@@ -814,12 +971,17 @@ def user_home():
 # ── Chatbot API Endpoints ────────────────────────────────────────
 
 @app.route('/api/chat/send-otp', methods=['POST'])
+@limiter.limit("3 per 5 minutes")  # PHASE 1: Use Redis-based rate limiter
 def chat_send_otp():
     """Generate and send OTP to mobile number via 2Factor.in - rate-limited."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
-    if not mobile or len(mobile) != 10:
-        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
+    
+    # Validate mobile number
+    valid, result = validate_mobile(mobile)
+    if not valid:
+        return jsonify({'success': False, 'message': result}), 400
+    mobile = result
 
     # Rate limit: max 1 OTP per mobile per 60 seconds
     existing = otp_col.find_one({'mobile': mobile})
@@ -833,7 +995,8 @@ def chat_send_otp():
         except Exception:
             pass
 
-    otp = str(random.randint(100000, 999999))
+    # SECURITY FIX: Use cryptographically secure random for OTP
+    otp = str(secrets.randbelow(900000) + 100000)
 
     # Store OTP in DB
     otp_col.update_one(
@@ -846,36 +1009,58 @@ def chat_send_otp():
         upsert=True
     )
 
-    # Send OTP via 2Factor.in voice call
+    # PHASE 1: Send OTP via 2Factor.in with circuit breaker
     otp_sent = False
     sms_api_key = os.getenv('SMS_API_KEY', '')
     if sms_api_key:
         try:
-            resp = http_requests.get(
-                f'https://2factor.in/API/V1/{sms_api_key}/SMS/{mobile}/{otp}',
-                timeout=15
-            )
-            if resp.status_code == 200 and resp.json().get('Status') == 'Success':
-                otp_sent = True
-                logger.info(f"OTP call sent to {mobile}")
+            # Use circuit breaker for SMS API
+            @sms_breaker
+            def send_sms():
+                resp = http_requests.get(
+                    f'https://2factor.in/API/V1/{sms_api_key}/SMS/{mobile}/{otp}',
+                    timeout=15
+                )
+                if resp.status_code == 200 and resp.json().get('Status') == 'Success':
+                    return True
+                return False
+            
+            otp_sent = send_sms()
+            if otp_sent:
+                # SECURITY FIX: Mask mobile number in logs
+                logger.info(f"OTP call sent to {mobile[:2]}****{mobile[-2:]}")
         except Exception as e:
-            logger.warning(f"OTP send failed for {mobile}: {e}")
+            # SECURITY FIX: Mask mobile number in logs
+            logger.warning(f"OTP send failed for {mobile[:2]}****{mobile[-2:]}: {e}")
+            # Circuit breaker may be open
+            if 'CircuitBreakerError' in str(type(e).__name__):
+                logger.warning("SMS API circuit breaker is OPEN - service unavailable")
 
     if not otp_sent:
-        logger.warning(f"OTP not sent for {mobile}")
+        # SECURITY FIX: Mask mobile number in logs
+        logger.warning(f"OTP not sent for {mobile[:2]}****{mobile[-2:]}")
 
     return jsonify({'success': otp_sent})
 
 
 @app.route('/api/chat/verify-otp', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)  # 5 attempts per 5 minutes
 def chat_verify_otp():
     """Verify OTP for mobile number."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     otp = data.get('otp', '').strip()
 
-    if not mobile or not otp:
-        return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
+    # Validate inputs
+    valid_mobile, mobile_result = validate_mobile(mobile)
+    if not valid_mobile:
+        return jsonify({'success': False, 'message': mobile_result}), 400
+    mobile = mobile_result
+    
+    valid_otp, otp_result = validate_otp(otp)
+    if not valid_otp:
+        return jsonify({'success': False, 'message': otp_result}), 400
+    otp = otp_result
 
     doc = otp_col.find_one({'mobile': mobile})
     if not doc or doc.get('otp') != otp:
@@ -891,6 +1076,10 @@ def chat_verify_otp():
 
     # Mark OTP as verified (but don't mark mobile as verified yet - that happens after card generation)
     otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
+    
+    # SECURITY FIX: Store verified mobile in session for authorization checks
+    session['verified_mobile'] = mobile
+    session.permanent = True
 
     # Check if this mobile already has a linked card
     stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'name': 1})
@@ -925,20 +1114,30 @@ def chat_check_mobile():
 
 
 @app.route('/api/chat/verify-pin', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)  # 5 attempts per 5 minutes
 def chat_verify_pin():
     """Verify the 4-digit secret PIN for a returning user."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     pin = data.get('pin', '').strip()
 
-    if not mobile or not pin:
-        return jsonify({'success': False, 'message': 'Mobile and PIN required'}), 400
+    # Validate inputs
+    valid_mobile, mobile_result = validate_mobile(mobile)
+    if not valid_mobile:
+        return jsonify({'success': False, 'message': mobile_result}), 400
+    mobile = mobile_result
+    
+    valid_pin, pin_result = validate_pin(pin)
+    if not valid_pin:
+        return jsonify({'success': False, 'message': pin_result}), 400
+    pin = pin_result
 
     stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
     if not stat or not stat.get('secret_pin'):
         return jsonify({'success': False, 'message': 'No PIN found for this mobile.'}), 404
 
-    if stat['secret_pin'] != pin:
+    # SECURITY: Verify hashed PIN
+    if not verify_pin(pin, stat['secret_pin']):
         return jsonify({'success': False, 'message': 'Invalid PIN. Please try again.'}), 400
 
     gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
@@ -977,7 +1176,8 @@ def chat_forgot_pin():
         except Exception:
             pass
 
-    otp = str(random.randint(100000, 999999))
+    # SECURITY FIX: Use cryptographically secure random for OTP
+    otp = str(secrets.randbelow(900000) + 100000)
     otp_col.update_one(
         {'mobile': mobile},
         {'$set': {
@@ -1007,14 +1207,23 @@ def chat_forgot_pin():
 
 
 @app.route('/api/chat/reset-pin', methods=['POST'])
+@rate_limit(max_requests=3, window_seconds=300)
 def chat_reset_pin():
     """Verify OTP and save user-chosen new PIN."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     otp = data.get('otp', '').strip()
 
-    if not mobile or not otp:
-        return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
+    # Validate inputs
+    valid_mobile, mobile_result = validate_mobile(mobile)
+    if not valid_mobile:
+        return jsonify({'success': False, 'message': mobile_result}), 400
+    mobile = mobile_result
+    
+    valid_otp, otp_result = validate_otp(otp)
+    if not valid_otp:
+        return jsonify({'success': False, 'message': otp_result}), 400
+    otp = otp_result
 
     doc = otp_col.find_one({'mobile': mobile})
     if not doc or doc.get('otp') != otp:
@@ -1030,13 +1239,15 @@ def chat_reset_pin():
 
     # Accept user-chosen PIN
     new_pin = data.get('new_pin', '').strip()
-    if not new_pin or len(new_pin) != 4 or not new_pin.isdigit():
-        return jsonify({'success': False, 'message': 'Please provide a valid 4-digit PIN.'}), 400
+    valid_pin, pin_result = validate_pin(new_pin)
+    if not valid_pin:
+        return jsonify({'success': False, 'message': pin_result}), 400
+    new_pin = pin_result
 
-    # Update PIN in stats_col
-    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': new_pin}})
-    # Update PIN in gen_voters_col
-    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': new_pin}})
+    # SECURITY: Hash PIN before saving
+    hashed_pin = hash_pin(new_pin)
+    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
     # Clean up OTP
     otp_col.delete_one({'mobile': mobile})
 
@@ -1057,25 +1268,33 @@ def chat_reset_pin():
 
 
 @app.route('/api/chat/set-pin', methods=['POST'])
+@rate_limit(max_requests=3, window_seconds=300)
 def chat_set_pin():
     """Set the 4-digit PIN for a user who just registered (card exists, no PIN yet)."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     pin = data.get('pin', '').strip()
 
-    if not mobile or len(mobile) != 10:
-        return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
-    if not pin or len(pin) != 4 or not pin.isdigit():
-        return jsonify({'success': False, 'message': 'Please provide a valid 4-digit PIN.'}), 400
+    # Validate inputs
+    valid_mobile, mobile_result = validate_mobile(mobile)
+    if not valid_mobile:
+        return jsonify({'success': False, 'message': mobile_result}), 400
+    mobile = mobile_result
+    
+    valid_pin, pin_result = validate_pin(pin)
+    if not valid_pin:
+        return jsonify({'success': False, 'message': pin_result}), 400
+    pin = pin_result
 
     # Verify this mobile has a card
     stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
     if not stat or not stat.get('card_url'):
         return jsonify({'success': False, 'message': 'No card found for this mobile.'}), 404
 
-    # Save PIN to both collections
-    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': pin}})
-    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': pin}})
+    # SECURITY: Hash PIN before saving
+    hashed_pin = hash_pin(pin)
+    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
 
     logger.info(f"PIN set for {mobile}")
     return jsonify({'success': True})
@@ -1106,12 +1325,17 @@ def chat_verify_forgot_otp():
 
 
 @app.route('/api/chat/validate-epic', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=60)
 def chat_validate_epic():
     """Validate EPIC number and return voter details."""
     data = request.get_json()
     epic_no = data.get('epic_no', '').strip().upper()
-    if not epic_no:
-        return jsonify({'success': False, 'message': 'Please enter your EPIC Number.'}), 400
+    
+    # Validate EPIC format
+    valid, result = validate_epic(epic_no)
+    if not valid:
+        return jsonify({'success': False, 'message': result}), 400
+    epic_no = result
 
     voter = find_voter_by_epic(epic_no)
     if not voter:
@@ -1127,13 +1351,17 @@ def chat_validate_epic():
 
 
 @app.route('/api/chat/generate-card', methods=['POST'])
+@limiter.limit("5 per 5 minutes")  # PHASE 1: Use Redis-based rate limiter
 def chat_generate_card():
-    """Upload photo and generate ID card via chatbot."""
+    """Upload photo and generate ID card via chatbot - ASYNC with Celery."""
     epic_no = request.form.get('epic_no', '').strip().upper()
     mobile_num = request.form.get('mobile', '').strip()
 
-    if not epic_no:
-        return jsonify({'success': False, 'message': 'EPIC Number is required.'}), 400
+    # Validate EPIC
+    valid_epic, epic_result = validate_epic(epic_no)
+    if not valid_epic:
+        return jsonify({'success': False, 'message': epic_result}), 400
+    epic_no = epic_result
 
     voter = find_voter_by_epic(epic_no)
     if not voter:
@@ -1144,54 +1372,129 @@ def chat_generate_card():
         return jsonify({'success': False, 'message': 'Photo is required.'}), 400
 
     file = request.files['photo']
-    if not allowed_file(file.filename, ALLOWED_IMG):
-        return jsonify({'success': False, 'message': 'Invalid photo format. Use JPG or PNG.'}), 400
-
-    photo_image = None
-    photo_url = ''
-    try:
-        photo_image = Image.open(file.stream).convert('RGB')
-        photo_url = upload_photo_to_cloudinary(photo_image, epic_no)
-    except Exception as e:
-        logger.warning(f"Photo upload error for {epic_no}: {e}")
-        return jsonify({'success': False, 'message': 'Could not process the uploaded photo.'}), 500
+    
+    # SECURITY: Validate file upload
+    valid_file, file_error = validate_file_upload(file, ALLOWED_IMG, max_size_mb=10)
+    if not valid_file:
+        return jsonify({'success': False, 'message': file_error}), 400
 
     try:
-        # Generate unique PTC code for this registration
+        # FACE DETECTION: Validate photo contains a clear face
+        is_valid_face, face_message, photo_image = validate_photo_for_id_card(file.stream)
+        
+        if not is_valid_face:
+            logger.warning(f"Face detection failed for {epic_no}: {face_message}")
+            return jsonify({
+                'success': False, 
+                'message': face_message,
+                'error_type': 'face_detection_failed'
+            }), 400
+        
+        logger.info(f"Face detected successfully for {epic_no}")
+        
+        # Convert validated photo to base64 for Celery task
+        photo_buffer = io.BytesIO()
+        photo_image.save(photo_buffer, format='JPEG', quality=95)
+        photo_buffer.seek(0)
+        
+        import base64
+        photo_base64 = base64.b64encode(photo_buffer.getvalue()).decode('utf-8')
+        
+        # Generate unique PTC code
         ptc_code = generate_ptc_code()
-
-        voter['serial_number'] = ptc_code
-        voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
-        voter['auth_mobile'] = mobile_num
-        template = Image.open(config.TEMPLATE_PATH).convert('RGBA')
-        card_image = generate_card(voter, template, photo_image=photo_image)
-        card_url = upload_card_to_cloudinary(card_image, epic_no)
-
-        increment_generation_count(epic_no, photo_url=photo_url, card_url=card_url,
-                                   auth_mobile=mobile_num)
-
-        # Save to Generated Voters DB (new MongoDB)
+        
+        # Get referral info
         ref_ptc = request.form.get('ref_ptc', '').strip()
         ref_rid = request.form.get('ref_rid', '').strip()
-        save_generated_voter(voter, mobile_num, photo_url, card_url, ptc_code,
-                            referred_by_ptc=ref_ptc, referred_by_referral_id=ref_rid)
-
-        # Now mark mobile as verified (only after successful card generation)
-        if mobile_num:
-            verified_mobiles_col.update_one(
-                {'mobile': mobile_num},
-                {'$set': {'mobile': mobile_num, 'epic_no': epic_no, 'verified_at': datetime.now(timezone.utc).isoformat()}},
-                upsert=True
-            )
-
+        
+        # PHASE 1: Queue card generation as async Celery task
+        task = generate_card_async.delay(
+            epic_no=epic_no,
+            mobile=mobile_num,
+            photo_base64=photo_base64,
+            ptc_code=ptc_code,
+            referred_by_ptc=ref_ptc,
+            referred_by_referral_id=ref_rid,
+            secret_pin=''
+        )
+        
+        logger.info(f"Card generation queued for {epic_no}, task_id: {task.id}")
+        
+        # Return immediately with job ID
         return jsonify({
-            'success': True, 'card_url': card_url, 'epic_no': epic_no,
-            'ptc_code': ptc_code,
-            'photo_url': photo_url
+            'success': True,
+            'job_id': task.id,
+            'status': 'processing',
+            'message': 'Card generation started. Please check status.',
+            'epic_no': epic_no
         })
+        
     except Exception as e:
-        logger.error(f"Card generation error for {epic_no}: {e}")
-        return jsonify({'success': False, 'message': 'Card generation failed. Please try again.'}), 500
+        logger.error(f"Card generation queue error for {epic_no}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to queue card generation. Please try again.'}), 500
+
+
+@app.route('/api/chat/card-status/<job_id>')
+def check_card_status(job_id):
+    """Check status of async card generation job."""
+    try:
+        from celery.result import AsyncResult
+        task = AsyncResult(job_id, app=celery)
+        
+        if task.state == 'PENDING':
+            response = {
+                'status': 'pending',
+                'message': 'Job is waiting to be processed'
+            }
+        elif task.state == 'PROCESSING':
+            response = {
+                'status': 'processing',
+                'message': task.info.get('status', 'Processing...') if task.info else 'Processing...'
+            }
+        elif task.state == 'SUCCESS':
+            result = task.result
+            response = {
+                'status': 'completed',
+                'success': result.get('success', False),
+                'card_url': result.get('card_url', ''),
+                'photo_url': result.get('photo_url', ''),
+                'epic_no': result.get('epic_no', ''),
+                'voter_name': result.get('voter_name', ''),
+                'message': result.get('message', 'Card generated successfully')
+            }
+            
+            # Mark mobile as verified after successful generation
+            if result.get('success') and result.get('epic_no'):
+                mobile = session.get('verified_mobile')
+                if mobile:
+                    verified_mobiles_col.update_one(
+                        {'mobile': mobile},
+                        {'$set': {
+                            'mobile': mobile,
+                            'epic_no': result['epic_no'],
+                            'verified_at': datetime.now(timezone.utc).isoformat()
+                        }},
+                        upsert=True
+                    )
+        elif task.state == 'FAILURE':
+            response = {
+                'status': 'failed',
+                'message': str(task.info) if task.info else 'Card generation failed'
+            }
+        else:
+            response = {
+                'status': task.state.lower(),
+                'message': f'Job status: {task.state}'
+            }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error checking job status {job_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to check job status'
+        }), 500
 
 
 @app.route('/card/<epic_no>')
@@ -1218,17 +1521,38 @@ def user_card_page(epic_no):
 
 @app.route('/mycard/<epic_no>')
 def user_serve_card(epic_no):
-    """Redirect to the Cloudinary-hosted card image."""
+    """Redirect to the Cloudinary-hosted card image - REQUIRES AUTHORIZATION."""
+    # SECURITY FIX: Verify user owns this card
+    mobile = session.get('verified_mobile')
+    if not mobile:
+        return jsonify({'error': 'Unauthorized. Please verify your mobile number first.'}), 401
+    
+    # Verify this mobile generated this card
+    epic_no = epic_no.strip().upper()
+    gen_doc = gen_voters_col.find_one({'epic_no': epic_no, 'mobile': mobile})
+    if not gen_doc:
+        return jsonify({'error': 'Forbidden. You do not have access to this card.'}), 403
+    
     card_url = get_voter_card_url(epic_no)
     if card_url:
         return redirect(card_url)
-    flash('Card not found.', 'danger')
-    return redirect(url_for('user_home'))
+    return jsonify({'error': 'Card not found.'}), 404
 
 
 @app.route('/mycard/<epic_no>/download')
 def user_download_card(epic_no):
-    """Redirect to Cloudinary card with download flag."""
+    """Redirect to Cloudinary card with download flag - REQUIRES AUTHORIZATION."""
+    # SECURITY FIX: Verify user owns this card
+    mobile = session.get('verified_mobile')
+    if not mobile:
+        return jsonify({'error': 'Unauthorized. Please verify your mobile number first.'}), 401
+    
+    # Verify this mobile generated this card
+    epic_no = epic_no.strip().upper()
+    gen_doc = gen_voters_col.find_one({'epic_no': epic_no, 'mobile': mobile})
+    if not gen_doc:
+        return jsonify({'error': 'Forbidden. You do not have access to this card.'}), 403
+    
     card_url = get_voter_card_url(epic_no)
     if card_url:
         # Add Cloudinary fl_attachment transformation for download
@@ -1237,8 +1561,7 @@ def user_download_card(epic_no):
         else:
             dl_url = card_url
         return redirect(dl_url)
-    flash('Card not found.', 'danger')
-    return redirect(url_for('user_home'))
+    return jsonify({'error': 'Card not found.'}), 404
 
 
 @app.route('/verify/<epic_no>')
@@ -1256,7 +1579,13 @@ def verify_voter(epic_no):
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
     voter['card_url'] = s.get('card_url', '')
-    voter['auth_mobile'] = s.get('auth_mobile', '')
+    
+    # SECURITY FIX: Don't expose full mobile number publicly - show last 4 digits only
+    mobile = s.get('auth_mobile', '')
+    if mobile and len(mobile) >= 4:
+        voter['auth_mobile_masked'] = f"****{mobile[-4:]}"
+    else:
+        voter['auth_mobile_masked'] = ''
 
     # Attach PTC code from generated voters DB
     gen_doc = gen_voters_col.find_one({'epic_no': epic_no}, {'ptc_code': 1})
@@ -1586,20 +1915,37 @@ def require_admin_login():
 
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
+@rate_limit(max_requests=5, window_seconds=300)  # 5 login attempts per 5 minutes
 def login():
     if session.get('admin_logged_in'):
         return redirect(url_for('admin.dashboard'))
+    
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        ip = request.remote_addr or 'unknown'
+        
+        # SECURITY: Check if IP is locked out
+        is_locked, retry_after = login_tracker.is_locked(ip)
+        if is_locked:
+            flash(f'Too many failed attempts. Try again in {retry_after} seconds.', 'danger')
+            return render_template('admin/login.html')
+        
+        # Verify credentials
         if username == config.ADMIN_USERNAME and password == config.ADMIN_PASSWORD:
+            # SECURITY FIX: Regenerate session on login to prevent session fixation
+            session.clear()
             session['admin_logged_in'] = True
             session.permanent = True
+            login_tracker.reset(ip)  # Reset on successful login
             flash('Welcome back, Admin!', 'success')
             next_url = request.args.get('next') or url_for('admin.dashboard')
             return redirect(next_url)
         else:
+            # SECURITY: Record failed attempt
+            login_tracker.record_attempt(ip, username, success=False)
             flash('Invalid username or password.', 'danger')
+    
     return render_template('admin/login.html')
 
 
@@ -1617,11 +1963,12 @@ def dashboard():
 
 
 @admin_bp.route('/voters')
+@rate_limit(max_requests=30, window_seconds=60)
 def voters_list():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
-    search = request.args.get('search', '').strip()
+    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     filter_assembly = request.args.get('assembly', '').strip()
     filter_district = request.args.get('district', '').strip()
 
@@ -1820,9 +2167,10 @@ def voter_detail(epic_no):
                            voter=voter, extra_fields=extra_fields)
 
 @admin_bp.route('/api/voters')
+@rate_limit(max_requests=30, window_seconds=60)
 def api_voters():
     """JSON API: search, filter, paginate voters - cursor-based and page-based."""
-    search = request.args.get('search', '').strip()
+    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
     cursor = request.args.get('cursor', '').strip()
@@ -1913,12 +2261,13 @@ def api_voters():
 # ── Generated Voters (from new DB) ──────────────────────────────
 
 @admin_bp.route('/generated-voters')
+@rate_limit(max_requests=30, window_seconds=60)
 def generated_voters_list():
     """Show all voters who generated ID cards via the chatbot."""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
-    search = request.args.get('search', '').strip()
+    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
 
     # Build MongoDB query - server-side search
     query = _build_search_filter(search, ['epic_no', 'name', 'ptc_code', 'mobile', 'assembly', 'district']) if search else {}
@@ -1938,9 +2287,10 @@ def generated_voters_list():
 
 
 @admin_bp.route('/api/generated-voters')
+@rate_limit(max_requests=30, window_seconds=60)
 def api_generated_voters():
     """JSON API for generated voters list - supports cursor-based & page-based pagination."""
-    search = request.args.get('search', '').strip()
+    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
     cursor = request.args.get('cursor', '').strip()
@@ -2261,6 +2611,9 @@ def api_confirmed_booth_agents():
 
 # Register admin blueprint
 app.register_blueprint(admin_bp)
+
+# Register health check blueprint
+app.register_blueprint(health_bp)
 
 
 # ══════════════════════════════════════════════════════════════════

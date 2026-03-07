@@ -222,6 +222,17 @@ def generate_card(voter: dict, template: Image.Image,
         text = voter.get(field_key, '')
         if not text:
             continue
+        
+        # SECURITY FIX: Sanitize input to prevent template injection
+        text = str(text)
+        # Remove control characters and non-printable characters
+        text = ''.join(char for char in text if char.isprintable() or char.isspace())
+        # Remove any potential template injection characters
+        text = text.replace('{', '').replace('}', '').replace('$', '').replace('\\', '')
+        # Limit length to prevent buffer overflow
+        max_len = {'name': 100, 'epic_no': 20, 'assembly': 100, 'district': 100}.get(field_key, 100)
+        text = text[:max_len]
+        
         text = text.upper()  # ALL CAPS
         font = auto_fit_font(text, max_width, config.FONT_SIZE, bold=True)
         text_w = get_text_width(text, font)

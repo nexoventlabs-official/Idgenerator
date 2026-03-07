@@ -1,0 +1,106 @@
+# Docker Compose for Phase 2 Local Testing
+# Simulates multi-instance deployment with load balancer
+
+version: '3.8'
+
+services:
+  # Redis for sessions and rate limiting
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Celery worker for background jobs
+  worker:
+    build: .
+    command: celery -A tasks worker --loglevel=info --concurrency=4
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGO_URI=${MONGO_URI}
+      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - FLASK_SECRET=${FLASK_SECRET}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Web instance 1
+  web1:
+    build: .
+    command: gunicorn app:app --bind 0.0.0.0:5000 --timeout 30 --workers 5 --threads 2
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGO_URI=${MONGO_URI}
+      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - FLASK_SECRET=${FLASK_SECRET}
+      - FLASK_ENV=production
+      - ALLOWED_ORIGINS=http://localhost,http://localhost:8080
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web instance 2
+  web2:
+    build: .
+    command: gunicorn app:app --bind 0.0.0.0:5000 --timeout 30 --workers 5 --threads 2
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGO_URI=${MONGO_URI}
+      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - FLASK_SECRET=${FLASK_SECRET}
+      - FLASK_ENV=production
+      - ALLOWED_ORIGINS=http://localhost,http://localhost:8080
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx load balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web1
+      - web2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:

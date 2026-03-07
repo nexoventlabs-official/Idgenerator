@@ -40,8 +40,12 @@ CLOUDINARY_PHOTO_FOLDER = os.getenv("CLOUDINARY_PHOTO_FOLDER", "member_photos")
 CLOUDINARY_CARDS_FOLDER = os.getenv("CLOUDINARY_CARDS_FOLDER", "generated_cards")
 
 # ── Admin Login ──────────────────────────────────────────────────
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+# SECURITY: No default credentials - must be set in .env
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+    raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD must be set in .env file")
 
 # ── YouTube Data API ─────────────────────────────────────────────
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
