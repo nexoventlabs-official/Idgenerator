@@ -68,14 +68,14 @@ from pybreaker import CircuitBreaker
 # Cloudinary circuit breaker
 cloudinary_breaker = CircuitBreaker(
     fail_max=5,  # Open circuit after 5 failures
-    timeout_duration=60,  # Keep circuit open for 60 seconds
+    reset_timeout=60,  # Keep circuit open for 60 seconds
     name='cloudinary'
 )
 
 # SMS API circuit breaker
 sms_breaker = CircuitBreaker(
     fail_max=3,
-    timeout_duration=120,
+    reset_timeout=120,
     name='sms_api'
 )
 
