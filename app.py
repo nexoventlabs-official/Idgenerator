@@ -146,10 +146,11 @@ if os.getenv('FLASK_ENV') != 'development':
              strict_transport_security_max_age=31536000,
              content_security_policy={
                  'default-src': ["'self'", 'https://res.cloudinary.com', 'https://2factor.in'],
-                 'img-src': ["'self'", 'https://res.cloudinary.com', 'https://puratchithaai.com', 'data:'],
+                 'img-src': ["'self'", 'https://res.cloudinary.com', 'data:'],
                  'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
                  'script-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-                 'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net']
+                 'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net'],
+                 'connect-src': ["'self'", 'https://cdn.jsdelivr.net']
              })
 
 # SECURITY FIX: Configure CORS for API endpoints
@@ -472,7 +473,6 @@ def _iter_xlsx(xlsx_path: str):
     for row in ws.iter_rows(min_row=2):
         cells = [cell.value for cell in row]
         epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
-        name = _safe_str(cells[col_map['name']] if 'name' in col_map and col_map['name'] < len(cells) else '')
 
         if not epic:
             continue
@@ -482,10 +482,19 @@ def _iter_xlsx(xlsx_path: str):
             continue
         seen_epics.add(epic_upper)
 
-        assembly = _safe_str(cells[col_map['assembly']] if 'assembly' in col_map and col_map['assembly'] < len(cells) else '') if 'assembly' in col_map else ''
-        district = _safe_str(cells[col_map['district']] if 'district' in col_map and col_map['district'] < len(cells) else '') if 'district' in col_map else ''
+        voter = {'epic_no': epic}
+        for field, idx in col_map.items():
+            if field == 'epic_no':
+                continue
+            voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
 
-        voter = {'epic_no': epic, 'name': name, 'assembly': assembly, 'district': district}
+        # Split combined lat_long into separate fields
+        if 'lat_long' in voter and voter['lat_long']:
+            parts = voter['lat_long'].split(',')
+            if len(parts) == 2:
+                voter['latitude'] = parts[0].strip()
+                voter['longitude'] = parts[1].strip()
+            del voter['lat_long']
 
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
@@ -528,7 +537,6 @@ def _iter_csv_bytes(raw: bytes):
 
     for cells in reader:
         epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
-        name = _safe_str(cells[col_map['name']] if 'name' in col_map and col_map['name'] < len(cells) else '')
         if not epic:
             continue
 
@@ -537,10 +545,19 @@ def _iter_csv_bytes(raw: bytes):
             continue
         seen_epics.add(epic_upper)
 
-        assembly = _safe_str(cells[col_map['assembly']] if 'assembly' in col_map and col_map['assembly'] < len(cells) else '') if 'assembly' in col_map else ''
-        district = _safe_str(cells[col_map['district']] if 'district' in col_map and col_map['district'] < len(cells) else '') if 'district' in col_map else ''
+        voter = {'epic_no': epic}
+        for field, idx in col_map.items():
+            if field == 'epic_no':
+                continue
+            voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
 
-        voter = {'epic_no': epic, 'name': name, 'assembly': assembly, 'district': district}
+        # Split combined lat_long into separate fields
+        if 'lat_long' in voter and voter['lat_long']:
+            parts = voter['lat_long'].split(',')
+            if len(parts) == 2:
+                voter['latitude'] = parts[0].strip()
+                voter['longitude'] = parts[1].strip()
+            del voter['lat_long']
 
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
@@ -571,7 +588,7 @@ def _stream_upsert(voter_iter, status: dict) -> int:
     """Stream-upsert voters from an iterator into MongoDB in batches."""
     from pymongo import UpdateOne
     total = 0
-    BATCH = 5000
+    BATCH = 500
     batch = []
     for v in voter_iter:
         batch.append(v)
@@ -594,7 +611,7 @@ def _stream_replace(voter_iter, status: dict) -> int:
     """Drop existing voters and stream-insert from iterator in batches."""
     voters_col.delete_many({})
     total = 0
-    BATCH = 5000
+    BATCH = 500
     batch = []
     for v in voter_iter:
         batch.append(v)
@@ -2031,12 +2048,14 @@ def _run_import_thread(file_path: str, csv_bytes: bytes, ext: str, import_mode: 
     """Background thread: parse file and stream-insert into MongoDB."""
     global import_status
     try:
-        import_status['phase'] = 'inserting'
+        import_status['phase'] = 'parsing'
 
         if ext == 'csv':
             voter_iter = _iter_csv_bytes(csv_bytes)
         else:
             voter_iter = _iter_xlsx(file_path)
+
+        import_status['phase'] = 'inserting'
 
         if import_mode == 'replace':
             count = _stream_replace(voter_iter, import_status)

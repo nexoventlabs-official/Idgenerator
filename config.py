@@ -119,16 +119,28 @@ QR_BORDER = 1
 
 # ── XLSX Column Mapping ──────────────────────────────────────────
 #    Maps internal field names → Excel column headers (case-insensitive match).
-#    Admin XLSX must have at least: Epic Number, Name columns.
+#    Required: Epic Number, Voter Name, Assembly Name, Assembly Number, District
 XLSX_COLUMNS = {
+    # ── Required columns ──
     'epic_no': ['Epic Number', 'Epic No', 'EPIC', 'epicNumber', 'Voter ID', 'voter_id'],
-    'name': ['Name', 'Voter Name', 'Full Name', 'applicantFirstName', 'Applicant Name'],
-    'assembly': ['Assembly', 'Constituency', 'AC Name', 'asmblyName', 'Assembly Name'],
-    'district': ['District', 'Dist', 'districtValue', 'District Value'],
+    'name': ['Voter Name', 'Name', 'Full Name', 'applicantFirstName', 'Applicant Name'],
+    'assembly': ['Assembly Name', 'Assembly', 'Constituency', 'AC Name', 'asmblyName'],
+    'assembly_number': ['Assembly Number', 'Assembly No', 'AC No', 'AC Number', 'asmblyNo'],
+    'district': ['District', 'Dist', 'districtValue', 'District Value', 'District Name'],
+    # ── Optional columns ──
+    'age': ['Age', 'Voter Age'],
+    'sex': ['Sex', 'Gender'],
+    'relation_type': ['Relation Type', 'Relation', 'Rel Type'],
+    'relation_name': ['Relation Name', 'Father Name', 'Husband Name', 'Guardian Name', 'Rel Name'],
+    'mobile': ['Mobile Number', 'Mobile', 'Phone', 'Phone Number', 'Contact'],
+    'booth_address': ['Booth Address', 'PS Address', 'Polling Station Address', 'Station Address', 'pollingStationAddress', 'Polling Stn Address'],
     'polling_station': ['Polling Station', 'Polling Booth', 'Booth Name', 'PS Name', 'Station Name', 'pollingStationName', 'Polling Station Name'],
     'part_no': ['Part No', 'Part Number', 'partNumber', 'Part', 'Section No'],
-    'booth_address': ['Booth Address', 'PS Address', 'Polling Station Address', 'Station Address', 'pollingStationAddress', 'Polling Stn Address'],
+    'lat_long': ['Lat Long', 'LatLong', 'Lat,Long', 'GPS', 'Coordinates', 'Location'],
 }
+
+# Columns that MUST be present in the uploaded file
+XLSX_REQUIRED_COLUMNS = ['epic_no', 'name', 'assembly', 'assembly_number', 'district']
 
 # ── Output Settings ──────────────────────────────────────────────
 JPEG_QUALITY = 95
