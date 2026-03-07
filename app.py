@@ -318,7 +318,9 @@ try:
     except Exception:
         pass  # Text index may already exist with different spec
     otp_col.create_index('mobile', unique=True)
+    otp_col.create_index('created_at_dt', expireAfterSeconds=600)  # Auto-expire OTPs after 10 minutes
     verified_mobiles_col.create_index('mobile', unique=True)
+    verified_mobiles_col.create_index('verified_at_dt', expireAfterSeconds=86400)  # Auto-expire after 24 hours
     volunteer_requests_col.create_index('ptc_code', unique=True)
     volunteer_requests_col.create_index('mobile')
     volunteer_requests_col.create_index('status')
@@ -1083,6 +1085,7 @@ def chat_send_otp():
         {'$set': {
             'otp': otp,
             'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at_dt': datetime.now(timezone.utc),
             'verified': False,
         }},
         upsert=True
@@ -1262,6 +1265,7 @@ def chat_forgot_pin():
         {'$set': {
             'otp': otp,
             'created_at': datetime.now(timezone.utc).isoformat(),
+            'created_at_dt': datetime.now(timezone.utc),
             'verified': False,
             'purpose': 'pin_reset',
         }},
@@ -1432,7 +1436,7 @@ def chat_validate_epic():
 @app.route('/api/chat/generate-card', methods=['POST'])
 @limiter.limit("5 per 5 minutes")  # PHASE 1: Use Redis-based rate limiter
 def chat_generate_card():
-    """Upload photo and generate ID card via chatbot - ASYNC with Celery."""
+    """Upload photo and generate ID card via chatbot — synchronous."""
     epic_no = request.form.get('epic_no', '').strip().upper()
     mobile_num = request.form.get('mobile', '').strip()
 
@@ -1471,46 +1475,131 @@ def chat_generate_card():
         
         logger.info(f"Face detected successfully for {epic_no}")
         
-        # Convert validated photo to base64 for Celery task
+        # Upload photo to Cloudinary
         photo_buffer = io.BytesIO()
         photo_image.save(photo_buffer, format='JPEG', quality=95)
         photo_buffer.seek(0)
-        
-        import base64
-        photo_base64 = base64.b64encode(photo_buffer.getvalue()).decode('utf-8')
-        
+        photo_data = photo_buffer.getvalue()
+
+        photo_url = ''
+        try:
+            upload_result = cloudinary.uploader.upload(
+                photo_data,
+                folder='member_photos',
+                public_id=epic_no,
+                overwrite=True,
+                resource_type='image'
+            )
+            photo_url = upload_result['secure_url']
+            logger.info(f"Photo uploaded for {epic_no}: {photo_url}")
+        except Exception as e:
+            logger.error(f"Photo upload failed for {epic_no}: {e}")
+
+        # Generate card image
+        template = Image.open(config.TEMPLATE_PATH)
+        card_image = generate_card(voter, template, photo_image)
+
+        # Upload card to Cloudinary
+        card_buffer = io.BytesIO()
+        card_image.save(card_buffer, format='JPEG', quality=95)
+        card_buffer.seek(0)
+
+        card_upload = cloudinary.uploader.upload(
+            card_buffer.getvalue(),
+            folder='generated_cards',
+            public_id=epic_no,
+            overwrite=True,
+            resource_type='image'
+        )
+        card_url = card_upload['secure_url']
+        logger.info(f"Card generated for {epic_no}: {card_url}")
+
         # Generate unique PTC code
         ptc_code = generate_ptc_code()
         
         # Get referral info
         ref_ptc = request.form.get('ref_ptc', '').strip()
         ref_rid = request.form.get('ref_rid', '').strip()
-        
-        # PHASE 1: Queue card generation as async Celery task
-        task = generate_card_async.delay(
-            epic_no=epic_no,
-            mobile=mobile_num,
-            photo_base64=photo_base64,
-            ptc_code=ptc_code,
-            referred_by_ptc=ref_ptc,
-            referred_by_referral_id=ref_rid,
-            secret_pin=''
+
+        # Save to generated voters collection
+        from security_fixes import hash_pin
+        doc = {
+            'ptc_code': ptc_code,
+            'epic_no': epic_no,
+            'name': voter.get('name', ''),
+            'assembly': voter.get('assembly', ''),
+            'district': voter.get('district', ''),
+            'mobile': mobile_num,
+            'photo_url': photo_url,
+            'card_url': card_url,
+            'generated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        if ref_ptc:
+            doc['referred_by_ptc'] = ref_ptc
+        if ref_rid:
+            doc['referred_by_referral_id'] = ref_rid
+
+        import pymongo.errors
+        try:
+            gen_voters_col.update_one(
+                {'epic_no': epic_no, 'mobile': mobile_num},
+                {'$set': doc, '$setOnInsert': {'created_at': datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
+        except pymongo.errors.DuplicateKeyError:
+            gen_voters_col.update_one(
+                {'epic_no': epic_no, 'mobile': mobile_num},
+                {'$set': doc}
+            )
+
+        # Increment referrer count
+        if ref_ptc:
+            gen_voters_col.update_one(
+                {'ptc_code': ref_ptc},
+                {'$inc': {'referred_members_count': 1}}
+            )
+
+        # Update stats
+        stats_col.update_one(
+            {'epic_no': epic_no},
+            {
+                '$set': {
+                    'card_url': card_url,
+                    'photo_url': photo_url,
+                    'last_generated': datetime.now(timezone.utc).isoformat(),
+                    'auth_mobile': mobile_num,
+                },
+                '$inc': {'count': 1}
+            },
+            upsert=True
         )
+
+        # Mark mobile as verified
+        verified_mobiles_col.update_one(
+            {'mobile': mobile_num},
+            {'$set': {
+                'mobile': mobile_num,
+                'epic_no': epic_no,
+                'verified_at': datetime.now(timezone.utc).isoformat(),
+                'verified_at_dt': datetime.now(timezone.utc)
+            }},
+            upsert=True
+        )
+
+        logger.info(f"Card generation completed for {epic_no}")
         
-        logger.info(f"Card generation queued for {epic_no}, task_id: {task.id}")
-        
-        # Return immediately with job ID
         return jsonify({
             'success': True,
-            'job_id': task.id,
-            'status': 'processing',
-            'message': 'Card generation started. Please check status.',
-            'epic_no': epic_no
+            'card_url': card_url,
+            'photo_url': photo_url,
+            'epic_no': epic_no,
+            'voter_name': voter.get('name', ''),
+            'message': 'Card generated successfully'
         })
         
     except Exception as e:
-        logger.error(f"Card generation queue error for {epic_no}: {e}")
-        return jsonify({'success': False, 'message': 'Failed to queue card generation. Please try again.'}), 500
+        logger.error(f"Card generation error for {epic_no}: {e}")
+        return jsonify({'success': False, 'message': 'Card generation failed. Please try again.'}), 500
 
 
 @app.route('/api/chat/card-status/<job_id>')
@@ -1551,7 +1640,8 @@ def check_card_status(job_id):
                         {'$set': {
                             'mobile': mobile,
                             'epic_no': result['epic_no'],
-                            'verified_at': datetime.now(timezone.utc).isoformat()
+                            'verified_at': datetime.now(timezone.utc).isoformat(),
+                            'verified_at_dt': datetime.now(timezone.utc)
                         }},
                         upsert=True
                     )

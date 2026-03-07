@@ -1463,6 +1463,7 @@
           yes_or_no: 'Please type <strong>Yes</strong> to generate or <strong>No</strong> to cancel.',
           ready_another: '\u{1F44B} Ready for another card?<br><br>\u{1F4F1} Please enter your <strong>10-digit mobile number</strong>:',
           card_generated: '\u{1F389} <strong>Your ID Card has been generated!</strong>',
+          generating_card: '\u2699\uFE0F Generating your <strong>ID Card</strong>... Please wait.',
           gen_failed: 'Generation failed. Please try again.',
           btn_reupload: '<i class="bi bi-arrow-clockwise"></i> Reupload Photo',
           btn_take_photo: '<i class="bi bi-camera-fill"></i> Take Photo',
@@ -1546,6 +1547,7 @@
           yes_or_no: 'உருவாக்க <strong>Yes</strong> அல்லது ரத்து செய்ய <strong>No</strong> என தட்டச்சு செய்யவும்.',
           ready_another: '\u{1F44B} மற்றொரு அட்டை உருவாக்க தயாரா?<br><br>\u{1F4F1} உங்கள் <strong>10 இலக்க மொபைல் எண்ணை</strong> உள்ளிடவும்:',
           card_generated: '\u{1F389} <strong>உங்கள் அடையாள அட்டை உருவாக்கப்பட்டது!</strong>',
+          generating_card: '\u2699\uFE0F உங்கள் <strong>அடையாள அட்டை</strong> உருவாக்கப்படுகிறது... காத்திருக்கவும்.',
           gen_failed: 'அட்டை உருவாக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
           btn_reupload: '<i class="bi bi-arrow-clockwise"></i> புகைப்படம் மீண்டும் பதிவேற்று',
           btn_take_photo: '<i class="bi bi-camera-fill"></i> புகைப்படம் எடு',
@@ -2629,30 +2631,28 @@
           if (refPtc) fd.append('ref_ptc', refPtc);
           if (refRid) fd.append('ref_rid', refRid);
 
+          await botReply(t('generating_card'), 400);
           showTyping();
           const res = await api('/api/chat/generate-card', fd, true);
           hideTyping();
 
-          if (res.success) {
-            // Show card first, then ask user to set their PIN
+          if (res.success && res.card_url) {
+            // Card generated — show card
             let h = t('card_generated') + '<br>';
-            if (res.card_url) {
-              h += '<div class="card-preview">';
-              h += '  <img src="' + res.card_url + '" alt="ID Card">';
-              h += '  <div class="card-actions-overlay">';
-              h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-              h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
-              h += '  </div>';
-              h += '</div>';
-            }
-            await botReply(h, 1500);
+            h += '<div class="card-preview">';
+            h += '  <img src="' + res.card_url + '" alt="ID Card">';
+            h += '  <div class="card-actions-overlay">';
+            h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
+            h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+            h += '  </div>';
+            h += '</div>';
+            await botReply(h, 500);
 
-            // Now ask user to set their own PIN
+            // Ask user to set their PIN
             state = S.AWAIT_SET_PIN;
             pinContext = 'register';
             pendingPin = '';
-            // Save card data temporarily (will finalize after PIN is set)
-            saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: (voter && voter.name) || '', photoUrl: res.photo_url || '' });
+            saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: res.voter_name || (voter && voter.name) || '', photoUrl: res.photo_url || '' });
             setNumeric('placeholder_set_pin');
             hideAttach();
             unlockInput();
