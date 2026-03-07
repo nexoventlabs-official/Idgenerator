@@ -8,6 +8,8 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PuratchiThaai — ID Card Generator</title>
+  <link rel="icon" type="image/jpeg" href="/favicon.ico">
+  <link rel="shortcut icon" type="image/jpeg" href="/favicon.ico">
   <meta property="og:title" content="PuratchiThaai — Become a Member!">
   <meta property="og:description" content="Join PuratchiThaai! Generate your free Digital Member ID Card now. Click the link to register and become a proud member of PuratchiThaai party.">
   <meta property="og:image" content="/static/banner.jpg">
@@ -56,7 +58,7 @@
       right: 0;
       bottom: 0;
       background-color: #efeae2;
-      background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+      background-image: url('/static/bg.png');
       opacity: 0.6;
       z-index: 0;
     }
@@ -1249,7 +1251,7 @@
     <!-- Header -->
     <div class="chat-header">
       <div class="avatar"><img
-          src="https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg"
+          src="/static/favicon.jpg"
           alt="Logo"></div>
       <div class="info" style="display: flex; align-items: center;">
         <img src="{{ url_for('static', filename='name-logo.png') }}" alt="PuratchiThaai"
@@ -1805,7 +1807,7 @@
 
         if (type === 'bot') {
           const img = document.createElement('img');
-          img.src = 'https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg';
+          img.src = '/static/favicon.jpg';
           img.className = 'bot-avatar-img';
           div.appendChild(img);
         }
@@ -1862,7 +1864,7 @@
         if (typingEl) return;
         typingEl = document.createElement('div');
         typingEl.className = 'message bot typing-indicator';
-        typingEl.innerHTML = '<img class="bot-avatar-img" src="https://puratchithaai.com/wp-content/uploads/sb-instagram-feed-images/307806566_619559223165116_5114435583162313103_nfull.jpg"><div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+        typingEl.innerHTML = '<img class="bot-avatar-img" src="/static/favicon.jpg"><div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
         chatEl.appendChild(typingEl);
         scroll();
       }

@@ -982,6 +982,12 @@ def get_dashboard_stats():
 #  PUBLIC USER ROUTES  (/)
 # ══════════════════════════════════════════════════════════════════
 
+@app.route('/favicon.ico')
+def favicon():
+    from flask import send_from_directory
+    return send_from_directory(app.static_folder, 'favicon.jpg', mimetype='image/jpeg')
+
+
 @app.route('/')
 def user_home():
     resp = app.make_response(render_template('user/chatbot.html'))
