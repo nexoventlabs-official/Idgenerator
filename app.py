@@ -824,7 +824,7 @@ def allowed_file(filename, exts):
 def _get_external_stats() -> dict:
     """Fetch slow external stats (Cloudinary, SMS, dbstats) - cached 5 min."""
     cached = _cache_get(REDIS_EXTERNAL_STATS_KEY)
-    if cached:
+    if cached and 'db1_size_mb' in cached:
         return cached
 
     result = {'mongodb_size_mb': 0, 'db1_size_mb': 0, 'db2_size_mb': 0,
