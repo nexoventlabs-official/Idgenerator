@@ -1464,6 +1464,8 @@
           ready_another: '\u{1F44B} Ready for another card?<br><br>\u{1F4F1} Please enter your <strong>10-digit mobile number</strong>:',
           card_generated: '\u{1F389} <strong>Your ID Card has been generated!</strong>',
           gen_failed: 'Generation failed. Please try again.',
+          btn_reupload: '<i class="bi bi-arrow-clockwise"></i> Reupload Photo',
+          btn_take_photo: '<i class="bi bi-camera-fill"></i> Take Photo',
           went_wrong: '\u274C Something went wrong. Please try again.',
           cancelled: 'Cancelled. Please enter your <strong>EPIC Number</strong> to try again:',
           photo_received: '\u{1F4F8} Photo received!<br><br>Ready to generate your <strong>ID Card</strong>?<br>',
@@ -1545,6 +1547,8 @@
           ready_another: '\u{1F44B} மற்றொரு அட்டை உருவாக்க தயாரா?<br><br>\u{1F4F1} உங்கள் <strong>10 இலக்க மொபைல் எண்ணை</strong> உள்ளிடவும்:',
           card_generated: '\u{1F389} <strong>உங்கள் அடையாள அட்டை உருவாக்கப்பட்டது!</strong>',
           gen_failed: 'அட்டை உருவாக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.',
+          btn_reupload: '<i class="bi bi-arrow-clockwise"></i> புகைப்படம் மீண்டும் பதிவேற்று',
+          btn_take_photo: '<i class="bi bi-camera-fill"></i> புகைப்படம் எடு',
           went_wrong: '\u274C ஏதோ தவறு நடந்துவிட்டது. மீண்டும் முயற்சிக்கவும்.',
           cancelled: 'ரத்து செய்யப்பட்டது. மீண்டும் முயற்சிக்க உங்கள் <strong>வாக்காளர் எண்ணை</strong> உள்ளிடவும்:',
           photo_received: '\u{1F4F8} புகைப்படம் பெறப்பட்டது!<br><br>உங்கள் <strong>அடையாள அட்டையை</strong> உருவாக்கலாமா?<br>',
@@ -2655,10 +2659,23 @@
             photoFile = null;
             await botReply(t('ask_set_pin'), 800);
           } else {
-            state = S.CONFIRM;
             unlockInput();
             const err = res.message || t('gen_failed');
-            await botReply('\u274C ' + err, 700);
+            if (res.error_type === 'face_detection_failed') {
+              state = S.AWAIT_PHOTO;
+              photoFile = null;
+              showAttach();
+              setText('placeholder_upload');
+              let h = '\u274C ' + err;
+              h += '<div class="action-buttons" style="margin-top:10px;">';
+              h += '<button class="action-btn confirm photo-upload-btn" onclick="triggerPhotoUpload()">' + t('btn_reupload') + '</button>';
+              h += '<button class="action-btn confirm photo-camera-btn" onclick="triggerCamera()">' + t('btn_take_photo') + '</button>';
+              h += '</div>';
+              await botReply(h, 700);
+            } else {
+              state = S.CONFIRM;
+              await botReply('\u274C ' + err, 700);
+            }
           }
         } catch (e) {
           hideTyping();
