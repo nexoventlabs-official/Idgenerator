@@ -103,6 +103,11 @@ limiter = Limiter(
     strategy="fixed-window"
 )
 
+ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'bmp'}
+ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
+
+logger = setup_logging()
+
 # ══════════════════════════════════════════════════════════════════
 #  PHASE 2: REDIS SESSION STORE (For Horizontal Scaling)
 # ══════════════════════════════════════════════════════════════════
@@ -207,7 +212,7 @@ def to_ist(dt_str):
 ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'bmp'}
 ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 
-logger = setup_logging()
+# Logger already initialized above
 
 # ── MongoDB Setup (Main DB - voter data from XLSX imports, READ-ONLY after import) ──
 # PHASE 2: Configure read preference for read replicas
