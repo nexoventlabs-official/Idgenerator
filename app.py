@@ -953,8 +953,8 @@ def get_dashboard_stats():
         pending_booth_agents = 0
         confirmed_booth_agents = 0
 
-    # External stats (Cloudinary, SMS, dbstats) - separately cached 5 min
-    ext = _get_external_stats()
+    # External stats loaded via AJAX separately (/api/external-stats)
+    # Don't block dashboard render on slow external calls
 
     result = {
         'total_voters': total_voters,
@@ -963,9 +963,9 @@ def get_dashboard_stats():
         'cards_on_cloud': cards_on_cloud,
         'generated_voters_count': generated_voters_count,
         'db_connected': db_connected,
-        'mongodb_size_mb': ext.get('mongodb_size_mb', 0),
-        'cloudinary_credits': ext.get('cloudinary_credits', 'N/A'),
-        'sms_balance': ext.get('sms_balance', 'N/A'),
+        'mongodb_size_mb': '...',
+        'cloudinary_credits': '...',
+        'sms_balance': '...',
         'total_referrals': total_referrals,
         'pending_volunteers': pending_volunteers,
         'confirmed_volunteers': confirmed_volunteers,
@@ -1994,60 +1994,24 @@ def dashboard():
 @admin_bp.route('/voters')
 @rate_limit(max_requests=30, window_seconds=60)
 def voters_list():
-    page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
-    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
-    filter_assembly = request.args.get('assembly', '').strip()
-    filter_district = request.args.get('district', '').strip()
 
-    # Cached dropdown options (5 min TTL - distinct on 5.6 Cr is expensive)
+    # Only fetch lightweight data for the template shell
+    # Actual voter data is loaded via AJAX from /api/voters
     assemblies, districts = _get_cached_dropdowns(voters_col, REDIS_DROPDOWN_VOTERS_KEY)
-
-    # Build MongoDB query for server-side filtering & search
-    conditions = []
-    if filter_assembly:
-        conditions.append({'assembly': filter_assembly})
-    if filter_district:
-        conditions.append({'district': filter_district})
-    if search:
-        sf = _build_search_filter(search, ['epic_no', 'name', 'assembly', 'district'])
-        if sf:
-            conditions.append(sf)
-    query = _merge_conditions(conditions)
-
-    # Server-side count & pagination
-    if query:
-        total = voters_col.count_documents(query)
-    else:
+    try:
         total = voters_col.estimated_document_count()
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
-
-    voters = list(voters_col.find(query, {'_id': 0}).skip(skip).limit(per_page))
-
-    # Batch-fetch stats for ONLY this page (not all voters)
-    epic_nos = [v['epic_no'] for v in voters if v.get('epic_no')]
-    stats_docs = {s['epic_no']: s for s in stats_col.find(
-        {'epic_no': {'$in': epic_nos}}, {'_id': 0}
-    )} if epic_nos else {}
-
-    for v in voters:
-        s = stats_docs.get(v.get('epic_no', ''), {})
-        v['gen_count'] = s.get('count', 0)
-        v['last_generated'] = s.get('last_generated', '')
-        v['photo_url'] = s.get('photo_url', '')
-        v['card_url'] = s.get('card_url', '')
-        v['auth_mobile'] = s.get('auth_mobile', '')
+    except Exception:
+        total = 0
 
     return render_template('admin/voters.html',
-                           voters=voters, page=page,
-                           total_pages=total_pages, total=total,
-                           per_page=per_page, search=search,
+                           voters=[], page=1,
+                           total_pages=1, total=total,
+                           per_page=per_page, search='',
                            assemblies=assemblies, districts=districts,
-                           filter_assembly=filter_assembly,
-                           filter_district=filter_district)
+                           filter_assembly='',
+                           filter_district='')
 
 
 def _run_import_thread(file_path: str, csv_bytes: bytes, ext: str, import_mode: str):
@@ -2295,26 +2259,20 @@ def api_voters():
 @rate_limit(max_requests=30, window_seconds=60)
 def generated_voters_list():
     """Show all voters who generated ID cards via the chatbot."""
-    page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
-    search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
 
-    # Build MongoDB query - server-side search
-    query = _build_search_filter(search, ['epic_no', 'name', 'ptc_code', 'mobile', 'assembly', 'district']) if search else {}
-
-    # Server-side count & pagination
-    total = gen_voters_col.count_documents(query)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
-
-    voters = list(gen_voters_col.find(query, {'_id': 0}).sort('generated_at', -1).skip(skip).limit(per_page))
+    # Only fetch lightweight count for the template shell
+    # Actual data is loaded via AJAX from /api/generated-voters
+    try:
+        total = gen_voters_col.estimated_document_count()
+    except Exception:
+        total = 0
 
     return render_template('admin/generated_voters.html',
-                           voters=voters, page=page,
-                           total_pages=total_pages, total=total,
-                           per_page=per_page, search=search)
+                           voters=[], page=1,
+                           total_pages=1, total=total,
+                           per_page=per_page, search='')
 
 
 @admin_bp.route('/api/generated-voters')
@@ -2345,8 +2303,11 @@ def api_generated_voters():
             conditions.append(sf)
     base_query = _merge_conditions(conditions)
 
-    # Server-side count
-    total = gen_voters_col.count_documents(base_query)
+    # Server-side count (estimated for unfiltered, count_documents for filtered)
+    if base_query:
+        total = gen_voters_col.count_documents(base_query)
+    else:
+        total = gen_voters_col.estimated_document_count()
 
     if cursor:
         # ── P2: Cursor-based pagination (no .skip - O(log n) for deep pages) ──
