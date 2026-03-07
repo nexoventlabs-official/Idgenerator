@@ -535,8 +535,8 @@
           return;
         }
 
-        title.textContent = 'Importing Data...';
-        sub.textContent = 'Parsing and inserting records into the database.';
+        title.textContent = 'Fetching Data...';
+        sub.textContent = 'Reading and importing records into the database.';
         statusIcon.className = 'import-status-icon processing';
         statusIconI.className = 'bi bi-arrow-repeat';
         statusIconI.style.animation = 'spin 1s linear infinite';
@@ -547,17 +547,23 @@
             .then(s => {
               const processed = s.processed || 0;
               const inserted = s.inserted || 0;
+              const total = s.total || 0;
 
               if (s.phase === 'parsing') {
-                phase.textContent = 'Parsing file\u2026 preparing ' + processed.toLocaleString() + ' rows';
+                if (total > 0) {
+                  phase.textContent = 'Parsing file\u2026 ' + total.toLocaleString() + ' rows found';
+                } else {
+                  phase.textContent = 'Parsing file\u2026 counting rows';
+                }
                 progressFill.classList.add('indeterminate');
               } else if (s.phase === 'inserting') {
-                phase.textContent = 'Processing ' + processed.toLocaleString() + ' rows \u2014 ' + inserted.toLocaleString() + ' records saved';
-                progressFill.classList.remove('indeterminate');
-                if (processed > 0) {
-                  const pct = inserted > 0 ? Math.min((inserted / processed) * 100, 99) : 2;
+                if (total > 0) {
+                  phase.textContent = processed.toLocaleString() + ' / ' + total.toLocaleString() + ' rows \u2014 ' + inserted.toLocaleString() + ' records saved';
+                  progressFill.classList.remove('indeterminate');
+                  const pct = Math.min((processed / total) * 100, 99);
                   progressFill.style.width = pct + '%';
                 } else {
+                  phase.textContent = 'Processing ' + processed.toLocaleString() + ' rows \u2014 ' + inserted.toLocaleString() + ' records saved';
                   progressFill.classList.add('indeterminate');
                 }
               } else if (s.phase === 'done') {

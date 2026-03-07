@@ -1542,6 +1542,37 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
+  <style>
+    /* Table loading overlay */
+    .table-loading {
+      position: relative;
+      pointer-events: none;
+    }
+    .table-loading::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      border-radius: inherit;
+      background: linear-gradient(
+        110deg,
+        rgba(18,18,24,0.85) 30%,
+        rgba(50,50,70,0.5) 50%,
+        rgba(18,18,24,0.85) 70%
+      );
+      background-size: 200% 100%;
+      animation: tableShimmer 1.4s ease-in-out infinite;
+    }
+    .table-loading .table-responsive {
+      opacity: 0.25;
+      filter: blur(1px);
+      transition: opacity 0.2s, filter 0.2s;
+    }
+    @keyframes tableShimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
   <style>{% block extra_css %}{% endblock %}</style>
 </head>
 
@@ -1693,12 +1724,13 @@
               bar.style.display='block';
               if(d.phase==='parsing'){
                 title.textContent='Parsing file...';
-                detail.textContent=fmt(d.processed||0)+' rows read';
+                var t=d.total||0;
+                detail.textContent=t>0?fmt(t)+' rows found':'Counting rows...';
                 fill.style.width='0%';
               } else {
                 title.textContent='Importing...';
                 var ins=d.inserted||0, tot=d.total||0, proc=d.processed||0;
-                detail.textContent=fmt(ins)+' / '+fmt(tot)+' inserted';
+                detail.textContent=tot>0?fmt(proc)+' / '+fmt(tot)+' rows':fmt(ins)+' inserted';
                 fill.style.width=tot>0?Math.min(100,Math.round(proc/tot*100))+'%':'0%';
               }
               icon.style.animation='spin 1s linear infinite';

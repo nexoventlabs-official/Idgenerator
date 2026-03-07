@@ -42,7 +42,7 @@
 </div>
 
 <!-- Table -->
-<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+<div class="card border-0 shadow-sm" id="tableCard" style="border-radius:14px; overflow:hidden;">
   <div class="table-responsive">
     <table class="table table-hover voters-table mb-0">
       <thead class="table-light">
@@ -91,6 +91,7 @@
     var countLabel = document.getElementById('countLabel');
     var paginationNav = document.getElementById('paginationNav');
     var spinner = document.getElementById('loadingSpinner');
+    var tableCard = document.getElementById('tableCard');
     var assemblyFilter = document.getElementById('assemblyFilter');
     var districtFilter = document.getElementById('districtFilter');
     var activeFiltersEl = document.getElementById('activeFilters');
@@ -148,6 +149,7 @@
       }
 
       spinner.classList.add('active');
+      tableCard.classList.add('table-loading');
 
       fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
         .then(function (r) { return r.json(); })
@@ -162,10 +164,12 @@
           countLabel.textContent = data.total;
           updateFilterDropdowns(data.assemblies || [], data.districts || []);
           spinner.classList.remove('active');
+          tableCard.classList.remove('table-loading');
         })
         .catch(function (err) {
           if (err.name !== 'AbortError') {
             spinner.classList.remove('active');
+            tableCard.classList.remove('table-loading');
             console.error('Fetch error:', err);
           }
         });

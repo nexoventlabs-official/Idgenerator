@@ -2070,9 +2070,29 @@ def _run_import_thread(file_path: str, csv_bytes: bytes, ext: str, import_mode: 
     try:
         import_status['phase'] = 'parsing'
 
+        # Count total rows first for progress tracking
         if ext == 'csv':
+            for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
+                try:
+                    text_preview = csv_bytes.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                text_preview = csv_bytes.decode('latin-1')
+            total_rows = max(text_preview.count('\n'), 0)
+            if total_rows > 0:
+                total_rows -= 1  # subtract header row
+            del text_preview
+            import_status['total'] = total_rows
             voter_iter = _iter_csv_bytes(csv_bytes)
         else:
+            import openpyxl as _opx
+            _wb_count = _opx.load_workbook(file_path, read_only=True)
+            _ws_count = _wb_count.active
+            total_rows = (_ws_count.max_row - 1) if _ws_count.max_row else 0
+            _wb_count.close()
+            import_status['total'] = max(total_rows, 0)
             voter_iter = _iter_xlsx(file_path)
 
         import_status['phase'] = 'inserting'
