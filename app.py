@@ -483,25 +483,28 @@ def _iter_xlsx(xlsx_path: str):
         seen_epics.add(epic_upper)
 
         voter = {'epic_no': epic}
+        # 1) Add all standard mapped fields EXCEPT lat_long
         for field, idx in col_map.items():
-            if field == 'epic_no':
+            if field in ('epic_no', 'lat_long'):
                 continue
             voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
 
-        # Split combined lat_long into separate fields
-        if 'lat_long' in voter and voter['lat_long']:
-            parts = voter['lat_long'].split(',')
-            if len(parts) == 2:
-                voter['latitude'] = parts[0].strip()
-                voter['longitude'] = parts[1].strip()
-            del voter['lat_long']
-
+        # 2) Add any extra/unmapped columns (after booth_address, before lat_long)
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
                 key = h.replace(' ', '_').lower()
                 val = _safe_str(cells[idx] if idx < len(cells) else '')
                 if val:
                     voter[key] = val
+
+        # 3) Lat Long always last
+        if 'lat_long' in col_map:
+            ll_val = _safe_str(cells[col_map['lat_long']] if col_map['lat_long'] < len(cells) else '')
+            if ll_val:
+                parts = ll_val.split(',')
+                if len(parts) == 2:
+                    voter['latitude'] = parts[0].strip()
+                    voter['longitude'] = parts[1].strip()
 
         yield voter
 
@@ -546,25 +549,28 @@ def _iter_csv_bytes(raw: bytes):
         seen_epics.add(epic_upper)
 
         voter = {'epic_no': epic}
+        # 1) Add all standard mapped fields EXCEPT lat_long
         for field, idx in col_map.items():
-            if field == 'epic_no':
+            if field in ('epic_no', 'lat_long'):
                 continue
             voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
 
-        # Split combined lat_long into separate fields
-        if 'lat_long' in voter and voter['lat_long']:
-            parts = voter['lat_long'].split(',')
-            if len(parts) == 2:
-                voter['latitude'] = parts[0].strip()
-                voter['longitude'] = parts[1].strip()
-            del voter['lat_long']
-
+        # 2) Add any extra/unmapped columns (after booth_address, before lat_long)
         for idx, h in enumerate(headers):
             if idx not in mapped_indices and h:
                 key = h.replace(' ', '_').lower()
                 val = _safe_str(cells[idx] if idx < len(cells) else '')
                 if val:
                     voter[key] = val
+
+        # 3) Lat Long always last
+        if 'lat_long' in col_map:
+            ll_val = _safe_str(cells[col_map['lat_long']] if col_map['lat_long'] < len(cells) else '')
+            if ll_val:
+                parts = ll_val.split(',')
+                if len(parts) == 2:
+                    voter['latitude'] = parts[0].strip()
+                    voter['longitude'] = parts[1].strip()
 
         yield voter
 
