@@ -27,45 +27,60 @@ try:
 except Exception as e:
     print(f"Cloudinary delete error: {e}")
 
-# MongoDB 1 — voter data only (no generation data here anymore)
+# ── MongoDB 1 — Voter data (primary cluster) ──
 uri = os.getenv('MONGO_URI')
+db_name = os.getenv('MONGO_DB_NAME')
 client = MongoClient(uri, tlsCAFile=certifi.where())
-db = client[os.getenv('MONGO_DB_NAME')]
+db = client[db_name]
 
-# Clear original voters collection
-voters_collection = db[os.getenv('MONGO_VOTERS_COLLECTION', 'voters')]
-res_voters = voters_collection.delete_many({})
-print(f"Deleted {res_voters.deleted_count} imported voters.")
+# Drop voters collection (frees storage completely)
+voters_col_name = os.getenv('MONGO_VOTERS_COLLECTION', 'voters')
+if voters_col_name in db.list_collection_names():
+    db.drop_collection(voters_col_name)
+    print(f"Dropped collection '{voters_col_name}' — storage freed.")
+else:
+    print(f"Collection '{voters_col_name}' not found, skipping.")
 
-# Generated Voters MongoDB (second cluster — all generation activity)
+# Show DB1 storage after reset
+try:
+    stats = db.command('dbstats')
+    size_mb = round(stats.get('storageSize', 0) / (1024 * 1024), 2)
+    data_mb = round(stats.get('dataSize', 0) / (1024 * 1024), 2)
+    print(f"[DB1: {db_name}] Storage: {size_mb} MB, Data: {data_mb} MB")
+except Exception as e:
+    print(f"Could not get DB1 stats: {e}")
+
+# ── MongoDB 2 — Generated voters (second cluster) ──
 gen_uri = os.getenv('GEN_MONGO_URI')
 if gen_uri:
+    gen_db_name = os.getenv('GEN_MONGO_DB_NAME', 'generated_voters')
     gen_client = MongoClient(gen_uri, tlsCAFile=certifi.where())
-    gen_db = gen_client[os.getenv('GEN_MONGO_DB_NAME', 'generated_voters')]
-    gen_col = gen_db[os.getenv('GEN_MONGO_COLLECTION', 'generated_voters')]
-    stats_col = gen_db[os.getenv('MONGO_STATS_COLLECTION', 'generation_stats')]
-    otp_col = gen_db['otp_sessions']
-    verified_col = gen_db['verified_mobiles']
+    gen_db = gen_client[gen_db_name]
 
-    res_gen = gen_col.delete_many({})
-    print(f"Deleted {res_gen.deleted_count} generated voters.")
+    # Drop all collections in the generated voters database
+    collections_to_drop = [
+        os.getenv('GEN_MONGO_COLLECTION', 'generated_voters'),
+        os.getenv('MONGO_STATS_COLLECTION', 'generation_stats'),
+        'otp_sessions',
+        'verified_mobiles',
+        'volunteer_requests',
+        'booth_agent_requests',
+    ]
+    for col_name in collections_to_drop:
+        if col_name in gen_db.list_collection_names():
+            gen_db.drop_collection(col_name)
+            print(f"Dropped collection '{col_name}'")
+        else:
+            print(f"Collection '{col_name}' not found, skipping.")
 
-    res_stats = stats_col.delete_many({})
-    print(f"Deleted {res_stats.deleted_count} generation stats.")
-
-    res_otp = otp_col.delete_many({})
-    print(f"Deleted {res_otp.deleted_count} OTP records.")
-
-    res_verified = verified_col.delete_many({})
-    print(f"Deleted {res_verified.deleted_count} verified mobile records.")
-
-    # Volunteer & Booth Agent requests
-    vol_col = gen_db['volunteer_requests']
-    ba_col = gen_db['booth_agent_requests']
-    res_vol = vol_col.delete_many({})
-    print(f"Deleted {res_vol.deleted_count} volunteer requests.")
-    res_ba = ba_col.delete_many({})
-    print(f"Deleted {res_ba.deleted_count} booth agent requests.")
+    # Show DB2 storage after reset
+    try:
+        stats = gen_db.command('dbstats')
+        size_mb = round(stats.get('storageSize', 0) / (1024 * 1024), 2)
+        data_mb = round(stats.get('dataSize', 0) / (1024 * 1024), 2)
+        print(f"[DB2: {gen_db_name}] Storage: {size_mb} MB, Data: {data_mb} MB")
+    except Exception as e:
+        print(f"Could not get DB2 stats: {e}")
 else:
     print("No GEN_MONGO_URI set, skipping generated voters DB.")
 
@@ -77,4 +92,4 @@ if os.path.exists(stats_file):
         json.dump({}, f)
     print("Reset local generation_stats.json.")
 
-print("Reset complete.")
+print("\n✅ Reset complete — both databases cleared and storage freed.")

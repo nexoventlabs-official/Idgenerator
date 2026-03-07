@@ -139,12 +139,27 @@
             <div class="d-flex align-items-center gap-3 mt-2" style="padding-left:40px;">
               <div style="font-size:0.8rem;color:var(--text-secondary);">
                 <span style="color:var(--text-primary);font-weight:700;font-family:var(--font-display);font-size:0.95rem;" id="ext-db-size">{{ stats.mongodb_size_mb }}</span>
-                <span style="font-size:0.72rem;"> MB</span>
+                <span style="font-size:0.72rem;"> MB total</span>
               </div>
               <span style="width:1px;height:14px;background:var(--border);"></span>
               <div style="font-size:0.8rem;color:var(--text-secondary);">
                 <span style="color:var(--text-primary);font-weight:700;font-family:var(--font-display);font-size:0.95rem;">{{ stats.total_voters }}</span>
-                <span style="font-size:0.72rem;"> records</span>
+                <span style="font-size:0.72rem;"> voters</span>
+              </div>
+            </div>
+            <div class="d-flex gap-3 mt-2" style="padding-left:40px;">
+              <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.1);border-radius:8px;padding:6px 10px;flex:1;">
+                <div style="font-size:0.68rem;color:var(--text-secondary);margin-bottom:2px;">Voters DB</div>
+                <span style="font-family:var(--font-display);font-weight:700;font-size:0.85rem;color:var(--text-primary);" id="ext-db1-size">...</span>
+                <span style="font-size:0.68rem;color:var(--text-secondary);"> MB</span>
+              </div>
+              <div style="background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.1);border-radius:8px;padding:6px 10px;flex:1;">
+                <div style="font-size:0.68rem;color:var(--text-secondary);margin-bottom:2px;">Generated DB</div>
+                <span style="font-family:var(--font-display);font-weight:700;font-size:0.85rem;color:var(--text-primary);" id="ext-db2-size">...</span>
+                <span style="font-size:0.68rem;color:var(--text-secondary);"> MB</span>
+                <span style="font-size:0.68rem;color:var(--text-secondary);margin-left:4px;">·</span>
+                <span style="font-family:var(--font-display);font-weight:600;font-size:0.8rem;color:var(--text-primary);" id="ext-db2-objects">...</span>
+                <span style="font-size:0.68rem;color:var(--text-secondary);"> docs</span>
               </div>
             </div>
             {% endif %}
@@ -243,6 +258,12 @@
         var el;
         el = document.getElementById('ext-db-size');
         if (el && d.mongodb_size_mb !== undefined) el.textContent = d.mongodb_size_mb;
+        el = document.getElementById('ext-db1-size');
+        if (el && d.db1_size_mb !== undefined) el.textContent = d.db1_size_mb;
+        el = document.getElementById('ext-db2-size');
+        if (el && d.db2_size_mb !== undefined) el.textContent = d.db2_size_mb;
+        el = document.getElementById('ext-db2-objects');
+        if (el && d.db2_objects !== undefined) el.textContent = d.db2_objects.toLocaleString();
         el = document.getElementById('ext-cloudinary');
         if (el && d.cloudinary_credits) {
           el.textContent = d.cloudinary_credits;

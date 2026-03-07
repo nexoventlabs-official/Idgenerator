@@ -827,13 +827,20 @@ def _get_external_stats() -> dict:
     if cached:
         return cached
 
-    result = {'mongodb_size_mb': 0, 'cloudinary_credits': 'N/A', 'sms_balance': 'N/A'}
+    result = {'mongodb_size_mb': 0, 'db1_size_mb': 0, 'db2_size_mb': 0,
+              'db2_storage_mb': 0, 'db2_collections': 0, 'db2_objects': 0,
+              'cloudinary_credits': 'N/A', 'sms_balance': 'N/A'}
     try:
         db_stats_1 = db.command('dbstats')
         db_stats_2 = gen_db.command('dbstats')
-        result['mongodb_size_mb'] = round(
-            (db_stats_1.get('dataSize', 0) + db_stats_2.get('dataSize', 0)) / (1024 * 1024), 2
-        )
+        d1 = db_stats_1.get('dataSize', 0)
+        d2 = db_stats_2.get('dataSize', 0)
+        result['mongodb_size_mb'] = round((d1 + d2) / (1024 * 1024), 2)
+        result['db1_size_mb'] = round(d1 / (1024 * 1024), 2)
+        result['db2_size_mb'] = round(d2 / (1024 * 1024), 2)
+        result['db2_storage_mb'] = round(db_stats_2.get('storageSize', 0) / (1024 * 1024), 2)
+        result['db2_collections'] = db_stats_2.get('collections', 0)
+        result['db2_objects'] = db_stats_2.get('objects', 0)
     except Exception:
         pass
 
