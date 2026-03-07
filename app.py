@@ -988,6 +988,11 @@ def favicon():
     return send_from_directory(app.static_folder, 'favicon.jpg', mimetype='image/jpeg')
 
 
+@app.route('/cronjob')
+def cronjob():
+    return 'OK', 200, {'Content-Type': 'text/plain'}
+
+
 @app.route('/')
 def user_home():
     resp = app.make_response(render_template('user/chatbot.html'))
