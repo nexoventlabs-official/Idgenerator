@@ -146,9 +146,10 @@ if os.getenv('FLASK_ENV') != 'development':
              strict_transport_security_max_age=31536000,
              content_security_policy={
                  'default-src': ["'self'", 'https://res.cloudinary.com', 'https://2factor.in'],
-                 'img-src': ["'self'", 'https://res.cloudinary.com', 'data:'],
-                 'style-src': ["'self'", "'unsafe-inline'"],
-                 'script-src': ["'self'", "'unsafe-inline'"]
+                 'img-src': ["'self'", 'https://res.cloudinary.com', 'https://puratchithaai.com', 'data:'],
+                 'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
+                 'script-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+                 'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net']
              })
 
 # SECURITY FIX: Configure CORS for API endpoints
