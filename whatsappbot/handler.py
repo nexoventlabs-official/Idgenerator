@@ -57,6 +57,8 @@ STATE_AWAITING_FORGOT_OTP = "awaiting_forgot_otp"
 STATE_AWAITING_RESET_PIN = "awaiting_reset_pin"
 STATE_AWAITING_RESET_CONFIRM_PIN = "awaiting_reset_confirm_pin"
 STATE_AWAITING_PHOTO_MODE = "awaiting_photo_mode"
+STATE_CONFIRM_VOLUNTEER = "confirm_volunteer"
+STATE_CONFIRM_BOOTH_AGENT = "confirm_booth_agent"
 STATE_MENU = "menu"
 
 
@@ -195,6 +197,10 @@ def handle_message(phone: str, message: dict):
         return _handle_reset_confirm_pin(phone, text)
     elif state == STATE_MENU:
         return _handle_menu_selection(phone, list_row_id, button_id, text)
+    elif state == STATE_CONFIRM_VOLUNTEER:
+        return _handle_confirm_volunteer(phone, button_id, text)
+    elif state == STATE_CONFIRM_BOOTH_AGENT:
+        return _handle_confirm_booth_agent(phone, button_id, text)
     else:
         # Unknown state – treat as greeting
         _clear_session(phone)
@@ -1184,24 +1190,66 @@ def _menu_volunteer(phone: str, sess: dict):
     if existing:
         status = existing.get('status', 'pending')
         api.send_text(phone, f"🙋 You have already submitted a volunteer request.\n*Status:* {status.title()}")
-    else:
-        doc = {
-            'ptc_code': voter['ptc_code'],
-            'epic_no': voter.get('epic_no', ''),
-            'name': voter.get('name', ''),
-            'mobile': mobile,
-            'assembly': voter.get('assembly', ''),
-            'district': voter.get('district', ''),
-            'photo_url': voter.get('photo_url', ''),
-            'status': 'pending',
-            'requested_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_at': None,
-            'reviewed_by': None,
-            'source': 'whatsapp',
-        }
-        db['volunteer_requests_col'].insert_one(doc)
-        api.send_text(phone, "✅ Volunteer request submitted successfully!\nYou will be notified when it's reviewed.")
+        _send_main_menu(phone, "What else would you like to do?")
+        return
 
+    # Ask for confirmation
+    sess['state'] = STATE_CONFIRM_VOLUNTEER
+    api.send_buttons(
+        phone,
+        "🙋 *Volunteer Request*\n\n"
+        f"*Name:* {voter.get('name', '')}\n"
+        f"*EPIC:* {voter.get('epic_no', '')}\n"
+        f"*Assembly:* {voter.get('assembly', '')}\n\n"
+        "Would you like to submit a volunteer request?",
+        [
+            {"id": "confirm_volunteer", "title": "✅ Confirm"},
+            {"id": "cancel_volunteer", "title": "❌ Cancel"},
+        ],
+        footer="Tap Confirm to submit or Cancel to go back",
+    )
+
+
+def _handle_confirm_volunteer(phone: str, button_id: str, text: str):
+    """Handle volunteer confirmation."""
+    sess = _get_session(phone)
+    db = _get_db_collections()
+    mobile = sess.get('mobile', phone[-10:])
+
+    if button_id == "cancel_volunteer" or text.lower() in ("cancel", "no"):
+        sess['state'] = STATE_MENU
+        _send_main_menu(phone, "Request cancelled. What else would you like to do?")
+        return
+
+    if button_id != "confirm_volunteer" and text.lower() not in ("confirm", "yes"):
+        api.send_text(phone, "Please tap *Confirm* or *Cancel*.")
+        return
+
+    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    if not voter:
+        api.send_text(phone, "❌ Profile not found.")
+        sess['state'] = STATE_MENU
+        _send_main_menu(phone, "What else would you like to do?")
+        return
+
+    doc = {
+        'ptc_code': voter['ptc_code'],
+        'epic_no': voter.get('epic_no', ''),
+        'name': voter.get('name', ''),
+        'mobile': mobile,
+        'assembly': voter.get('assembly', ''),
+        'district': voter.get('district', ''),
+        'photo_url': voter.get('photo_url', ''),
+        'status': 'pending',
+        'requested_at': datetime.now(timezone.utc).isoformat(),
+        'reviewed_at': None,
+        'reviewed_by': None,
+        'source': 'whatsapp',
+    }
+    db['volunteer_requests_col'].insert_one(doc)
+    api.send_text(phone, "✅ Volunteer request submitted successfully!\nYou will be notified when it's reviewed.")
+
+    sess['state'] = STATE_MENU
     _send_main_menu(phone, "What else would you like to do?")
 
 
@@ -1220,22 +1268,64 @@ def _menu_booth_agent(phone: str, sess: dict):
     if existing:
         status = existing.get('status', 'pending')
         api.send_text(phone, f"🏢 You have already submitted a booth agent request.\n*Status:* {status.title()}")
-    else:
-        doc = {
-            'ptc_code': voter['ptc_code'],
-            'epic_no': voter.get('epic_no', ''),
-            'name': voter.get('name', ''),
-            'mobile': mobile,
-            'assembly': voter.get('assembly', ''),
-            'district': voter.get('district', ''),
-            'photo_url': voter.get('photo_url', ''),
-            'status': 'pending',
-            'requested_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_at': None,
-            'reviewed_by': None,
-            'source': 'whatsapp',
-        }
-        db['booth_agent_requests_col'].insert_one(doc)
-        api.send_text(phone, "✅ Booth agent request submitted successfully!\nYou will be notified when it's reviewed.")
+        _send_main_menu(phone, "What else would you like to do?")
+        return
 
+    # Ask for confirmation
+    sess['state'] = STATE_CONFIRM_BOOTH_AGENT
+    api.send_buttons(
+        phone,
+        "🏢 *Booth Agent Request*\n\n"
+        f"*Name:* {voter.get('name', '')}\n"
+        f"*EPIC:* {voter.get('epic_no', '')}\n"
+        f"*Assembly:* {voter.get('assembly', '')}\n\n"
+        "Would you like to submit a booth agent request?",
+        [
+            {"id": "confirm_booth_agent", "title": "✅ Confirm"},
+            {"id": "cancel_booth_agent", "title": "❌ Cancel"},
+        ],
+        footer="Tap Confirm to submit or Cancel to go back",
+    )
+
+
+def _handle_confirm_booth_agent(phone: str, button_id: str, text: str):
+    """Handle booth agent confirmation."""
+    sess = _get_session(phone)
+    db = _get_db_collections()
+    mobile = sess.get('mobile', phone[-10:])
+
+    if button_id == "cancel_booth_agent" or text.lower() in ("cancel", "no"):
+        sess['state'] = STATE_MENU
+        _send_main_menu(phone, "Request cancelled. What else would you like to do?")
+        return
+
+    if button_id != "confirm_booth_agent" and text.lower() not in ("confirm", "yes"):
+        api.send_text(phone, "Please tap *Confirm* or *Cancel*.")
+        return
+
+    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    if not voter:
+        api.send_text(phone, "❌ Profile not found.")
+        sess['state'] = STATE_MENU
+        _send_main_menu(phone, "What else would you like to do?")
+        return
+
+    doc = {
+        'ptc_code': voter['ptc_code'],
+        'epic_no': voter.get('epic_no', ''),
+        'name': voter.get('name', ''),
+        'mobile': mobile,
+        'assembly': voter.get('assembly', ''),
+        'district': voter.get('district', ''),
+        'photo_url': voter.get('photo_url', ''),
+        'status': 'pending',
+        'requested_at': datetime.now(timezone.utc).isoformat(),
+        'reviewed_at': None,
+        'reviewed_by': None,
+        'source': 'whatsapp',
+    }
+    db['booth_agent_requests_col'].insert_one(doc)
+    api.send_text(phone, "✅ Booth agent request submitted successfully!\nYou will be notified when it's reviewed.")
+
+    sess['state'] = STATE_MENU
     _send_main_menu(phone, "What else would you like to do?")
