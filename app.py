@@ -2769,6 +2769,10 @@ app.register_blueprint(admin_bp)
 # Register health check blueprint
 app.register_blueprint(health_bp)
 
+# Register WhatsApp bot blueprint
+from whatsappbot import whatsapp_bp
+app.register_blueprint(whatsapp_bp)
+
 
 # ══════════════════════════════════════════════════════════════════
 #  RUN
@@ -2786,6 +2790,7 @@ if __name__ == '__main__':
     print("  VOTER ID CARD GENERATOR v4.0")
     print(f"  User  : http://{args.host}:{args.port}/")
     print(f"  Admin : http://{args.host}:{args.port}/admin")
+    print(f"  WhatsApp Webhook : http://{args.host}:{args.port}/whatsapp/webhook")
     print("  Database: MongoDB Atlas | Photos: Cloudinary")
     print("=" * 60)
 
