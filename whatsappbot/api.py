@@ -131,6 +131,36 @@ def mark_read(message_id: str) -> dict:
     })
 
 
+def send_cta_url(to: str, body: str, display_text: str, url: str,
+                 header: str = "", footer: str = "") -> dict:
+    """Send an interactive CTA URL button (opens link in browser).
+
+    Only ONE CTA URL button per message is supported by WhatsApp.
+    """
+    interactive = {
+        "type": "cta_url",
+        "body": {"text": body},
+        "action": {
+            "name": "cta_url",
+            "parameters": {
+                "display_text": display_text[:20],
+                "url": url,
+            },
+        },
+    }
+    if header:
+        interactive["header"] = {"type": "text", "text": header}
+    if footer:
+        interactive["footer"] = {"text": footer}
+
+    return _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": interactive,
+    })
+
+
 def download_media(media_id: str) -> bytes | None:
     """Download media from WhatsApp (user-uploaded photos).
     Step 1: GET media URL from media_id

@@ -56,6 +56,7 @@ STATE_AWAITING_PIN_LOGIN = "awaiting_pin_login"
 STATE_AWAITING_FORGOT_OTP = "awaiting_forgot_otp"
 STATE_AWAITING_RESET_PIN = "awaiting_reset_pin"
 STATE_AWAITING_RESET_CONFIRM_PIN = "awaiting_reset_confirm_pin"
+STATE_AWAITING_PHOTO_MODE = "awaiting_photo_mode"
 STATE_MENU = "menu"
 
 
@@ -148,6 +149,8 @@ def handle_message(phone: str, message: dict):
         return _handle_epic(phone, text)
     elif state == STATE_AWAITING_EPIC_CONFIRM:
         return _handle_epic_confirm(phone, button_id, text)
+    elif state == STATE_AWAITING_PHOTO_MODE:
+        return _handle_photo_mode(phone, button_id, text, message, msg_type)
     elif state == STATE_AWAITING_PHOTO:
         return _handle_photo(phone, message, msg_type)
     elif state == STATE_AWAITING_SET_PIN:
@@ -194,7 +197,7 @@ def _handle_greeting(phone: str):
             sess['state'] = STATE_AWAITING_PIN_LOGIN
             api.send_buttons(
                 phone,
-                f"🙏 Welcome back!\n\nYour number: *{mobile_10}*\n\nPlease enter your 4-digit PIN to view your ID card.",
+                f"🙏 Welcome back!\n\nYour number: *{mobile_10}*\n\nEnter your *4-digit PIN* to view your ID card.\n\n_Type only numbers (e.g. 1234)_",
                 [
                     {"id": "forgot_pin", "title": "Forgot PIN"},
                 ],
@@ -279,7 +282,7 @@ def _send_otp(phone: str, mobile: str):
         sess['state'] = STATE_AWAITING_OTP
         api.send_text(
             phone,
-            f"📱 OTP sent to *{mobile}* via SMS.\n\nPlease enter the 6-digit OTP below.",
+            f"📱 OTP sent to *{mobile}* via SMS.\n\nPlease enter the *6-digit OTP* code:\n\n_Type only numbers (e.g. 123456)_",
         )
     else:
         api.send_text(
@@ -301,12 +304,12 @@ def _handle_otp(phone: str, text: str):
 
     otp = text.strip()
     if not re.match(r'^\d{6}$', otp):
-        api.send_text(phone, "Please enter a valid 6-digit OTP.")
+        api.send_text(phone, "Please enter a valid *6-digit OTP*.\n\n_Type only numbers (e.g. 123456)_")
         return
 
     doc = db['otp_col'].find_one({'mobile': mobile})
     if not doc or doc.get('otp') != otp:
-        api.send_text(phone, "❌ Invalid OTP. Please try again.")
+        api.send_text(phone, "❌ Invalid OTP. Please try again.\n\n_Type the 6-digit number from your SMS_")
         return
 
     # Check expiry
@@ -334,7 +337,7 @@ def _handle_otp(phone: str, text: str):
 
     # New registration – ask for EPIC
     sess['state'] = STATE_AWAITING_EPIC
-    api.send_text(phone, "📋 Please enter your *EPIC Number* (Voter ID number).\n\nExample: ABC1234567")
+    api.send_text(phone, "📋 Please enter your *EPIC Number* (Voter ID number).\n\nFormat: *3 letters + 7 digits*\nExample: *ABC1234567*\n\n_First type 3 letters, then 7 numbers_")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -348,7 +351,7 @@ def _handle_epic(phone: str, text: str):
 
     epic_no = text.strip().upper()
     if len(epic_no) < 3 or len(epic_no) > 20:
-        api.send_text(phone, "❌ Invalid EPIC format. Please enter a valid EPIC number.\n\nExample: ABC1234567")
+        api.send_text(phone, "❌ Invalid EPIC format.\n\nFormat: *3 letters + 7 digits*\nExample: *ABC1234567*\n\n_First type 3 letters, then 7 numbers_")
         return
 
     voter = db['find_voter_by_epic'](epic_no)
@@ -399,24 +402,30 @@ def _handle_epic_confirm(phone: str, button_id: str, text: str):
 
     if button_id == "epic_retry" or text.lower() in ("retry", "re-enter", "change"):
         sess['state'] = STATE_AWAITING_EPIC
-        api.send_text(phone, "📋 Please enter your *EPIC Number* again.")
+        api.send_text(phone, "📋 Please enter your *EPIC Number* again.\n\nFormat: *3 letters + 7 digits*\nExample: *ABC1234567*")
         return
 
     if button_id != "epic_confirm" and text.lower() not in ("confirm", "yes", "correct"):
         api.send_text(phone, "Please tap *Confirm* or *Re-enter* button.")
         return
 
-    # Ask for photo
-    sess['state'] = STATE_AWAITING_PHOTO
-    api.send_text(
+    # Ask for photo with camera/upload options
+    sess['state'] = STATE_AWAITING_PHOTO_MODE
+    api.send_buttons(
         phone,
-        "📸 Please send your *passport-size photo*.\n\n"
+        "📸 Now send your *passport-size photo*.\n\n"
         "Requirements:\n"
         "• Clear face visible\n"
         "• Only one person in photo\n"
         "• Good lighting\n"
         "• No sunglasses or mask\n\n"
-        "Send the photo as an *image* (not as a document).",
+        "Choose how to send your photo:",
+        [
+            {"id": "photo_camera", "title": "📷 Open Camera"},
+            {"id": "photo_upload", "title": "🖼️ Upload Photo"},
+        ],
+        header="Upload Photo",
+        footer="Select an option below",
     )
 
 
@@ -424,13 +433,59 @@ def _handle_epic_confirm(phone: str, button_id: str, text: str):
 #  STEP 6: RECEIVE PHOTO → GENERATE CARD
 # ══════════════════════════════════════════════════════════════════
 
+def _handle_photo_mode(phone: str, button_id: str, text: str, message: dict, msg_type: str):
+    """User chose camera/upload or directly sent a photo."""
+    sess = _get_session(phone)
+
+    # If user directly sends a photo in this state, process it
+    if msg_type == "image":
+        sess['state'] = STATE_AWAITING_PHOTO
+        return _handle_photo(phone, message, msg_type)
+
+    if button_id == "photo_camera":
+        sess['state'] = STATE_AWAITING_PHOTO
+        api.send_text(
+            phone,
+            "📷 *Take a Photo*\n\n"
+            "Tap the *📎 attachment icon* (bottom left) → select *Camera* 📷\n\n"
+            "Take a clear photo of your face and send it.",
+        )
+    elif button_id == "photo_upload":
+        sess['state'] = STATE_AWAITING_PHOTO
+        api.send_text(
+            phone,
+            "🖼️ *Upload Photo*\n\n"
+            "Tap the *📎 attachment icon* (bottom left) → select *Gallery* 🖼️\n\n"
+            "Choose a clear passport-size photo and send it.",
+        )
+    else:
+        api.send_buttons(
+            phone,
+            "Please choose how to send your photo:",
+            [
+                {"id": "photo_camera", "title": "📷 Open Camera"},
+                {"id": "photo_upload", "title": "🖼️ Upload Photo"},
+            ],
+            footer="Select an option below",
+        )
+
+
 def _handle_photo(phone: str, message: dict, msg_type: str):
     """User sends a photo."""
     sess = _get_session(phone)
     db = _get_db_collections()
 
     if msg_type != "image":
-        api.send_text(phone, "📸 Please send a *photo* (image), not text or document.")
+        api.send_buttons(
+            phone,
+            "📸 Please send a *photo* (image), not text.\n\nChoose how to send:",
+            [
+                {"id": "photo_camera", "title": "📷 Open Camera"},
+                {"id": "photo_upload", "title": "🖼️ Upload Photo"},
+            ],
+            footer="Tap an option or send a photo",
+        )
+        sess['state'] = STATE_AWAITING_PHOTO_MODE
         return
 
     image_data = message.get("image", {})
@@ -489,7 +544,7 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
         phone,
         "🔐 Now set a *4-digit PIN* to secure your ID card.\n\n"
         "You will need this PIN to view your card in the future.\n\n"
-        "Please enter a 4-digit PIN:",
+        "Enter a *4-digit numeric PIN*:\n_Type only numbers (e.g. 1234)_",
     )
 
 
@@ -606,12 +661,12 @@ def _handle_set_pin(phone: str, text: str):
 
     pin = text.strip()
     if not re.match(r'^\d{4}$', pin):
-        api.send_text(phone, "❌ PIN must be exactly *4 digits*. Please try again.")
+        api.send_text(phone, "❌ PIN must be exactly *4 digits*.\n\n_Type only numbers (e.g. 1234)_")
         return
 
     sess['pin'] = pin
     sess['state'] = STATE_AWAITING_CONFIRM_PIN
-    api.send_text(phone, "🔐 Please *re-enter the same PIN* to confirm:")
+    api.send_text(phone, "🔐 Please *re-enter the same 4-digit PIN* to confirm:\n\n_Type your PIN again_")
 
 
 def _handle_confirm_pin(phone: str, text: str):
@@ -621,7 +676,7 @@ def _handle_confirm_pin(phone: str, text: str):
 
     pin = text.strip()
     if pin != sess.get('pin', ''):
-        api.send_text(phone, "❌ PINs don't match. Please enter your 4-digit PIN again:")
+        api.send_text(phone, "❌ PINs don't match.\n\nEnter a *4-digit numeric PIN* again:\n_Type only numbers (e.g. 1234)_")
         sess['state'] = STATE_AWAITING_SET_PIN
         sess.pop('pin', None)
         return
@@ -663,7 +718,7 @@ def _handle_pin_login(phone: str, text: str, button_id: str):
 
     pin = text.strip()
     if not re.match(r'^\d{4}$', pin):
-        api.send_text(phone, "Please enter a valid *4-digit PIN*.")
+        api.send_text(phone, "Please enter a valid *4-digit PIN*.\n\n_Type only numbers (e.g. 1234)_")
         return
 
     stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'secret_pin': 1, 'epic_no': 1, 'card_url': 1})
@@ -710,12 +765,12 @@ def _handle_forgot_otp(phone: str, text: str):
 
     otp = text.strip()
     if not re.match(r'^\d{6}$', otp):
-        api.send_text(phone, "Please enter a valid 6-digit OTP.")
+        api.send_text(phone, "Please enter a valid *6-digit OTP*.\n\n_Type only numbers (e.g. 123456)_")
         return
 
     doc = db['otp_col'].find_one({'mobile': mobile})
     if not doc or doc.get('otp') != otp:
-        api.send_text(phone, "❌ Invalid OTP. Please try again.")
+        api.send_text(phone, "❌ Invalid OTP. Please try again.\n\n_Type the 6-digit number from your SMS_")
         return
 
     try:
@@ -728,7 +783,7 @@ def _handle_forgot_otp(phone: str, text: str):
         pass
 
     sess['state'] = STATE_AWAITING_RESET_PIN
-    api.send_text(phone, "✅ OTP verified!\n\nPlease enter a new *4-digit PIN*:")
+    api.send_text(phone, "✅ OTP verified!\n\nEnter a new *4-digit numeric PIN*:\n_Type only numbers (e.g. 1234)_")
 
 
 def _handle_reset_pin(phone: str, text: str):
@@ -736,12 +791,12 @@ def _handle_reset_pin(phone: str, text: str):
     sess = _get_session(phone)
     pin = text.strip()
     if not re.match(r'^\d{4}$', pin):
-        api.send_text(phone, "❌ PIN must be exactly *4 digits*. Please try again.")
+        api.send_text(phone, "❌ PIN must be exactly *4 digits*.\n\n_Type only numbers (e.g. 1234)_")
         return
 
     sess['reset_pin'] = pin
     sess['state'] = STATE_AWAITING_RESET_CONFIRM_PIN
-    api.send_text(phone, "🔐 Please *re-enter the new PIN* to confirm:")
+    api.send_text(phone, "🔐 Please *re-enter the new 4-digit PIN* to confirm:\n\n_Type your PIN again_")
 
 
 def _handle_reset_confirm_pin(phone: str, text: str):
@@ -751,7 +806,7 @@ def _handle_reset_confirm_pin(phone: str, text: str):
 
     pin = text.strip()
     if pin != sess.get('reset_pin', ''):
-        api.send_text(phone, "❌ PINs don't match. Please enter a new 4-digit PIN:")
+        api.send_text(phone, "❌ PINs don't match.\n\nEnter a new *4-digit numeric PIN*:\n_Type only numbers (e.g. 1234)_")
         sess['state'] = STATE_AWAITING_RESET_PIN
         sess.pop('reset_pin', None)
         return
@@ -858,7 +913,14 @@ def _menu_view_card(phone: str, sess: dict):
         api.send_image(
             phone,
             stat['card_url'],
-            caption=f"🪪 *Your ID Card*\n\n*Name:* {name}\n*EPIC:* {epic}\n\n📥 Download: {download_link}",
+            caption=f"🪪 *Your ID Card*\n\n*Name:* {name}\n*EPIC:* {epic}",
+        )
+        # CTA button for download
+        api.send_cta_url(
+            phone,
+            "📥 Tap below to download your ID card",
+            "📥 Download Card",
+            download_link,
         )
     else:
         api.send_text(phone, "❌ No ID card found.")
@@ -936,13 +998,20 @@ def _menu_booth(phone: str, sess: dict):
         if val:
             lines.append(f"*{label}:* {val}")
 
-    # Check for lat/long
+    api.send_text(phone, "\n".join(lines))
+
+    # CTA button for Google Maps if lat/long available
     lat = merged.get('latitude', '')
     lon = merged.get('longitude', '')
     if lat and lon:
-        lines.append(f"\n📍 *Location:* https://maps.google.com/?q={lat},{lon}")
+        maps_url = f"https://maps.google.com/?q={lat},{lon}"
+        api.send_cta_url(
+            phone,
+            "📍 Tap below to view your polling station on Google Maps",
+            "📍 Open in Maps",
+            maps_url,
+        )
 
-    api.send_text(phone, "\n".join(lines))
     _send_main_menu(phone, "What else would you like to do?")
 
 
@@ -961,9 +1030,13 @@ def _menu_referral(phone: str, sess: dict):
     if result:
         api.send_text(
             phone,
-            f"🔗 *Your Referral Link:*\n\n{result['referral_link']}\n\n"
-            "Share this link with friends and family to help them get their ID cards!",
-            preview_url=True,
+            f"🔗 *Your Referral Link:*\n\nShare this link with friends and family to help them get their ID cards!",
+        )
+        api.send_cta_url(
+            phone,
+            f"Your referral link:\n{result['referral_link']}",
+            "🔗 Open Referral Link",
+            result['referral_link'],
         )
     else:
         api.send_text(phone, "❌ Could not generate referral link.")
