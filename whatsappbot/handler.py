@@ -246,7 +246,7 @@ def _handle_greeting(phone: str):
 
     api.send_buttons(
         phone,
-        f"🙏 Welcome to *Voter ID Card Generator*!\n\nYour WhatsApp number: *{mobile_10}*\n\nWe will send an OTP to verify this number.",
+        f"🙏 Welcome to *Voter ID Card Generator*!\n\nYour WhatsApp number: *{mobile_10}*\n\nTap Confirm to start generating your ID card.",
         [
             {"id": "confirm_number", "title": "✅ Confirm"},
         ],
@@ -268,8 +268,32 @@ def _handle_confirm(phone: str, button_id: str, text: str):
         api.send_text(phone, "Please tap the *Confirm* button to proceed.")
         return
 
-    # Send OTP via SMS
-    _send_otp(phone, mobile)
+    # WhatsApp number is already verified — skip OTP, go to EPIC entry
+    db = _get_db_collections()
+
+    # Mark mobile as verified
+    db['verified_mobiles_col'].update_one(
+        {'mobile': mobile},
+        {'$set': {
+            'mobile': mobile,
+            'verified_at': datetime.now(timezone.utc).isoformat(),
+            'verified_at_dt': datetime.now(timezone.utc),
+            'source': 'whatsapp',
+        }},
+        upsert=True,
+    )
+
+    # Check if already has a card (edge case: registered on website)
+    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    if stat and stat.get('card_url'):
+        sess['epic_no'] = stat.get('epic_no', '')
+        sess['state'] = STATE_MENU
+        _send_main_menu(phone, "Your ID card is already generated!")
+        return
+
+    # New registration – ask for EPIC
+    sess['state'] = STATE_AWAITING_EPIC
+    api.send_text(phone, "📋 Please enter your *EPIC Number* (Voter ID number).\n\nFormat: *3 letters + 7 digits*\nExample: *ABC1234567*\n\n_First type 3 letters, then 7 numbers_")
 
 
 def _send_otp(phone: str, mobile: str):
@@ -422,7 +446,7 @@ def _handle_epic(phone: str, text: str):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  STEP 5: CONFIRM EPIC → ASK PHOTO
+#  STEP 5: CONFIRM EPIC → ASK PIN
 # ══════════════════════════════════════════════════════════════════
 
 def _handle_epic_confirm(phone: str, button_id: str, text: str):
@@ -438,23 +462,13 @@ def _handle_epic_confirm(phone: str, button_id: str, text: str):
         api.send_text(phone, "Please tap *Confirm* or *Re-enter* button.")
         return
 
-    # Ask for photo with camera/upload options
-    sess['state'] = STATE_AWAITING_PHOTO_MODE
-    api.send_buttons(
+    # Ask to set PIN first, before photo
+    sess['state'] = STATE_AWAITING_SET_PIN
+    api.send_text(
         phone,
-        "📸 Now send your *passport-size photo*.\n\n"
-        "Requirements:\n"
-        "• Clear face visible\n"
-        "• Only one person in photo\n"
-        "• Good lighting\n"
-        "• No sunglasses or mask\n\n"
-        "Choose how to send your photo:",
-        [
-            {"id": "photo_camera", "title": "📷 Open Camera"},
-            {"id": "photo_upload", "title": "🖼️ Upload Photo"},
-        ],
-        header="Upload Photo",
-        footer="Select an option below",
+        "🔐 Set a *4-digit PIN* to secure your ID card.\n\n"
+        "You will need this PIN to view your card in the future.\n\n"
+        "Enter a *4-digit numeric PIN*:\n_Type only numbers (e.g. 1234)_",
     )
 
 
@@ -560,6 +574,13 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
     sess['photo_url'] = result['photo_url']
     sess['ptc_code'] = result['ptc_code']
 
+    # Save hashed PIN (set earlier in the flow)
+    hashed_pin = sess.get('hashed_pin', '')
+    if hashed_pin:
+        db['stats_col'].update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+        db['gen_voters_col'].update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+        sess.pop('hashed_pin', None)
+
     # Show the generated card
     api.send_image(
         phone,
@@ -567,14 +588,10 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
         caption=f"🎉 Your ID card has been generated!\n\n*Name:* {voter.get('name', '')}\n*EPIC:* {epic_no}",
     )
 
-    # Ask to set PIN
-    sess['state'] = STATE_AWAITING_SET_PIN
-    api.send_text(
-        phone,
-        "🔐 Now set a *4-digit PIN* to secure your ID card.\n\n"
-        "You will need this PIN to view your card in the future.\n\n"
-        "Enter a *4-digit numeric PIN*:\n_Type only numbers (e.g. 1234)_",
-    )
+    # Registration complete → menu
+    sess['authenticated'] = True
+    sess['state'] = STATE_MENU
+    _send_main_menu(phone, "Your registration is complete! 🎉")
 
 
 def _generate_and_upload_card(voter: dict, epic_no: str, mobile: str,
@@ -721,6 +738,36 @@ def _handle_confirm_pin(phone: str, text: str):
 
     sess.pop('pin', None)
     logger.info(f"PIN set via WhatsApp for {mobile[:2]}****{mobile[-2:]}")
+
+    # If new registration (no card yet), ask for photo next
+    if not sess.get('card_url'):
+        from security_fixes import hash_pin
+        hashed = hash_pin(pin)
+        sess['hashed_pin'] = hashed
+        sess.pop('pin', None)
+        logger.info(f"PIN set via WhatsApp for {mobile[:2]}****{mobile[-2:]}")
+
+        api.send_text(phone, "✅ PIN set successfully!")
+
+        # Ask for photo with camera/upload options
+        sess['state'] = STATE_AWAITING_PHOTO_MODE
+        api.send_buttons(
+            phone,
+            "📸 Now send your *passport-size photo*.\n\n"
+            "Requirements:\n"
+            "• Clear face visible\n"
+            "• Only one person in photo\n"
+            "• Good lighting\n"
+            "• No sunglasses or mask\n\n"
+            "Choose how to send your photo:",
+            [
+                {"id": "photo_camera", "title": "📷 Open Camera"},
+                {"id": "photo_upload", "title": "🖼️ Upload Photo"},
+            ],
+            header="Upload Photo",
+            footer="Select an option below",
+        )
+        return
 
     api.send_text(phone, "✅ PIN set successfully! Your ID card is secured.")
 
@@ -1000,7 +1047,19 @@ def _menu_profile(phone: str, sess: dict):
         if val:
             lines.append(f"*{label}:* {val}")
 
-    api.send_text(phone, "\n".join(lines))
+    profile_text = "\n".join(lines)
+
+    # Send photo with profile details as caption if photo exists
+    photo_url = profile.get('photo_url', '')
+    if not photo_url:
+        stat = db['stats_col'].find_one({'epic_no': epic}, {'photo_url': 1})
+        photo_url = stat.get('photo_url', '') if stat else ''
+
+    if photo_url:
+        api.send_image(phone, photo_url, caption=profile_text)
+    else:
+        api.send_text(phone, profile_text)
+
     _send_main_menu(phone, "What else would you like to do?")
 
 
@@ -1033,30 +1092,21 @@ def _menu_booth(phone: str, sess: dict):
         if val:
             lines.append(f"*{label}:* {val}")
 
-    api.send_text(phone, "\n".join(lines))
+    booth_text = "\n".join(lines)
 
     # CTA button for Google Maps if lat/long available, else use address
     lat = merged.get('latitude', '')
     lon = merged.get('longitude', '')
     if lat and lon:
         maps_url = f"https://maps.google.com/?q={lat},{lon}"
-        api.send_cta_url(
-            phone,
-            "📍 Tap below to view your polling station on Google Maps",
-            "📍 Open in Maps",
-            maps_url,
-        )
-    else:
+        api.send_cta_url(phone, booth_text, "📍 Open in Maps", maps_url)
+    elif merged.get('booth_address', '') or merged.get('polling_station', ''):
+        import urllib.parse
         address = merged.get('booth_address', '') or merged.get('polling_station', '')
-        if address:
-            import urllib.parse
-            maps_url = f"https://maps.google.com/maps?q={urllib.parse.quote(address)}"
-            api.send_cta_url(
-                phone,
-                "📍 Tap below to search your polling station on Google Maps",
-                "📍 Search in Maps",
-                maps_url,
-            )
+        maps_url = f"https://maps.google.com/maps?q={urllib.parse.quote(address)}"
+        api.send_cta_url(phone, booth_text, "📍 Search in Maps", maps_url)
+    else:
+        api.send_text(phone, booth_text)
 
     _send_main_menu(phone, "What else would you like to do?")
 
@@ -1074,15 +1124,17 @@ def _menu_referral(phone: str, sess: dict):
 
     result = db['get_or_create_referral'](voter['ptc_code'])
     if result:
+        link = result['referral_link']
+        # Send as a single shareable message — user can long-press to forward
         api.send_text(
             phone,
-            f"🔗 *Your Referral Link:*\n\nShare this link with friends and family to help them get their ID cards!",
-        )
-        api.send_cta_url(
-            phone,
-            f"Your referral link:\n{result['referral_link']}",
-            "🔗 Open Referral Link",
-            result['referral_link'],
+            f"🔗 *Your Referral Link*\n\n"
+            f"Share this with friends and family to help them get their ID cards!\n\n"
+            f"👇 *Tap and hold this message to forward:*\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🪪 Generate your *Voter ID Card* for free!\n\n"
+            f"Click here 👉 {link}\n"
+            f"━━━━━━━━━━━━━━━━━━",
         )
     else:
         api.send_text(phone, "❌ Could not generate referral link.")

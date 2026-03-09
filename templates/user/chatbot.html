@@ -2435,34 +2435,50 @@
 
             if (res.success) {
               const wasReset = (pinContext === 'reset');
-              pendingPin = ''; pendingOtp = ''; pinContext = '';
-              state = S.DONE;
-              setText('placeholder_type');
-              hideAttach();
-              unlockInput();
 
               if (wasReset) {
+                // Reset flow: PIN saved, show card and done
+                pendingPin = ''; pendingOtp = ''; pinContext = '';
+                state = S.DONE;
+                setText('placeholder_type');
+                hideAttach();
+                unlockInput();
+
                 await botReply(t('pin_reset_success'), 800);
+
+                if (res.has_card && res.card_url) {
+                  epic = res.epic_no || '';
+                  saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
+                }
+
+                // Show action buttons
+                let h = '<div class="vertical-actions">';
+                h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+                h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+                h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+                h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+                h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+                h += '</div>';
+                await botReply(h, 500);
+                updateSidebar();
               } else {
+                // Registration flow: PIN saved, now ask for photo
+                pendingPin = ''; pinContext = '';
+                unlockInput();
+
                 await botReply(t('pin_set_success'), 800);
-              }
 
-              // For reset flow, load card info and show it
-              if (res.has_card && res.card_url) {
-                epic = res.epic_no || '';
-                saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url, voterName: res.voter_name || '', photoUrl: res.photo_url || '' });
-              }
+                state = S.AWAIT_PHOTO;
+                setText('placeholder_upload');
+                showAttach();
 
-              // Show action buttons
-              let h = '<div class="vertical-actions">';
-              h += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
-              h += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
-              h += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
-              h += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
-              h += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
-              h += '</div>';
-              await botReply(h, 500);
-              updateSidebar();
+                let h = t('upload_photo');
+                h += '<div class="action-buttons" style="margin-top:10px;">';
+                h += '<button class="action-btn confirm photo-upload-btn" onclick="triggerPhotoUpload()">' + t('btn_upload_photo') + '</button>';
+                h += '<button class="action-btn confirm photo-camera-btn" onclick="triggerCamera()">' + t('btn_camera') + '</button>';
+                h += '</div>';
+                await botReply(h, 800);
+              }
             } else {
               unlockInput();
               await botReply('\u274C ' + (res.message || t('went_wrong')), 600);
@@ -2562,10 +2578,6 @@
             if (res.success) {
               epic = ep;
               voter = res.voter;
-              state = S.AWAIT_PHOTO;
-              setText('placeholder_upload');
-              showAttach();
-              unlockInput();
 
               // Build details HTML
               let h = t('voter_found') + '<div class="voter-details-card">';
@@ -2575,12 +2587,17 @@
                 const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                 h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v + '</span></div>';
               }
-              h += '</div><br>' + t('upload_photo');
-              h += '<div class="action-buttons" style="margin-top:10px;">';
-              h += '<button class="action-btn confirm photo-upload-btn" onclick="triggerPhotoUpload()">' + t('btn_upload_photo') + '</button>';
-              h += '<button class="action-btn confirm photo-camera-btn" onclick="triggerCamera()">' + t('btn_camera') + '</button>';
               h += '</div>';
               await botReply(h, 1000);
+
+              // Ask to set PIN before photo
+              state = S.AWAIT_SET_PIN;
+              pinContext = 'register';
+              pendingPin = '';
+              setNumeric('placeholder_set_pin');
+              hideAttach();
+              unlockInput();
+              await botReply(t('ask_set_pin'), 800);
             } else {
               unlockInput();
               const err = res.message || t('epic_not_found');
@@ -2648,16 +2665,25 @@
             h += '</div>';
             await botReply(h, 500);
 
-            // Ask user to set their PIN
-            state = S.AWAIT_SET_PIN;
-            pinContext = 'register';
-            pendingPin = '';
+            // Registration complete — PIN was already set, go to DONE
+            state = S.DONE;
+            pendingPin = ''; pinContext = '';
             saveUserToStorage({ mobile: mobile, epic: epic, hasCard: true, cardUrl: res.card_url || '', voterName: res.voter_name || (voter && voter.name) || '', photoUrl: res.photo_url || '' });
-            setNumeric('placeholder_set_pin');
+            setText('placeholder_type');
             hideAttach();
             unlockInput();
             photoFile = null;
-            await botReply(t('ask_set_pin'), 800);
+
+            // Show action buttons
+            let hMenu = '<div class="vertical-actions">';
+            hMenu += '  <button class="btn-reply" onclick="handleAddMember()"><i class="bi bi-person-plus-fill me-1"></i> Add New Member</button>';
+            hMenu += '  <button class="btn-reply" onclick="handleMyMembers()"><i class="bi bi-people-fill me-1"></i> My Members</button>';
+            hMenu += '  <button class="btn-reply" onclick="handleBecomeVolunteer()"><i class="bi bi-person-badge-fill me-1"></i> Become Volunteer</button>';
+            hMenu += '  <button class="btn-reply" onclick="handleBecomeBoothAgent()"><i class="bi bi-shop me-1"></i> Become Booth Agent</button>';
+            hMenu += '  <button class="btn-reply" onclick="handleWhatsAppChannel()"><i class="bi bi-whatsapp me-1"></i> Join WhatsApp Channel</button>';
+            hMenu += '</div>';
+            await botReply(hMenu, 500);
+            updateSidebar();
           } else {
             unlockInput();
             const err = res.message || t('gen_failed');
