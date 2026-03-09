@@ -137,6 +137,34 @@ def handle_message(phone: str, message: dict):
 
     # ── Universal reset: "hi", "hello", "start", "menu" restarts ──
     if text.lower() in ("hi", "hello", "start", "hey", "menu", "0"):
+        # If user is already authenticated in this session, skip PIN and show menu
+        if sess.get('authenticated'):
+            sess['state'] = STATE_MENU
+            return _send_main_menu(phone, "What would you like to do?")
+
+        # Protect mid-flow states – remind user what's needed instead of resetting
+        _mid_flow_reminders = {
+            STATE_AWAITING_OTP: "⏳ You have an OTP pending.\n\nPlease enter the *6-digit OTP* sent to your mobile.\n\n_Type only numbers (e.g. 123456)_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_EPIC: "⏳ Please enter your *EPIC number* (Voter ID number).\n\n_Format: 3 letters + 7 digits (e.g. ABC1234567)_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_EPIC_CONFIRM: "⏳ Please confirm your voter details using the buttons above.\n\nOr send *restart* to start over.",
+            STATE_AWAITING_PHOTO_MODE: "⏳ Please select how you'd like to send your photo using the buttons above.\n\nOr send *restart* to start over.",
+            STATE_AWAITING_PHOTO: "⏳ Please send your *photo* for the ID card.\n\nOr send *restart* to start over.",
+            STATE_AWAITING_SET_PIN: "⏳ Please set a *4-digit PIN* to secure your ID card.\n\n_Type only numbers (e.g. 1234)_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_CONFIRM_PIN: "⏳ Please *re-enter the same PIN* to confirm.\n\n_Type your PIN again_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_FORGOT_OTP: "⏳ You requested a PIN reset. Please enter the *6-digit OTP* sent to your mobile.\n\n_Type only numbers (e.g. 123456)_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_RESET_PIN: "⏳ Please enter a new *4-digit PIN*.\n\n_Type only numbers (e.g. 1234)_\n\nOr send *restart* to start over.",
+            STATE_AWAITING_RESET_CONFIRM_PIN: "⏳ Please *re-enter the new PIN* to confirm.\n\n_Type your PIN again_\n\nOr send *restart* to start over.",
+        }
+        reminder = _mid_flow_reminders.get(state)
+        if reminder:
+            api.send_text(phone, reminder)
+            return
+
+        _clear_session(phone)
+        return _handle_greeting(phone)
+
+    # ── Force restart: "restart" always clears and starts fresh ──
+    if text.lower() == "restart":
         _clear_session(phone)
         return _handle_greeting(phone)
 
@@ -206,6 +234,7 @@ def _handle_greeting(phone: str):
             )
         else:
             # No PIN yet – go straight to menu
+            sess['authenticated'] = True
             sess['state'] = STATE_MENU
             _send_main_menu(phone, "Welcome back! Your ID card is ready.")
         return
@@ -696,6 +725,7 @@ def _handle_confirm_pin(phone: str, text: str):
     api.send_text(phone, "✅ PIN set successfully! Your ID card is secured.")
 
     # Show main menu
+    sess['authenticated'] = True
     sess['state'] = STATE_MENU
     _send_main_menu(phone, "Your registration is complete! 🎉")
 
@@ -738,6 +768,7 @@ def _handle_pin_login(phone: str, text: str, button_id: str):
         return
 
     # PIN correct → show card & menu
+    sess['authenticated'] = True
     sess['epic_no'] = stat.get('epic_no', '')
     card_url = stat.get('card_url', '')
     if card_url:
@@ -825,6 +856,7 @@ def _handle_reset_confirm_pin(phone: str, text: str):
 
     api.send_text(phone, "✅ PIN reset successfully!")
 
+    sess['authenticated'] = True
     # Show card and menu
     stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'card_url': 1, 'epic_no': 1})
     if stat and stat.get('card_url'):
@@ -907,15 +939,18 @@ def _menu_view_card(phone: str, sess: dict):
     if stat and stat.get('card_url'):
         gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'name': 1})
         name = gen_doc.get('name', '') if gen_doc else ''
-        import config
         epic = stat.get('epic_no', '')
-        download_link = f"{config.BASE_URL}/mycard/{epic}/download"
+        card_url = stat['card_url']
         api.send_image(
             phone,
-            stat['card_url'],
+            card_url,
             caption=f"🪪 *Your ID Card*\n\n*Name:* {name}\n*EPIC:* {epic}",
         )
-        # CTA button for download
+        # Direct Cloudinary download link (no web session needed)
+        if '/upload/' in card_url:
+            download_link = card_url.replace('/upload/', f'/upload/fl_attachment:{epic}_VoterID/')
+        else:
+            download_link = card_url
         api.send_cta_url(
             phone,
             "📥 Tap below to download your ID card",
@@ -1000,7 +1035,7 @@ def _menu_booth(phone: str, sess: dict):
 
     api.send_text(phone, "\n".join(lines))
 
-    # CTA button for Google Maps if lat/long available
+    # CTA button for Google Maps if lat/long available, else use address
     lat = merged.get('latitude', '')
     lon = merged.get('longitude', '')
     if lat and lon:
@@ -1011,6 +1046,17 @@ def _menu_booth(phone: str, sess: dict):
             "📍 Open in Maps",
             maps_url,
         )
+    else:
+        address = merged.get('booth_address', '') or merged.get('polling_station', '')
+        if address:
+            import urllib.parse
+            maps_url = f"https://maps.google.com/maps?q={urllib.parse.quote(address)}"
+            api.send_cta_url(
+                phone,
+                "📍 Tap below to search your polling station on Google Maps",
+                "📍 Search in Maps",
+                maps_url,
+            )
 
     _send_main_menu(phone, "What else would you like to do?")
 
