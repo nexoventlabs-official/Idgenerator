@@ -2769,8 +2769,9 @@ app.register_blueprint(admin_bp)
 # Register health check blueprint
 app.register_blueprint(health_bp)
 
-# Register WhatsApp bot blueprint
+# Register WhatsApp bot blueprint (exempt from global rate limiter)
 from whatsappbot import whatsapp_bp
+limiter.exempt(whatsapp_bp)
 app.register_blueprint(whatsapp_bp)
 
 

@@ -63,7 +63,10 @@ def receive_message():
                     mark_read(msg_id)
 
                     # Process message
-                    handle_message(sender, msg)
+                    try:
+                        handle_message(sender, msg)
+                    except Exception as he:
+                        logger.error(f"Handler error for {sender[:4]}****: {he}", exc_info=True)
 
     except Exception as e:
         logger.error(f"WhatsApp webhook processing error: {e}", exc_info=True)
