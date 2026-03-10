@@ -10,24 +10,24 @@ import sys
 health_bp = Blueprint('health', __name__)
 
 
-def check_mongodb_connection(client, db_name: str) -> dict:
-    """Check MongoDB connection health."""
+def check_mysql_gen_connection() -> dict:
+    """Check MySQL generated-data tables health."""
     try:
-        client.admin.command('ping')
-        db = client[db_name]
-        stats = db.command('dbstats')
-        return {
-            'status': 'healthy',
-            'database': db_name,
-            'collections': stats.get('collections', 0),
-            'size_mb': round(stats.get('dataSize', 0) / (1024 * 1024), 2)
-        }
+        from app import mysql_pool
+        conn = mysql_pool.connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM information_schema.TABLES "
+                    "WHERE TABLE_SCHEMA = 'voter_id_generator' "
+                    "AND TABLE_NAME IN ('generated_voters','generation_stats','otp_sessions','verified_mobiles','volunteer_requests','booth_agent_requests')"
+                )
+                tbl_count = cur.fetchone()['cnt']
+            return {'status': 'healthy', 'database': 'voter_id_generator', 'tables': tbl_count}
+        finally:
+            conn.close()
     except Exception as e:
-        return {
-            'status': 'unhealthy',
-            'database': db_name,
-            'error': str(e)
-        }
+        return {'status': 'unhealthy', 'database': 'voter_id_generator', 'error': str(e)}
 
 
 def check_redis_connection(redis_client) -> dict:
@@ -78,24 +78,38 @@ def health_check():
     })
 
 
+def check_mysql_connection() -> dict:
+    """Check MySQL voters connection health."""
+    try:
+        from app import mysql_voters_pool
+        conn = mysql_voters_pool.connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return {'status': 'healthy', 'database': 'mysql_voters'}
+        finally:
+            conn.close()
+    except Exception as e:
+        return {'status': 'unhealthy', 'database': 'mysql_voters', 'error': str(e)}
+
+
 @health_bp.route('/health/ready')
 def readiness_check():
     """
     Readiness check - returns 200 if app is ready to serve traffic.
     Checks all critical dependencies.
     """
-    from app import mongo_client, gen_mongo_client, _redis_client
-    import config
+    from app import _redis_client
     
     checks = {
-        'mongodb_voters': check_mongodb_connection(mongo_client, config.MONGO_DB_NAME),
-        'mongodb_generated': check_mongodb_connection(gen_mongo_client, config.GEN_MONGO_DB_NAME),
+        'mysql_voters': check_mysql_connection(),
+        'mysql_generated': check_mysql_gen_connection(),
         'redis': check_redis_connection(_redis_client),
         'cloudinary': check_cloudinary_connection(),
     }
     
     # Determine overall status
-    critical_services = ['mongodb_voters', 'mongodb_generated', 'cloudinary']
+    critical_services = ['mysql_voters', 'mysql_generated', 'cloudinary']
     all_healthy = all(
         checks[svc]['status'] == 'healthy' 
         for svc in critical_services
@@ -130,15 +144,36 @@ def metrics():
     Basic metrics endpoint for monitoring.
     Returns key performance indicators.
     """
-    from app import voters_col, gen_voters_col, stats_col, rate_limiter
+    from app import mysql_pool, mysql_voters_pool, rate_limiter
     
     try:
+        # Count voters from voters DB (sum across all assembly tables)
+        conn = mysql_voters_pool.connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT SUM(total_voters) AS cnt FROM tbl_assembly_consitituency")
+                row = cur.fetchone()
+                total_voters = row['cnt'] if row and row['cnt'] else 0
+        finally:
+            conn.close()
+
+        # Count generated data from generated DB
+        conn = mysql_pool.connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM generated_voters")
+                total_generated = cur.fetchone()['cnt']
+                cur.execute("SELECT COUNT(*) AS cnt FROM generation_stats")
+                total_stats = cur.fetchone()['cnt']
+        finally:
+            conn.close()
+
         metrics_data = {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'database': {
-                'total_voters': voters_col.estimated_document_count(),
-                'total_generated': gen_voters_col.estimated_document_count(),
-                'total_stats': stats_col.estimated_document_count(),
+                'total_voters': total_voters,
+                'total_generated': total_generated,
+                'total_stats': total_stats,
             },
             'rate_limiter': {
                 'active_keys': len(rate_limiter.requests),

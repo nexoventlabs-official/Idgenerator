@@ -56,12 +56,34 @@
       <td><code>{{ voter.epic_no or '-' }}</code></td>
     </tr>
     <tr>
-      <th>Name</th>
+      <th>Name (English)</th>
       <td class="fw-semibold">{{ voter.name or '-' }}</td>
     </tr>
     <tr>
+      <th>Name (Vernacular)</th>
+      <td>{{ voter.name_v1 or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Age</th>
+      <td>{{ voter.age or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Gender</th>
+      <td>{{ voter.sex or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Date of Birth</th>
+      <td>{{ voter.dob or '-' }}</td>
+    </tr>
+    <tr>
       <th>Mobile</th>
-      <td><i class="bi bi-phone-fill text-success"></i> +91 {{ voter.mobile or '-' }}</td>
+      <td>
+        {% if voter.mobile %}
+        <i class="bi bi-phone-fill text-success"></i> {{ voter.mobile }}
+        {% else %}
+        <span class="text-muted">-</span>
+        {% endif %}
+      </td>
     </tr>
     <tr>
       <th>Secret PIN</th>
@@ -70,16 +92,62 @@
       </td>
     </tr>
     <tr>
-      <th>Assembly</th>
-      <td>{{ voter.assembly or '-' }}</td>
+      <th>Generated At</th>
+      <td>{{ voter.generated_at or '-' }}</td>
     </tr>
+  </table>
+
+  <!-- Relation Details -->
+  <div class="section-label">Relation Details</div>
+  <table class="table info-table mb-0">
+    <tr>
+      <th>Relation Type</th>
+      <td>{{ voter.relation_type or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Relation Name (English)</th>
+      <td>{{ voter.relation_name or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Relation Name (Vernacular)</th>
+      <td>{{ voter.relation_name_v1 or '-' }}</td>
+    </tr>
+  </table>
+
+  <!-- Electoral Details -->
+  <div class="section-label">Electoral Details</div>
+  <table class="table info-table mb-0">
     <tr>
       <th>District</th>
       <td>{{ voter.district or '-' }}</td>
     </tr>
     <tr>
-      <th>Generated At</th>
-      <td>{{ voter.generated_at or '-' }}</td>
+      <th>Assembly (AC No)</th>
+      <td>{{ voter.assembly_name or voter.assembly or '-' }}{% if voter.assembly_name and voter.assembly %} ({{ voter.assembly }}){% endif %}</td>
+    </tr>
+    <tr>
+      <th>Part No</th>
+      <td>{{ voter.part_no or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Section No</th>
+      <td>{{ voter.section_no or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Serial No in Part</th>
+      <td>{{ voter.slno_in_part or '-' }}</td>
+    </tr>
+    <tr>
+      <th>House No (English)</th>
+      <td>{{ voter.house_no or '-' }}</td>
+    </tr>
+    <tr>
+      <th>House No (Vernacular)</th>
+      <td>{{ voter.house_no_v1 or '-' }}</td>
+    </tr>
+    <tr>
+      <th>Org List No</th>
+      <td>{{ voter.org_list_no or '-' }}</td>
     </tr>
   </table>
 
@@ -105,6 +173,45 @@
       </td>
     </tr>
     {% endif %}
+  </table>
+
+  <!-- Volunteer & Booth Agent Status -->
+  <div class="section-label">Request Status</div>
+  <table class="table info-table mb-0">
+    <tr>
+      <th>Volunteer Request</th>
+      <td>
+        {% if volunteer_req %}
+          {% set vs = volunteer_req.status or 'pending' %}
+          <span class="badge bg-{{ 'success' if vs == 'confirmed' else ('danger' if vs == 'rejected' else 'warning text-dark') }}">
+            {{ vs|title }}
+          </span>
+          <span class="text-muted ms-2" style="font-size:0.8rem;">
+            Requested: {{ volunteer_req.requested_at|string|truncate(19, True, '') if volunteer_req.requested_at else '-' }}
+            {% if volunteer_req.reviewed_at %} &middot; Reviewed: {{ volunteer_req.reviewed_at|string|truncate(19, True, '') }}{% endif %}
+          </span>
+        {% else %}
+          <span class="text-muted">Not requested</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th>Booth Agent Request</th>
+      <td>
+        {% if booth_agent_req %}
+          {% set bs = booth_agent_req.status or 'pending' %}
+          <span class="badge bg-{{ 'success' if bs == 'confirmed' else ('danger' if bs == 'rejected' else 'warning text-dark') }}">
+            {{ bs|title }}
+          </span>
+          <span class="text-muted ms-2" style="font-size:0.8rem;">
+            Requested: {{ booth_agent_req.requested_at|string|truncate(19, True, '') if booth_agent_req.requested_at else '-' }}
+            {% if booth_agent_req.reviewed_at %} &middot; Reviewed: {{ booth_agent_req.reviewed_at|string|truncate(19, True, '') }}{% endif %}
+          </span>
+        {% else %}
+          <span class="text-muted">Not requested</span>
+        {% endif %}
+      </td>
+    </tr>
   </table>
 
   <!-- Card Preview -->

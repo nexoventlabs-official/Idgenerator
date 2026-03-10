@@ -99,14 +99,14 @@
         var statusCls = 'status-' + (v.status || 'pending');
         var actions = '';
         if (v.status === 'pending') {
-          actions = '<div class="action-btns">' +
+          actions = '<div class="action-btns" onclick="event.stopPropagation()">' +
             '<button class="btn btn-sm btn-success px-2 py-1" title="Confirm" onclick="confirmReq(\'' + esc(v.ptc_code) + '\')"><i class="bi bi-check-lg"></i></button>' +
             '<button class="btn btn-sm btn-danger px-2 py-1" title="Reject" onclick="rejectReq(\'' + esc(v.ptc_code) + '\')"><i class="bi bi-x-lg"></i></button>' +
             '</div>';
         } else {
           actions = '<span class="text-muted" style="font-size:0.8rem;">Reviewed</span>';
         }
-        html += '<tr>' +
+        html += '<tr style="cursor:pointer" onclick="window.location.href=\'/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '\'">' +
           '<td class="text-muted">' + num + '</td>' +
           '<td><span class="ptc-badge">' + esc(v.ptc_code || '-') + '</span></td>' +
           '<td class="fw-semibold">' + esc(v.name || '-') + '</td>' +

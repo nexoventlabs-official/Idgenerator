@@ -147,16 +147,34 @@
             <td><code>{{ voter.epic_no }}</code></td>
           </tr>
           <tr>
-            <th>Name</th>
+            <th>Name (English)</th>
             <td class="fw-semibold">{{ voter.name }}</td>
           </tr>
           <tr>
-            <th>Assembly</th>
-            <td>{{ voter.assembly or '-' }}</td>
+            <th>Name (Vernacular)</th>
+            <td>{{ voter.name_v1 or '-' }}</td>
           </tr>
           <tr>
-            <th>District</th>
-            <td>{{ voter.district or '-' }}</td>
+            <th>Age</th>
+            <td>{{ voter.age or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Gender</th>
+            <td>{{ voter.sex or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Date of Birth</th>
+            <td>{{ voter.dob or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Mobile</th>
+            <td>
+              {% if voter.mobile %}
+              <i class="bi bi-phone-fill text-success"></i> {{ voter.mobile }}
+              {% else %}
+              <span class="text-muted">-</span>
+              {% endif %}
+            </td>
           </tr>
           <tr>
             <th>Auth Mobile</th>
@@ -171,9 +189,67 @@
         </tbody>
       </table>
 
+      <!-- Relation Details -->
+      <div class="section-label">Relation Details</div>
+      <table class="table detail-table mb-0">
+        <tbody>
+          <tr>
+            <th>Relation Type</th>
+            <td>{{ voter.relation_type or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Relation Name (English)</th>
+            <td>{{ voter.relation_name or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Relation Name (Vernacular)</th>
+            <td>{{ voter.relation_name_v1 or '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Electoral Details -->
+      <div class="section-label">Electoral Details</div>
+      <table class="table detail-table mb-0">
+        <tbody>
+          <tr>
+            <th>District</th>
+            <td>{{ voter.district or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Assembly (AC No)</th>
+            <td>{{ voter.assembly_name or voter.assembly or '-' }}{% if voter.assembly_name and voter.assembly %} ({{ voter.assembly }}){% endif %}</td>
+          </tr>
+          <tr>
+            <th>Part No</th>
+            <td>{{ voter.part_no or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Section No</th>
+            <td>{{ voter.section_no or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Serial No in Part</th>
+            <td>{{ voter.slno_in_part or '-' }}</td>
+          </tr>
+          <tr>
+            <th>House No (English)</th>
+            <td>{{ voter.house_no or '-' }}</td>
+          </tr>
+          <tr>
+            <th>House No (Vernacular)</th>
+            <td>{{ voter.house_no_v1 or '-' }}</td>
+          </tr>
+          <tr>
+            <th>Org List No</th>
+            <td>{{ voter.org_list_no or '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+
       <!-- Extra Fields from CSV/XLSX -->
       {% if extra_fields %}
-      <div class="section-label">Additional Details (from imported file)</div>
+      <div class="section-label">Additional Details</div>
       <table class="table detail-table mb-0">
         <tbody>
           {% for key, val in extra_fields.items() %}
@@ -206,7 +282,7 @@
             <th>Last Generated</th>
             <td>
               {% if voter.last_generated %}
-              {{ voter.last_generated[:19] | replace('T', ' ') }}
+              {{ voter.last_generated|string|truncate(19, True, '') | replace('T', ' ') }}
               {% else %}
               -
               {% endif %}

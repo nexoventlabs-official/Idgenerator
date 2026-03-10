@@ -2183,7 +2183,7 @@
             h += '  <img src="' + savedUser.cardUrl + '" alt="ID Card">';
             h += '  <div class="card-actions-overlay">';
             h += '    <a href="' + savedUser.cardUrl + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-            if (epic) h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+            if (epic) h += '    <a href="' + dlUrl(savedUser.cardUrl, epic) + '" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
             h += '  </div>';
             h += '</div>';
           }
@@ -2201,6 +2201,13 @@
 
         updateCurrentPlaceholder();
         updateSidebar();
+      }
+
+      /* ── Cloudinary download URL helper ── */
+      function dlUrl(cardUrl, epicNo) {
+        if (!cardUrl) return '/mycard/' + epicNo + '/download';
+        if (cardUrl.indexOf('/upload/') !== -1) return cardUrl.replace('/upload/', '/upload/fl_attachment:' + epicNo + '_VoterID/');
+        return cardUrl;
       }
 
       /* ── API fetch wrapper ── */
@@ -2333,7 +2340,7 @@
               h += '  <img src="' + res.card_url + '" alt="ID Card">';
               h += '  <div class="card-actions-overlay">';
               h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-              h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+              h += '    <a href="' + dlUrl(res.card_url, res.epic_no) + '" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
               h += '  </div>';
               h += '</div>';
               h += '<div class="vertical-actions">';
@@ -2429,7 +2436,7 @@
               res = await api('/api/chat/reset-pin', { mobile, otp: pendingOtp, new_pin: pendingPin });
             } else {
               // Registration flow: just save the PIN
-              res = await api('/api/chat/set-pin', { mobile, pin: pendingPin });
+              res = await api('/api/chat/set-pin', { mobile, pin: pendingPin, epic_no: epic });
             }
             hideTyping();
 
@@ -2515,7 +2522,7 @@
                   h += '  <img src="' + res.card_url + '" alt="ID Card">';
                   h += '  <div class="card-actions-overlay">';
                   h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-                  h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                  h += '    <a href="' + dlUrl(res.card_url, res.epic_no) + '" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
                   h += '  </div>';
                   h += '</div>';
                   await botReply(h, 1000);
@@ -2538,7 +2545,7 @@
                   h += '  <img src="' + res.card_url + '" alt="ID Card">';
                   h += '  <div class="card-actions-overlay">';
                   h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-                  h += '    <a href="/mycard/' + res.epic_no + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+                  h += '    <a href="' + dlUrl(res.card_url, res.epic_no) + '" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
                   h += '  </div>';
                   h += '</div>';
                   h += '<div class="vertical-actions">';
@@ -2579,13 +2586,18 @@
               epic = ep;
               voter = res.voter;
 
-              // Build details HTML
+              // Build details HTML — show only key fields for confirmation
               let h = t('voter_found') + '<div class="voter-details-card">';
-              const skip = new Set(['_id', 'photo_url', 'card_url', 'verify_url', 'serial_number']);
-              for (const [k, v] of Object.entries(res.voter)) {
-                if (!v || skip.has(k)) continue;
-                const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v + '</span></div>';
+              const p = res.voter;
+              const showFields = [
+                ['Name', (p.FM_NAME_EN || p.name || '') + ' ' + (p.LASTNAME_EN || '')],
+                ['EPIC No', p.EPIC_NO || p.epic_no || ''],
+                ['Assembly Name', p.ASSEMBLY_NAME || p.assembly_name || ''],
+                ['District Name', p.DISTRICT_NAME || p.district || '']
+              ];
+              for (const [lbl, v] of showFields) {
+                if (!v || !v.trim()) continue;
+                h += '<div class="detail-row"><span class="detail-label">' + lbl + '</span><span class="detail-value">' + v.trim() + '</span></div>';
               }
               h += '</div>';
               await botReply(h, 1000);
@@ -2660,7 +2672,7 @@
             h += '  <img src="' + res.card_url + '" alt="ID Card">';
             h += '  <div class="card-actions-overlay">';
             h += '    <a href="' + res.card_url + '" class="icon-btn" target="_blank" title="Preview Card"><i class="bi bi-eye-fill"></i></a>';
-            h += '    <a href="/mycard/' + epic + '/download" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
+            h += '    <a href="' + dlUrl(res.card_url, epic) + '" class="icon-btn" target="_blank" title="Download Card"><i class="bi bi-download"></i></a>';
             h += '  </div>';
             h += '</div>';
             await botReply(h, 500);

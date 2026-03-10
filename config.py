@@ -1,7 +1,7 @@
 """
 Configuration — Voter ID Card Generator v4.0
 ==============================================
-MongoDB for voter data + generation stats.
+MySQL for all data (voters, generated cards, stats, OTP, etc.).
 Cloudinary for user-uploaded photos + generated cards.
 Secrets loaded from .env file.
 """
@@ -21,16 +21,18 @@ UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
 # Excel — temporary local copy used during import parsing
 VOTERS_XLSX = os.path.join(DATA_DIR, 'voters.xlsx')
 
-# ── MongoDB 1 (Voter data from XLSX — READ-ONLY, verify EPIC only) ───
-MONGO_URI = os.getenv("MONGO_URI", "")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "voter_id_generator")
-MONGO_VOTERS_COLLECTION = os.getenv("MONGO_VOTERS_COLLECTION", "voters")
-MONGO_STATS_COLLECTION = os.getenv("MONGO_STATS_COLLECTION", "generation_stats")
+# ── MySQL (shared connection settings) ────────────────────────────
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 
-# ── MongoDB 2 (All generation activity — cards, stats, OTP, etc.) ──
-GEN_MONGO_URI = os.getenv("GEN_MONGO_URI", "")
-GEN_MONGO_DB_NAME = os.getenv("GEN_MONGO_DB_NAME", "generated_voters")
-GEN_MONGO_COLLECTION = os.getenv("GEN_MONGO_COLLECTION", "generated_voters")
+# ── MySQL DB: Voter rolls (READ-ONLY) ────────────────────────────
+MYSQL_VOTERS_DB = os.getenv("MYSQL_VOTERS_DB", "mysql_voters")
+MYSQL_VOTERS_TABLE = os.getenv("MYSQL_VOTERS_TABLE", "voters")
+
+# ── MySQL DB: Generated data (READ/WRITE) ────────────────────────
+MYSQL_DB = os.getenv("MYSQL_DB", "voter_id_generator")
 
 # ── Cloudinary ───────────────────────────────────────────────────
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
@@ -117,30 +119,13 @@ QR_VERSION = 1
 QR_ERROR_CORRECTION = 0
 QR_BORDER = 1
 
-# ── XLSX Column Mapping ──────────────────────────────────────────
-#    Maps internal field names → Excel column headers (case-insensitive match).
-#    Required: Epic Number, Voter Name, Assembly Name, Assembly Number, District
-XLSX_COLUMNS = {
-    # ── Required columns ──
-    'epic_no': ['Epic Number', 'Epic No', 'EPIC', 'epicNumber', 'Voter ID', 'voter_id'],
-    'name': ['Voter Name', 'Name', 'Full Name', 'applicantFirstName', 'Applicant Name'],
-    'assembly': ['Assembly Name', 'Assembly', 'Constituency', 'AC Name', 'asmblyName'],
-    'assembly_number': ['Assembly Number', 'Assembly No', 'AC No', 'AC Number', 'asmblyNo'],
-    'district': ['District', 'Dist', 'districtValue', 'District Value', 'District Name'],
-    # ── Optional columns ──
-    'age': ['Age', 'Voter Age'],
-    'sex': ['Sex', 'Gender'],
-    'relation_type': ['Relation Type', 'Relation', 'Rel Type'],
-    'relation_name': ['Relation Name', 'Father Name', 'Husband Name', 'Guardian Name', 'Rel Name'],
-    'mobile': ['Mobile Number', 'Mobile', 'Phone', 'Phone Number', 'Contact'],
-    'booth_address': ['Booth Address', 'PS Address', 'Polling Station Address', 'Station Address', 'pollingStationAddress', 'Polling Stn Address'],
-    'polling_station': ['Polling Station', 'Polling Booth', 'Booth Name', 'PS Name', 'Station Name', 'pollingStationName', 'Polling Station Name'],
-    'part_no': ['Part No', 'Part Number', 'partNumber', 'Part', 'Section No'],
-    'lat_long': ['Lat Long', 'LatLong', 'Lat,Long', 'GPS', 'Coordinates', 'Location'],
-}
-
-# Columns that MUST be present in the uploaded file
-XLSX_REQUIRED_COLUMNS = ['epic_no', 'name', 'assembly', 'assembly_number', 'district']
+# ── MySQL Column Reference ────────────────────────────────────────
+#    The voters table uses these MySQL columns (mapped to internal names
+#    by _translate_voter_row() at query time):
+#    EPIC_NO → epic_no,  FM_NAME_EN+LASTNAME_EN → name,  AC_NO → assembly,
+#    AGE → age,  GENDER → sex,  RLN_TYPE → relation_type,
+#    RLN_FM_NM_EN+RLN_L_NM_EN → relation_name,  MOBILE_NO → mobile,
+#    PART_NO → part_no,  DOB → dob
 
 # ── Output Settings ──────────────────────────────────────────────
 JPEG_QUALITY = 95

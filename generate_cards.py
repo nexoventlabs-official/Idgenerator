@@ -88,8 +88,7 @@ def generate_qr_code(voter: dict) -> Image.Image:
     else:
         qr_data = (
             f"NAME:{voter.get('name', '')}\n"
-            f"ASSEMBLY:{voter.get('assembly', '')}\n"
-            f"DISTRICT:{voter.get('district', '')}\n"
+            f"ASSEMBLY:{voter.get('assembly_name', '')}\n"
             f"PTC:{voter.get('serial_number', '')}"
         )
     qr = qrcode.QRCode(
@@ -203,7 +202,7 @@ def generate_card(voter: dict, template: Image.Image,
     """
     Generate a single voter ID card.
     Parameters:
-        voter       - dict with keys: epic_no, name, assembly, district
+        voter       - dict with keys: epic_no, name, assembly
         template    - PIL Image of the template
         photo_image - optional PIL Image for the member photo
     Returns: path to the generated card JPEG.
@@ -215,7 +214,7 @@ def generate_card(voter: dict, template: Image.Image,
     fields = [
         ('name', config.NAME_XY, config.NAME_END_X, config.NAME_MAX_WIDTH),
         ('epic_no', config.VOTER_ID_XY, config.VOTER_ID_END_X, config.VOTER_ID_MAX_WIDTH),
-        ('assembly', config.ASSEMBLY_XY, config.ASSEMBLY_END_X, config.ASSEMBLY_MAX_WIDTH),
+        ('assembly_name', config.ASSEMBLY_XY, config.ASSEMBLY_END_X, config.ASSEMBLY_MAX_WIDTH),
         ('district', config.DISTRICT_XY, config.DISTRICT_END_X, config.DISTRICT_MAX_WIDTH),
     ]
     for field_key, (label_end_x, y), end_x, max_width in fields:
@@ -230,7 +229,7 @@ def generate_card(voter: dict, template: Image.Image,
         # Remove any potential template injection characters
         text = text.replace('{', '').replace('}', '').replace('$', '').replace('\\', '')
         # Limit length to prevent buffer overflow
-        max_len = {'name': 100, 'epic_no': 20, 'assembly': 100, 'district': 100}.get(field_key, 100)
+        max_len = {'name': 100, 'epic_no': 20, 'assembly_name': 100, 'district': 100}.get(field_key, 100)
         text = text[:max_len]
         
         text = text.upper()  # ALL CAPS

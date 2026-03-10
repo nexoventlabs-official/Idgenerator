@@ -84,7 +84,7 @@
       items.forEach(function (v, i) {
         var num = (page - 1) * pp + i + 1;
         var dt = toIST(v.reviewed_at);
-        html += '<tr>' +
+        html += '<tr style="cursor:pointer" onclick="window.location.href=\'/admin/generated-voters/' + encodeURIComponent(v.ptc_code) + '\'">' +
           '<td class="text-muted">' + num + '</td>' +
           '<td><span class="ptc-badge">' + esc(v.ptc_code || '-') + '</span></td>' +
           '<td class="fw-semibold">' + esc(v.name || '-') + '</td>' +

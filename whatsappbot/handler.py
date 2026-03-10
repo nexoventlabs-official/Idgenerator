@@ -62,26 +62,24 @@ STATE_CONFIRM_BOOTH_AGENT = "confirm_booth_agent"
 STATE_MENU = "menu"
 
 
-def _get_db_collections():
-    """Lazy import to avoid circular imports – returns the DB collections from app.py."""
+def _get_db_helpers():
+    """Lazy import to avoid circular imports – returns DB helper functions from app.py."""
     from app import (
-        voters_col, gen_voters_col, stats_col, otp_col,
-        verified_mobiles_col, volunteer_requests_col,
-        booth_agent_requests_col, find_voter_by_epic,
+        _get_mysql, find_voter_by_epic,
         generate_ptc_code, get_or_create_referral,
     )
     return {
-        'voters_col': voters_col,
-        'gen_voters_col': gen_voters_col,
-        'stats_col': stats_col,
-        'otp_col': otp_col,
-        'verified_mobiles_col': verified_mobiles_col,
-        'volunteer_requests_col': volunteer_requests_col,
-        'booth_agent_requests_col': booth_agent_requests_col,
+        '_get_mysql': _get_mysql,
         'find_voter_by_epic': find_voter_by_epic,
         'generate_ptc_code': generate_ptc_code,
         'get_or_create_referral': get_or_create_referral,
     }
+
+
+def _get_mysql():
+    """Shortcut to get MySQL connection."""
+    from app import _get_mysql
+    return _get_mysql()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -213,12 +211,17 @@ def handle_message(phone: str, message: dict):
 
 def _handle_greeting(phone: str):
     """User says Hi – check if returning or new."""
-    db = _get_db_collections()
     # Extract 10-digit mobile (Indian format: 91XXXXXXXXXX)
     mobile_10 = phone[-10:] if len(phone) >= 10 else phone
 
     # Check if this number already has a card
-    stat = db['stats_col'].find_one({'auth_mobile': mobile_10}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url, secret_pin FROM generation_stats WHERE auth_mobile = %s", (mobile_10,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
 
     if stat and stat.get('card_url'):
         # RETURNING USER
@@ -275,22 +278,28 @@ def _handle_confirm(phone: str, button_id: str, text: str):
         return
 
     # WhatsApp number is already verified — skip OTP, go to EPIC entry
-    db = _get_db_collections()
 
     # Mark mobile as verified
-    db['verified_mobiles_col'].update_one(
-        {'mobile': mobile},
-        {'$set': {
-            'mobile': mobile,
-            'verified_at': datetime.now(timezone.utc).isoformat(),
-            'verified_at_dt': datetime.now(timezone.utc),
-            'source': 'whatsapp',
-        }},
-        upsert=True,
-    )
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO verified_mobiles (mobile, verified_at) "
+                "VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE verified_at=VALUES(verified_at)",
+                (mobile, datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+            )
+    finally:
+        conn.close()
 
     # Check if already has a card (edge case: registered on website)
-    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
         sess['epic_no'] = stat.get('epic_no', '')
         sess['state'] = STATE_MENU
@@ -307,23 +316,11 @@ def _send_otp(phone: str, mobile: str):
     import os
     import requests as http_requests
 
-    db = _get_db_collections()
     sess = _get_session(phone)
 
     otp = str(secrets.randbelow(900000) + 100000)
 
-    db['otp_col'].update_one(
-        {'mobile': mobile},
-        {'$set': {
-            'otp': otp,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'created_at_dt': datetime.now(timezone.utc),
-            'verified': False,
-        }},
-        upsert=True,
-    )
-
-    # Send via 2Factor.in
+    # Send via 2Factor.in FIRST, only store in DB if sent successfully
     otp_sent = False
     sms_api_key = os.getenv('SMS_API_KEY', '')
     if sms_api_key:
@@ -338,6 +335,19 @@ def _send_otp(phone: str, mobile: str):
             logger.warning(f"OTP send failed for {mobile[:2]}****{mobile[-2:]}: {e}")
 
     if otp_sent:
+        # Store OTP in DB only after SMS was sent successfully
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO otp_sessions (mobile, otp, created_at, verified) "
+                    "VALUES (%s, %s, %s, 0) "
+                    "ON DUPLICATE KEY UPDATE otp=VALUES(otp), created_at=VALUES(created_at), verified=0",
+                    (mobile, otp, datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+                )
+        finally:
+            conn.close()
+
         sess['state'] = STATE_AWAITING_OTP
         api.send_text(
             phone,
@@ -359,21 +369,30 @@ def _handle_otp(phone: str, text: str):
     """User enters OTP."""
     sess = _get_session(phone)
     mobile = sess.get('mobile', phone[-10:])
-    db = _get_db_collections()
 
     otp = text.strip()
     if not re.match(r'^\d{6}$', otp):
         api.send_text(phone, "Please enter a valid *6-digit OTP*.\n\n_Type only numbers (e.g. 123456)_")
         return
 
-    doc = db['otp_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT otp, created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            doc = cur.fetchone()
+    finally:
+        conn.close()
     if not doc or doc.get('otp') != otp:
         api.send_text(phone, "❌ Invalid OTP. Please try again.\n\n_Type the 6-digit number from your SMS_")
         return
 
     # Check expiry
     try:
-        created = datetime.fromisoformat(doc['created_at'])
+        created = doc['created_at']
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - created).total_seconds() > 300:
             api.send_text(phone, "⏰ OTP expired. Send *Hi* to start again.")
             _clear_session(phone)
@@ -382,12 +401,23 @@ def _handle_otp(phone: str, text: str):
         pass
 
     # Mark verified
-    db['otp_col'].update_one({'mobile': mobile}, {'$set': {'verified': True}})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE otp_sessions SET verified = 1 WHERE mobile = %s", (mobile,))
+    finally:
+        conn.close()
 
     api.send_text(phone, "✅ OTP verified successfully!")
 
     # Check if already has a card (edge case: registered on website)
-    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
         sess['epic_no'] = stat.get('epic_no', '')
         sess['state'] = STATE_MENU
@@ -406,14 +436,14 @@ def _handle_otp(phone: str, text: str):
 def _handle_epic(phone: str, text: str):
     """User enters EPIC number."""
     sess = _get_session(phone)
-    db = _get_db_collections()
+    from app import find_voter_by_epic
 
     epic_no = text.strip().upper()
     if len(epic_no) < 3 or len(epic_no) > 20:
         api.send_text(phone, "❌ Invalid EPIC format.\n\nFormat: *3 letters + 7 digits*\nExample: *ABC1234567*\n\n_First type 3 letters, then 7 numbers_")
         return
 
-    voter = db['find_voter_by_epic'](epic_no)
+    voter = find_voter_by_epic(epic_no)
     if not voter:
         api.send_text(phone, "❌ EPIC Number not found. Please check and try again.")
         return
@@ -429,7 +459,6 @@ def _handle_epic(phone: str, text: str):
         f"*Name:* {voter.get('name', '-')}\n"
         f"*EPIC No:* {epic_no}\n"
         f"*Assembly:* {voter.get('assembly', '-')}\n"
-        f"*District:* {voter.get('district', '-')}\n"
     )
     if voter.get('age'):
         details += f"*Age:* {voter.get('age')}\n"
@@ -522,7 +551,6 @@ def _handle_photo_mode(phone: str, button_id: str, text: str, message: dict, msg
 def _handle_photo(phone: str, message: dict, msg_type: str):
     """User sends a photo."""
     sess = _get_session(phone)
-    db = _get_db_collections()
 
     if msg_type != "image":
         api.send_buttons(
@@ -570,7 +598,7 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
     mobile = sess.get('mobile', phone[-10:])
 
     try:
-        result = _generate_and_upload_card(voter, epic_no, mobile, photo_image, db)
+        result = _generate_and_upload_card(voter, epic_no, mobile, photo_image)
     except Exception as e:
         logger.error(f"Card generation failed for {epic_no}: {e}")
         api.send_text(phone, "❌ Card generation failed. Please try again later.")
@@ -583,8 +611,13 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
     # Save hashed PIN (set earlier in the flow)
     hashed_pin = sess.get('hashed_pin', '')
     if hashed_pin:
-        db['stats_col'].update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
-        db['gen_voters_col'].update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE generation_stats SET secret_pin = %s WHERE auth_mobile = %s", (hashed_pin, mobile))
+                cur.execute("UPDATE generated_voters SET secret_pin = %s WHERE MOBILE_NO = %s", (hashed_pin, mobile))
+        finally:
+            conn.close()
         sess.pop('hashed_pin', None)
 
     # Show the generated card
@@ -601,7 +634,7 @@ def _handle_photo(phone: str, message: dict, msg_type: str):
 
 
 def _generate_and_upload_card(voter: dict, epic_no: str, mobile: str,
-                               photo_image: Image.Image, db: dict) -> dict:
+                               photo_image: Image.Image) -> dict:
     """Generate ID card image, upload to Cloudinary, save to DB.
     Returns dict with card_url, photo_url, ptc_code.
     """
@@ -625,7 +658,8 @@ def _generate_and_upload_card(voter: dict, epic_no: str, mobile: str,
     photo_url = photo_upload['secure_url']
 
     # Generate PTC code
-    ptc_code = db['generate_ptc_code']()
+    from app import generate_ptc_code
+    ptc_code = generate_ptc_code()
     voter['ptc_code'] = ptc_code
     voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
 
@@ -647,58 +681,75 @@ def _generate_and_upload_card(voter: dict, epic_no: str, mobile: str,
     card_url = card_upload['secure_url']
 
     # Save to DB
-    import pymongo.errors
-    doc = {
-        'ptc_code': ptc_code,
-        'epic_no': epic_no,
-        'name': voter.get('name', ''),
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'mobile': mobile,
-        'photo_url': photo_url,
-        'card_url': card_url,
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        'source': 'whatsapp',
-    }
-
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    conn = _get_mysql()
     try:
-        db['gen_voters_col'].update_one(
-            {'epic_no': epic_no, 'mobile': mobile},
-            {'$set': doc, '$setOnInsert': {'created_at': datetime.now(timezone.utc).isoformat()}},
-            upsert=True,
-        )
-    except pymongo.errors.DuplicateKeyError:
-        db['gen_voters_col'].update_one(
-            {'epic_no': epic_no, 'mobile': mobile},
-            {'$set': doc},
-        )
+        with conn.cursor() as cur:
+            # Upsert generated voter (all voter columns + generation columns)
+            cur.execute(
+                "INSERT INTO generated_voters ("
+                "AC_NO, ASSEMBLY_NAME, PART_NO, SECTION_NO, SLNOINPART, C_HOUSE_NO, C_HOUSE_NO_V1, "
+                "FM_NAME_EN, LASTNAME_EN, FM_NAME_V1, LASTNAME_V1, "
+                "RLN_TYPE, RLN_FM_NM_EN, RLN_L_NM_EN, RLN_FM_NM_V1, RLN_L_NM_V1, "
+                "EPIC_NO, GENDER, AGE, DOB, MOBILE_NO, ORG_LIST_NO, DISTRICT_NAME, "
+                "ptc_code, photo_url, card_url, generated_at, created_at"
+                ") VALUES ("
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "%s,%s,%s,%s"
+                ") ON DUPLICATE KEY UPDATE "
+                "AC_NO=VALUES(AC_NO), ASSEMBLY_NAME=VALUES(ASSEMBLY_NAME), "
+                "PART_NO=VALUES(PART_NO), SECTION_NO=VALUES(SECTION_NO), "
+                "SLNOINPART=VALUES(SLNOINPART), C_HOUSE_NO=VALUES(C_HOUSE_NO), "
+                "C_HOUSE_NO_V1=VALUES(C_HOUSE_NO_V1), FM_NAME_EN=VALUES(FM_NAME_EN), "
+                "LASTNAME_EN=VALUES(LASTNAME_EN), FM_NAME_V1=VALUES(FM_NAME_V1), "
+                "LASTNAME_V1=VALUES(LASTNAME_V1), RLN_TYPE=VALUES(RLN_TYPE), "
+                "RLN_FM_NM_EN=VALUES(RLN_FM_NM_EN), RLN_L_NM_EN=VALUES(RLN_L_NM_EN), "
+                "RLN_FM_NM_V1=VALUES(RLN_FM_NM_V1), RLN_L_NM_V1=VALUES(RLN_L_NM_V1), "
+                "GENDER=VALUES(GENDER), AGE=VALUES(AGE), DOB=VALUES(DOB), "
+                "ORG_LIST_NO=VALUES(ORG_LIST_NO), DISTRICT_NAME=VALUES(DISTRICT_NAME), "
+                "ptc_code=VALUES(ptc_code), photo_url=VALUES(photo_url), card_url=VALUES(card_url), "
+                "generated_at=VALUES(generated_at)",
+                (
+                    voter.get('AC_NO', voter.get('assembly')),
+                    voter.get('ASSEMBLY_NAME', voter.get('assembly_name')),
+                    voter.get('PART_NO', voter.get('part_no')),
+                    voter.get('SECTION_NO'), voter.get('SLNOINPART'),
+                    voter.get('C_HOUSE_NO'), voter.get('C_HOUSE_NO_V1'),
+                    voter.get('FM_NAME_EN', voter.get('name', '').split(' ')[0] if voter.get('name') else ''),
+                    voter.get('LASTNAME_EN', ' '.join(voter.get('name', '').split(' ')[1:]) if voter.get('name') else ''),
+                    voter.get('FM_NAME_V1'), voter.get('LASTNAME_V1'),
+                    voter.get('RLN_TYPE', voter.get('relation_type')),
+                    voter.get('RLN_FM_NM_EN'), voter.get('RLN_L_NM_EN'),
+                    voter.get('RLN_FM_NM_V1'), voter.get('RLN_L_NM_V1'),
+                    epic_no,
+                    voter.get('GENDER', voter.get('sex')),
+                    voter.get('AGE', voter.get('age')),
+                    voter.get('DOB', voter.get('dob')),
+                    mobile,
+                    voter.get('ORG_LIST_NO'),
+                    voter.get('DISTRICT_NAME'),
+                    ptc_code, photo_url, card_url, now, now
+                )
+            )
 
-    # Update stats
-    db['stats_col'].update_one(
-        {'epic_no': epic_no},
-        {
-            '$set': {
-                'card_url': card_url,
-                'photo_url': photo_url,
-                'last_generated': datetime.now(timezone.utc).isoformat(),
-                'auth_mobile': mobile,
-            },
-            '$inc': {'count': 1},
-        },
-        upsert=True,
-    )
+            # Update stats
+            cur.execute(
+                "INSERT INTO generation_stats (epic_no, card_url, photo_url, last_generated, auth_mobile, count) "
+                "VALUES (%s, %s, %s, %s, %s, 1) "
+                "ON DUPLICATE KEY UPDATE card_url=VALUES(card_url), photo_url=VALUES(photo_url), "
+                "last_generated=VALUES(last_generated), auth_mobile=VALUES(auth_mobile), count=count+1",
+                (epic_no, card_url, photo_url, now, mobile)
+            )
 
-    # Mark mobile as verified
-    db['verified_mobiles_col'].update_one(
-        {'mobile': mobile},
-        {'$set': {
-            'mobile': mobile,
-            'epic_no': epic_no,
-            'verified_at': datetime.now(timezone.utc).isoformat(),
-            'verified_at_dt': datetime.now(timezone.utc),
-        }},
-        upsert=True,
-    )
+            # Mark mobile as verified
+            cur.execute(
+                "INSERT INTO verified_mobiles (mobile, epic_no, verified_at) "
+                "VALUES (%s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE epic_no=VALUES(epic_no), verified_at=VALUES(verified_at)",
+                (mobile, epic_no, now)
+            )
+    finally:
+        conn.close()
 
     return {'card_url': card_url, 'photo_url': photo_url, 'ptc_code': ptc_code}
 
@@ -724,7 +775,6 @@ def _handle_set_pin(phone: str, text: str):
 def _handle_confirm_pin(phone: str, text: str):
     """User confirms the PIN."""
     sess = _get_session(phone)
-    db = _get_db_collections()
 
     pin = text.strip()
     if pin != sess.get('pin', ''):
@@ -739,8 +789,13 @@ def _handle_confirm_pin(phone: str, text: str):
     from security_fixes import hash_pin
     hashed = hash_pin(pin)
 
-    db['stats_col'].update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed}})
-    db['gen_voters_col'].update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed}})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE generation_stats SET secret_pin = %s WHERE auth_mobile = %s", (hashed, mobile))
+            cur.execute("UPDATE generated_voters SET secret_pin = %s WHERE MOBILE_NO = %s", (hashed, mobile))
+    finally:
+        conn.close()
 
     sess.pop('pin', None)
     logger.info(f"PIN set via WhatsApp for {mobile[:2]}****{mobile[-2:]}")
@@ -790,7 +845,6 @@ def _handle_confirm_pin(phone: str, text: str):
 def _handle_pin_login(phone: str, text: str, button_id: str):
     """Returning user enters PIN or taps Forgot PIN."""
     sess = _get_session(phone)
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
     # Forgot PIN flow
@@ -804,7 +858,13 @@ def _handle_pin_login(phone: str, text: str, button_id: str):
         api.send_text(phone, "Please enter a valid *4-digit PIN*.\n\n_Type only numbers (e.g. 1234)_")
         return
 
-    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'secret_pin': 1, 'epic_no': 1, 'card_url': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT secret_pin, epic_no, card_url FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if not stat or not stat.get('secret_pin'):
         sess['state'] = STATE_MENU
         _send_main_menu(phone, "Welcome back!")
@@ -825,7 +885,13 @@ def _handle_pin_login(phone: str, text: str, button_id: str):
     sess['epic_no'] = stat.get('epic_no', '')
     card_url = stat.get('card_url', '')
     if card_url:
-        gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'name': 1})
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                gen_doc = cur.fetchone()
+        finally:
+            conn.close()
         name = gen_doc.get('name', '') if gen_doc else ''
         api.send_image(
             phone,
@@ -845,20 +911,29 @@ def _handle_forgot_otp(phone: str, text: str):
     """User enters OTP for PIN reset."""
     sess = _get_session(phone)
     mobile = sess.get('mobile', phone[-10:])
-    db = _get_db_collections()
 
     otp = text.strip()
     if not re.match(r'^\d{6}$', otp):
         api.send_text(phone, "Please enter a valid *6-digit OTP*.\n\n_Type only numbers (e.g. 123456)_")
         return
 
-    doc = db['otp_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT otp, created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            doc = cur.fetchone()
+    finally:
+        conn.close()
     if not doc or doc.get('otp') != otp:
         api.send_text(phone, "❌ Invalid OTP. Please try again.\n\n_Type the 6-digit number from your SMS_")
         return
 
     try:
-        created = datetime.fromisoformat(doc['created_at'])
+        created = doc['created_at']
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - created).total_seconds() > 300:
             api.send_text(phone, "⏰ OTP expired. Send *Hi* to start again.")
             _clear_session(phone)
@@ -886,7 +961,6 @@ def _handle_reset_pin(phone: str, text: str):
 def _handle_reset_confirm_pin(phone: str, text: str):
     """User confirms new PIN during reset."""
     sess = _get_session(phone)
-    db = _get_db_collections()
 
     pin = text.strip()
     if pin != sess.get('reset_pin', ''):
@@ -900,9 +974,14 @@ def _handle_reset_confirm_pin(phone: str, text: str):
     from security_fixes import hash_pin
     hashed = hash_pin(pin)
 
-    db['stats_col'].update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed}})
-    db['gen_voters_col'].update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed}})
-    db['otp_col'].delete_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE generation_stats SET secret_pin = %s WHERE auth_mobile = %s", (hashed, mobile))
+            cur.execute("UPDATE generated_voters SET secret_pin = %s WHERE MOBILE_NO = %s", (hashed, mobile))
+            cur.execute("DELETE FROM otp_sessions WHERE mobile = %s", (mobile,))
+    finally:
+        conn.close()
 
     sess.pop('reset_pin', None)
     logger.info(f"PIN reset via WhatsApp for {mobile[:2]}****{mobile[-2:]}")
@@ -911,10 +990,22 @@ def _handle_reset_confirm_pin(phone: str, text: str):
 
     sess['authenticated'] = True
     # Show card and menu
-    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'card_url': 1, 'epic_no': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT card_url, epic_no FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
         sess['epic_no'] = stat.get('epic_no', '')
-        gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'name': 1})
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                gen_doc = cur.fetchone()
+        finally:
+            conn.close()
         name = gen_doc.get('name', '') if gen_doc else ''
         api.send_image(phone, stat['card_url'],
                        caption=f"🪪 Your ID Card\n*Name:* {name}\n*EPIC:* {sess.get('epic_no', '')}")
@@ -985,12 +1076,23 @@ def _handle_menu_selection(phone: str, list_row_id: str, button_id: str, text: s
 
 def _menu_view_card(phone: str, sess: dict):
     """View ID Card."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    stat = db['stats_col'].find_one({'auth_mobile': mobile}, {'card_url': 1, 'epic_no': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT card_url, epic_no FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
-        gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'name': 1})
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                gen_doc = cur.fetchone()
+        finally:
+            conn.close()
         name = gen_doc.get('name', '') if gen_doc else ''
         epic = stat.get('epic_no', '')
         card_url = stat['card_url']
@@ -1018,20 +1120,30 @@ def _menu_view_card(phone: str, sess: dict):
 
 def _menu_profile(phone: str, sess: dict):
     """View voter profile."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'_id': 0, 'secret_pin': 0})
+    from app import _translate_gen_row
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = _translate_gen_row(cur.fetchone())
+    finally:
+        conn.close()
     if not gen_doc:
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    # Get original voter data
+    # Remove sensitive fields
+    gen_doc.pop('secret_pin', None)
+
+    # Get original voter data from MySQL
+    from app import find_voter_by_epic
     voter_doc = None
     epic = gen_doc.get('epic_no', '')
     if epic:
-        voter_doc = db['voters_col'].find_one({'epic_no': epic}, {'_id': 0})
+        voter_doc = find_voter_by_epic(epic)
 
     profile = {}
     if voter_doc:
@@ -1058,8 +1170,14 @@ def _menu_profile(phone: str, sess: dict):
     # Send photo with profile details as caption if photo exists
     photo_url = profile.get('photo_url', '')
     if not photo_url:
-        stat = db['stats_col'].find_one({'epic_no': epic}, {'photo_url': 1})
-        photo_url = stat.get('photo_url', '') if stat else ''
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT photo_url FROM generation_stats WHERE epic_no = %s", (epic,))
+                stat_row = cur.fetchone()
+        finally:
+            conn.close()
+        photo_url = stat_row.get('photo_url', '') if stat_row else ''
 
     if photo_url:
         api.send_image(phone, photo_url, caption=profile_text)
@@ -1071,17 +1189,24 @@ def _menu_profile(phone: str, sess: dict):
 
 def _menu_booth(phone: str, sess: dict):
     """View booth / polling station info."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    gen_doc = db['gen_voters_col'].find_one({'mobile': mobile}, {'_id': 0})
+    from app import _translate_gen_row
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = _translate_gen_row(cur.fetchone())
+    finally:
+        conn.close()
     if not gen_doc:
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
     epic = gen_doc.get('epic_no', '')
-    voter_doc = db['voters_col'].find_one({'epic_no': epic}, {'_id': 0}) if epic else None
+    from app import find_voter_by_epic
+    voter_doc = find_voter_by_epic(epic) if epic else None
 
     merged = {}
     if voter_doc:
@@ -1119,16 +1244,22 @@ def _menu_booth(phone: str, sess: dict):
 
 def _menu_referral(phone: str, sess: dict):
     """Get referral link."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    result = db['get_or_create_referral'](voter['ptc_code'])
+    from app import get_or_create_referral
+    result = get_or_create_referral(voter['ptc_code'])
     if result:
         link = result['referral_link']
         # Send as a single shareable message — user can long-press to forward
@@ -1150,19 +1281,32 @@ def _menu_referral(phone: str, sess: dict):
 
 def _menu_members(phone: str, sess: dict):
     """View referred members."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    members = list(db['gen_voters_col'].find(
-        {'referred_by_ptc': voter['ptc_code']},
-        {'_id': 0, 'name': 1, 'epic_no': 1, 'assembly': 1},
-    ).sort('generated_at', -1).limit(20))
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, "
+                "EPIC_NO AS epic_no, CAST(AC_NO AS CHAR) AS assembly FROM generated_voters "
+                "WHERE referred_by_ptc = %s ORDER BY generated_at DESC LIMIT 20",
+                (voter['ptc_code'],)
+            )
+            members = cur.fetchall()
+    finally:
+        conn.close()
 
     if not members:
         api.send_text(phone, "👥 You haven't referred any members yet.\n\nShare your referral link to get started!")
@@ -1177,16 +1321,27 @@ def _menu_members(phone: str, sess: dict):
 
 def _menu_volunteer(phone: str, sess: dict):
     """Submit volunteer request."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code, EPIC_NO AS epic_no, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, DISTRICT_NAME AS district FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    existing = db['volunteer_requests_col'].find_one({'ptc_code': voter['ptc_code']})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM volunteer_requests WHERE ptc_code = %s", (voter['ptc_code'],))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         status = existing.get('status', 'pending')
         api.send_text(phone, f"🙋 You have already submitted a volunteer request.\n*Status:* {status.title()}")
@@ -1213,7 +1368,6 @@ def _menu_volunteer(phone: str, sess: dict):
 def _handle_confirm_volunteer(phone: str, button_id: str, text: str):
     """Handle volunteer confirmation."""
     sess = _get_session(phone)
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
     if button_id == "cancel_volunteer" or text.lower() in ("cancel", "no"):
@@ -1225,28 +1379,31 @@ def _handle_confirm_volunteer(phone: str, button_id: str, text: str):
         api.send_text(phone, "Please tap *Confirm* or *Cancel*.")
         return
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code, EPIC_NO AS epic_no, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, DISTRICT_NAME AS district, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter:
         api.send_text(phone, "❌ Profile not found.")
         sess['state'] = STATE_MENU
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    doc = {
-        'ptc_code': voter['ptc_code'],
-        'epic_no': voter.get('epic_no', ''),
-        'name': voter.get('name', ''),
-        'mobile': mobile,
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'photo_url': voter.get('photo_url', ''),
-        'status': 'pending',
-        'requested_at': datetime.now(timezone.utc).isoformat(),
-        'reviewed_at': None,
-        'reviewed_by': None,
-        'source': 'whatsapp',
-    }
-    db['volunteer_requests_col'].insert_one(doc)
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO volunteer_requests (ptc_code, epic_no, name, mobile, assembly, photo_url, status, requested_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (voter['ptc_code'], voter.get('epic_no', ''), voter.get('name', ''),
+                 mobile, voter.get('assembly', ''), voter.get('photo_url', ''),
+                 'pending', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+            )
+    finally:
+        conn.close()
     api.send_text(phone, "✅ Volunteer request submitted successfully!\nYou will be notified when it's reviewed.")
 
     sess['state'] = STATE_MENU
@@ -1255,16 +1412,27 @@ def _handle_confirm_volunteer(phone: str, button_id: str, text: str):
 
 def _menu_booth_agent(phone: str, sess: dict):
     """Submit booth agent request."""
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code, EPIC_NO AS epic_no, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, DISTRICT_NAME AS district FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         api.send_text(phone, "❌ Profile not found.")
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    existing = db['booth_agent_requests_col'].find_one({'ptc_code': voter['ptc_code']})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM booth_agent_requests WHERE ptc_code = %s", (voter['ptc_code'],))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         status = existing.get('status', 'pending')
         api.send_text(phone, f"🏢 You have already submitted a booth agent request.\n*Status:* {status.title()}")
@@ -1291,7 +1459,6 @@ def _menu_booth_agent(phone: str, sess: dict):
 def _handle_confirm_booth_agent(phone: str, button_id: str, text: str):
     """Handle booth agent confirmation."""
     sess = _get_session(phone)
-    db = _get_db_collections()
     mobile = sess.get('mobile', phone[-10:])
 
     if button_id == "cancel_booth_agent" or text.lower() in ("cancel", "no"):
@@ -1303,28 +1470,33 @@ def _handle_confirm_booth_agent(phone: str, button_id: str, text: str):
         api.send_text(phone, "Please tap *Confirm* or *Cancel*.")
         return
 
-    voter = db['gen_voters_col'].find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code, EPIC_NO AS epic_no, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, MOBILE_NO AS mobile, COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, DISTRICT_NAME AS district, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter:
         api.send_text(phone, "❌ Profile not found.")
         sess['state'] = STATE_MENU
         _send_main_menu(phone, "What else would you like to do?")
         return
 
-    doc = {
-        'ptc_code': voter['ptc_code'],
-        'epic_no': voter.get('epic_no', ''),
-        'name': voter.get('name', ''),
-        'mobile': mobile,
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'photo_url': voter.get('photo_url', ''),
-        'status': 'pending',
-        'requested_at': datetime.now(timezone.utc).isoformat(),
-        'reviewed_at': None,
-        'reviewed_by': None,
-        'source': 'whatsapp',
-    }
-    db['booth_agent_requests_col'].insert_one(doc)
+    now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO booth_agent_requests
+                   (ptc_code, epic_no, name, mobile, assembly, photo_url, status, requested_at, source)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, 'whatsapp')""",
+                (voter['ptc_code'], voter.get('epic_no', ''), voter.get('name', ''),
+                 mobile, voter.get('assembly', ''), voter.get('photo_url', ''), now_iso)
+            )
+            conn.commit()
+    finally:
+        conn.close()
     api.send_text(phone, "✅ Booth agent request submitted successfully!\nYou will be notified when it's reviewed.")
 
     sess['state'] = STATE_MENU

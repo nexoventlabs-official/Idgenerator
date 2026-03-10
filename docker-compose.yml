@@ -24,8 +24,12 @@ services:
     command: celery -A tasks worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - MONGO_URI=${MONGO_URI}
-      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DB=${MYSQL_DB}
+      - MYSQL_VOTERS_TABLE=${MYSQL_VOTERS_TABLE}
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
       - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
@@ -41,8 +45,12 @@ services:
     command: gunicorn app:app --bind 0.0.0.0:5000 --timeout 30 --workers 5 --threads 2
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - MONGO_URI=${MONGO_URI}
-      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DB=${MYSQL_DB}
+      - MYSQL_VOTERS_TABLE=${MYSQL_VOTERS_TABLE}
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
       - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
@@ -66,8 +74,12 @@ services:
     command: gunicorn app:app --bind 0.0.0.0:5000 --timeout 30 --workers 5 --threads 2
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - MONGO_URI=${MONGO_URI}
-      - GEN_MONGO_URI=${GEN_MONGO_URI}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DB=${MYSQL_DB}
+      - MYSQL_VOTERS_TABLE=${MYSQL_VOTERS_TABLE}
       - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
       - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
       - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}

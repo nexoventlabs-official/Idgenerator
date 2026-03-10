@@ -18,7 +18,7 @@
             class="bi bi-x-lg"></i></button>
       </div>
     </div>
-    <div class="col-lg-3 col-md-3">
+    <div class="col-lg-2 col-md-3">
       <select id="filterAssembly" class="form-select form-select-sm">
         <option value="">All Assemblies</option>
         {% for a in assemblies %}
@@ -26,7 +26,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-lg-3 col-md-3">
+    <div class="col-lg-2 col-md-3">
       <select id="filterDistrict" class="form-select form-select-sm">
         <option value="">All Districts</option>
         {% for d in districts %}
@@ -34,6 +34,7 @@
         {% endfor %}
       </select>
     </div>
+
     <div class="col-lg-2 col-md-12">
       <div class="d-flex align-items-center justify-content-end gap-2" style="font-size:0.82rem;">
         <span class="text-muted">Show</span>
@@ -87,6 +88,7 @@
     var clearBtn = document.getElementById('clearSearch');
     var filterAsm = document.getElementById('filterAssembly');
     var filterDist = document.getElementById('filterDistrict');
+
     var tbody = document.getElementById('votersBody');
     var countLabel = document.getElementById('countLabel');
     var paginationNav = document.getElementById('paginationNav');
@@ -111,12 +113,12 @@
 
       var q = searchInput.value.trim();
       var asm = filterAsm.value;
-      var dst = filterDist.value;
+      var dist = filterDist.value;
 
       var params = new URLSearchParams();
       if (q) params.set('search', q);
       if (asm) params.set('assembly', asm);
-      if (dst) params.set('district', dst);
+      if (dist) params.set('district', dist);
       params.set('per_page', perPage);
 
       if (opts.cursor) {
@@ -136,7 +138,7 @@
         renderTable(cached.voters, cached.page || 1, cached.per_page, cached.total, q);
         renderPagination(cached);
         countLabel.textContent = cached.total;
-        updateActiveFilters(q, asm, dst);
+updateActiveFilters(q, asm, dist);
         updateClearBtn(q);
         return;
       }
@@ -165,14 +167,14 @@
           }
         });
 
-      updateActiveFilters(q, asm, dst);
+      updateActiveFilters(q, asm, dist);
       updateClearBtn(q);
     }
 
     /* â”€â”€ Render table rows â”€â”€ */
     function renderTable(voters, page, pp, total, query) {
       if (!voters.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="no-results">' +
+        tbody.innerHTML = '<tr><td colspan="9" class="no-results">' +
           '<i class="bi bi-inbox d-block mb-2"></i>No voters match your search.</td></tr>';
         return;
       }
@@ -204,7 +206,7 @@
           '<td>' + photoCell + '</td>' +
           '<td><code>' + highlight(v.epic_no, hl) + '</code></td>' +
           '<td class="fw-semibold">' + highlight(v.name, hl) + '</td>' +
-          '<td>' + highlight(v.assembly || '-', hl) + '</td>' +
+          '<td>' + highlight(v.assembly_name || v.assembly || '-', hl) + '</td>' +
           '<td>' + highlight(v.district || '-', hl) + '</td>' +
           '<td class="text-center">' + genCell + '</td>' +
           '<td style="font-size:0.8rem;color:#888;">' + lastGen + '</td>' +
@@ -322,19 +324,19 @@
     }
 
     /* â”€â”€ Active filter badges â”€â”€ */
-    function updateActiveFilters(q, asm, dst) {
+    function updateActiveFilters(q, asm, dist) {
       var badges = '';
       if (q) {
         badges += '<span class="active-filter" onclick="clearF(\'search\')">' +
-          '<i class="bi bi-search"></i> "' + escHtml(q) + '" <span class="x">Ã—</span></span>';
+          '<i class="bi bi-search"></i> "' + escHtml(q) + '" <span class="x">×</span></span>';
       }
       if (asm) {
         badges += '<span class="active-filter" onclick="clearF(\'assembly\')">' +
-          '<i class="bi bi-building"></i> ' + escHtml(asm) + ' <span class="x">Ã—</span></span>';
+          '<i class="bi bi-building"></i> ' + escHtml(asm) + ' <span class="x">×</span></span>';
       }
-      if (dst) {
+      if (dist) {
         badges += '<span class="active-filter" onclick="clearF(\'district\')">' +
-          '<i class="bi bi-geo-alt"></i> ' + escHtml(dst) + ' <span class="x">Ã—</span></span>';
+          '<i class="bi bi-geo-alt"></i> ' + escHtml(dist) + ' <span class="x">×</span></span>';
       }
       if (badges) {
         activeFilters.style.display = '';

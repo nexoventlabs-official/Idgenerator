@@ -259,7 +259,7 @@
           '<td><code>' + highlight(v.epic_no || '-', hl) + '</code></td>' +
           '<td class="fw-semibold">' + highlight(v.name || '-', hl) + '</td>' +
           '<td>' + highlight(v.mobile || '-', hl) + '</td>' +
-          '<td>' + highlight(v.assembly || '-', hl) + '</td>' +
+          '<td>' + highlight(v.assembly_name || v.assembly || '-', hl) + '</td>' +
           '<td><code style="font-size:0.78rem;">' + highlight(refId, hl) + '</code></td>' +
           '<td class="ref-count-cell" data-ptc="' + escHtml(v.ptc_code) + '" style="cursor:pointer;" title="View referred voters"><span class="badge bg-' + (refCount > 0 ? 'success' : 'secondary') + '">' + refCount + '</span></td>' +
           '<td style="font-size:0.8rem;color:#888;">' + genAt + '</td>' +
@@ -314,7 +314,7 @@
       html += '<tr><th>Name</th><td class="fw-semibold">' + escHtml(v.name || '-') + '</td></tr>';
       html += '<tr><th>Mobile</th><td><i class="bi bi-phone-fill text-success"></i> +91 ' + escHtml(v.mobile || '-') + '</td></tr>';
       html += '<tr><th>Secret PIN</th><td><code style="font-size:1.1rem; letter-spacing:2px; color:#e65100; font-weight:700;">' + escHtml(v.secret_pin || '-') + '</code></td></tr>';
-      html += '<tr><th>Assembly</th><td>' + escHtml(v.assembly || '-') + '</td></tr>';
+      html += '<tr><th>Assembly</th><td>' + escHtml(v.assembly_name || v.assembly || '-') + '</td></tr>';
       html += '<tr><th>District</th><td>' + escHtml(v.district || '-') + '</td></tr>';
       html += '<tr><th>Generated At</th><td>' + genAt + '</td></tr>';
       html += '</table>';

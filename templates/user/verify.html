@@ -373,9 +373,15 @@
         <span>Member Information</span>
       </div>
       <div class="row-item">
-        <span class="row-label">Name</span>
+        <span class="row-label">Name (English)</span>
         <span class="row-value">{{ voter.name }}</span>
       </div>
+      {% if voter.name_v1 %}
+      <div class="row-item">
+        <span class="row-label">Name (Vernacular)</span>
+        <span class="row-value">{{ voter.name_v1 }}</span>
+      </div>
+      {% endif %}
       <div class="row-item">
         <span class="row-label">Epic Number</span>
         <span class="row-value mono">{{ voter.epic_no }}</span>
@@ -386,39 +392,157 @@
         <span class="row-value mono green">{{ voter.ptc_code }}</span>
       </div>
       {% endif %}
-      {% if voter.auth_mobile %}
+      {% if voter.age %}
+      <div class="row-item">
+        <span class="row-label">Age</span>
+        <span class="row-value">{{ voter.age }}</span>
+      </div>
+      {% endif %}
+      {% if voter.sex %}
+      <div class="row-item">
+        <span class="row-label">Gender</span>
+        <span class="row-value">{{ voter.sex }}</span>
+      </div>
+      {% endif %}
+      {% if voter.dob %}
+      <div class="row-item">
+        <span class="row-label">Date of Birth</span>
+        <span class="row-value">{{ voter.dob }}</span>
+      </div>
+      {% endif %}
+      {% if voter.auth_mobile_masked %}
       <div class="row-item">
         <span class="row-label">Auth Mobile</span>
-        <span class="row-value">+91 {{ voter.auth_mobile }}</span>
+        <span class="row-value">+91 {{ voter.auth_mobile_masked }}</span>
       </div>
       {% endif %}
-      {% if voter.assembly %}
+    </div>
+
+    <!-- Relation Details -->
+    {% if voter.relation_type or voter.relation_name %}
+    <div class="info-block" style="animation-delay:0.22s;">
+      <div class="block-header">
+        <div class="icon-wrap purple"><i class="bi bi-people"></i></div>
+        <span>Relation Details</span>
+      </div>
+      {% if voter.relation_type %}
       <div class="row-item">
-        <span class="row-label">Assembly</span>
-        <span class="row-value">{{ voter.assembly }}</span>
+        <span class="row-label">Relation Type</span>
+        <span class="row-value">{{ voter.relation_type }}</span>
       </div>
       {% endif %}
+      {% if voter.relation_name %}
+      <div class="row-item">
+        <span class="row-label">Relation Name (EN)</span>
+        <span class="row-value">{{ voter.relation_name }}</span>
+      </div>
+      {% endif %}
+      {% if voter.relation_name_v1 %}
+      <div class="row-item">
+        <span class="row-label">Relation Name (Vernacular)</span>
+        <span class="row-value">{{ voter.relation_name_v1 }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Electoral Details -->
+    <div class="info-block" style="animation-delay:0.24s;">
+      <div class="block-header">
+        <div class="icon-wrap amber"><i class="bi bi-building"></i></div>
+        <span>Electoral Details</span>
+      </div>
       {% if voter.district %}
       <div class="row-item">
         <span class="row-label">District</span>
         <span class="row-value">{{ voter.district }}</span>
       </div>
       {% endif %}
+      {% if voter.assembly_name or voter.assembly %}
+      <div class="row-item">
+        <span class="row-label">Assembly</span>
+        <span class="row-value">{{ voter.assembly_name or voter.assembly }}</span>
+      </div>
+      {% endif %}
+      {% if voter.part_no %}
+      <div class="row-item">
+        <span class="row-label">Part No</span>
+        <span class="row-value">{{ voter.part_no }}</span>
+      </div>
+      {% endif %}
+      {% if voter.section_no %}
+      <div class="row-item">
+        <span class="row-label">Section No</span>
+        <span class="row-value">{{ voter.section_no }}</span>
+      </div>
+      {% endif %}
+      {% if voter.slno_in_part %}
+      <div class="row-item">
+        <span class="row-label">Serial No in Part</span>
+        <span class="row-value">{{ voter.slno_in_part }}</span>
+      </div>
+      {% endif %}
+      {% if voter.house_no %}
+      <div class="row-item">
+        <span class="row-label">House No</span>
+        <span class="row-value">{{ voter.house_no }}</span>
+      </div>
+      {% endif %}
+      {% if voter.house_no_v1 %}
+      <div class="row-item">
+        <span class="row-label">House No (Vernacular)</span>
+        <span class="row-value">{{ voter.house_no_v1 }}</span>
+      </div>
+      {% endif %}
     </div>
 
-    <!-- Extra Fields -->
-    {% if extra_fields %}
-    <div class="info-block" style="animation-delay:0.25s;">
+    <!-- Volunteer / Booth Agent Status -->
+    {% if voter.volunteer_status or voter.booth_agent_status %}
+    <div class="info-block" style="animation-delay:0.26s;">
       <div class="block-header">
-        <div class="icon-wrap purple"><i class="bi bi-list-columns-reverse"></i></div>
-        <span>Additional Details</span>
+        <div class="icon-wrap" style="background:rgba(236,72,153,0.1); color:#ec4899;"><i class="bi bi-person-badge"></i></div>
+        <span>Role Status</span>
       </div>
-      {% for key, val in extra_fields.items() %}
+      {% if voter.volunteer_status %}
       <div class="row-item">
-        <span class="row-label">{{ key.replace('_', ' ').replace(' x', '').title() }}</span>
-        <span class="row-value">{{ val }}</span>
+        <span class="row-label">Volunteer</span>
+        <span class="row-value">
+          {% if voter.volunteer_status == 'confirmed' %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,0.12);color:#22c55e;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(34,197,94,0.2);">
+            <i class="bi bi-check-circle-fill"></i> Confirmed
+          </span>
+          {% elif voter.volunteer_status == 'pending' %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(245,158,11,0.12);color:#f59e0b;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(245,158,11,0.2);">
+            <i class="bi bi-hourglass-split"></i> Pending
+          </span>
+          {% else %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(239,68,68,0.12);color:#ef4444;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.2);">
+            <i class="bi bi-x-circle-fill"></i> {{ voter.volunteer_status|title }}
+          </span>
+          {% endif %}
+        </span>
       </div>
-      {% endfor %}
+      {% endif %}
+      {% if voter.booth_agent_status %}
+      <div class="row-item">
+        <span class="row-label">Booth Agent</span>
+        <span class="row-value">
+          {% if voter.booth_agent_status == 'confirmed' %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,0.12);color:#22c55e;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(34,197,94,0.2);">
+            <i class="bi bi-check-circle-fill"></i> Confirmed
+          </span>
+          {% elif voter.booth_agent_status == 'pending' %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(245,158,11,0.12);color:#f59e0b;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(245,158,11,0.2);">
+            <i class="bi bi-hourglass-split"></i> Pending
+          </span>
+          {% else %}
+          <span style="display:inline-flex;align-items:center;gap:5px;background:rgba(239,68,68,0.12);color:#ef4444;font-size:0.78rem;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.2);">
+            <i class="bi bi-x-circle-fill"></i> {{ voter.booth_agent_status|title }}
+          </span>
+          {% endif %}
+        </span>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 

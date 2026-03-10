@@ -1602,22 +1602,6 @@
           <i class="bi bi-person-check-fill"></i> Generated Voters
         </a>
       </li>
-      <li>
-        <a href="{{ url_for('admin.import_xlsx') }}" class="{{ 'active' if request.endpoint == 'admin.import_xlsx' }}">
-          <i class="bi bi-file-earmark-spreadsheet"></i> Import XLSX
-        </a>
-        <!-- Global Import Progress Indicator -->
-        <div id="globalImportBar" style="display:none;margin:6px 12px 2px;padding:8px 10px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:10px;font-size:0.75rem;">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <i class="bi bi-arrow-repeat" id="gImportIcon" style="color:#a78bfa;animation:spin 1s linear infinite;font-size:0.85rem;"></i>
-            <span id="gImportTitle" style="color:#c4b5fd;font-weight:600;">Importing...</span>
-          </div>
-          <div id="gImportDetail" style="color:#a1a1aa;font-size:0.7rem;margin-bottom:5px;">0 records</div>
-          <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">
-            <div id="gImportFill" style="height:100%;width:0%;border-radius:2px;background:linear-gradient(90deg,#8b5cf6,#a78bfa);transition:width 0.4s ease;"></div>
-          </div>
-        </div>
-      </li>
     </ul>
     <div class="sidebar-section">Volunteer & Booth Agent</div>
     <ul class="sidebar-nav">
@@ -1672,7 +1656,7 @@
         <h5>{% block page_title %}Dashboard{% endblock %}</h5>
       </div>
       <div class="text-muted" style="font-size:0.8rem;">
-        <i class="bi bi-database"></i> MongoDB &nbsp;|&nbsp;
+        <i class="bi bi-database"></i> MySQL &nbsp;|&nbsp;
         <i class="bi bi-cloud"></i> Cloudinary
       </div>
     </div>
@@ -1705,62 +1689,6 @@
         return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-');
       } catch (e) { return isoStr ? isoStr.substring(0, 19).replace('T', ' ') : '-'; }
     }
-
-    /* ── Global Import Progress Poller ── */
-    (function(){
-      var bar=document.getElementById('globalImportBar'),
-          fill=document.getElementById('gImportFill'),
-          title=document.getElementById('gImportTitle'),
-          detail=document.getElementById('gImportDetail'),
-          icon=document.getElementById('gImportIcon');
-      if(!bar) return;
-      var timer=null, doneTimer=null;
-      function fmt(n){return n>=10000000?(n/10000000).toFixed(1)+' Cr':n>=100000?(n/100000).toFixed(1)+' L':n>=1000?(n/1000).toFixed(1)+' K':String(n);}
-      function poll(){
-        fetch("{{ url_for('admin.api_import_status') }}")
-          .then(function(r){return r.json();})
-          .then(function(d){
-            if(d.running){
-              bar.style.display='block';
-              if(d.phase==='parsing'){
-                title.textContent='Parsing file...';
-                var t=d.total||0;
-                detail.textContent=t>0?fmt(t)+' rows found':'Counting rows...';
-                fill.style.width='0%';
-              } else {
-                title.textContent='Importing...';
-                var ins=d.inserted||0, tot=d.total||0, proc=d.processed||0;
-                detail.textContent=tot>0?fmt(proc)+' / '+fmt(tot)+' rows':fmt(ins)+' inserted';
-                fill.style.width=tot>0?Math.min(100,Math.round(proc/tot*100))+'%':'0%';
-              }
-              icon.style.animation='spin 1s linear infinite';
-            } else if(d.phase==='done'){
-              bar.style.display='block';
-              title.textContent='Import complete';
-              detail.textContent=fmt(d.inserted||0)+' records imported';
-              fill.style.width='100%';
-              icon.className='bi bi-check-circle-fill';
-              icon.style.animation='none';
-              icon.style.color='#4ade80';
-              if(!doneTimer) doneTimer=setTimeout(function(){bar.style.display='none';doneTimer=null;icon.className='bi bi-arrow-repeat';icon.style.color='#a78bfa';},8000);
-            } else if(d.phase==='error'){
-              bar.style.display='block';
-              title.textContent='Import failed';
-              detail.textContent=d.error||'Unknown error';
-              fill.style.width='0%';
-              icon.className='bi bi-exclamation-triangle-fill';
-              icon.style.animation='none';
-              icon.style.color='#f87171';
-              if(!doneTimer) doneTimer=setTimeout(function(){bar.style.display='none';doneTimer=null;icon.className='bi bi-arrow-repeat';icon.style.color='#a78bfa';},10000);
-            } else {
-              bar.style.display='none';
-            }
-          })
-          .catch(function(){});
-      }
-      poll();
-      timer=setInterval(poll,2000);
-    })();
   </script>
   {% block extra_js %}{% endblock %}
 </body>

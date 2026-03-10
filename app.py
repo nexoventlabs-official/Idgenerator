@@ -2,14 +2,13 @@
 Voter ID Card Generator v4.0 - Web App
 ========================================
 - User  : /       Enter Epic Number + optional photo -> Generate & Download Card
-- Admin : /admin  Import XLSX/CSV, view voters & generation stats
+- Admin : /admin  View voters & generation stats
 
-Database : MongoDB Atlas
+Database : MySQL (all data - voters, generated cards, stats, OTP, etc.)
 Photos   : Cloudinary (user uploads)
 Cards    : Cloudinary (generated_cards folder)
 """
 
-import csv
 import io
 import json
 import os
@@ -32,7 +31,8 @@ import requests as http_requests
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from pymongo import MongoClient, ASCENDING, DESCENDING
+import pymysql
+from dbutils.pooled_db import PooledDB
 
 try:
     import redis as _redis_lib
@@ -104,7 +104,6 @@ limiter = Limiter(
 )
 
 ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'bmp'}
-ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
 
 logger = setup_logging()
 
@@ -183,7 +182,9 @@ def set_security_headers(response):
     # API responses should not be cached
     elif request.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    # HTML pages get short cache
+    # HTML pages — no cache in dev, short cache in production
+    elif os.getenv('FLASK_ENV') == 'development':
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     else:
         response.headers['Cache-Control'] = 'public, max-age=300'  # 5 minutes
     
@@ -211,131 +212,69 @@ def to_ist(dt_str):
     except Exception:
         return str(dt_str)[:19].replace('T', ' ') if dt_str else '-'
 
-ALLOWED_IMG = {'png', 'jpg', 'jpeg', 'bmp'}
-ALLOWED_DATA = {'xlsx', 'xls', 'csv'}
-
-# Logger already initialized above
-
-# ── MongoDB Setup (Main DB - voter data from XLSX imports, READ-ONLY after import) ──
-# PHASE 2: Configure read preference for read replicas
-from pymongo import ReadPreference
-
-mongo_client = MongoClient(
-    config.MONGO_URI,
-    serverSelectionTimeoutMS=5000,
-    maxPoolSize=200,         # SCALABILITY FIX: Increased from 50 to handle more concurrent connections
-    minPoolSize=20,          # SCALABILITY FIX: Increased from 5 for better burst handling
-    maxIdleTimeMS=30000,
-    connectTimeoutMS=10000,
-    socketTimeoutMS=300000,  # 5 min for large bulk imports
-    # PHASE 2: Use secondary preferred for read-heavy operations
-    readPreference='secondaryPreferred',
-    # PHASE 2: Enable retryable reads for better reliability
-    retryReads=True,
-    retryWrites=True,
+# ── MySQL Setup (Voter rolls — READ-ONLY, separate DB) ────────────
+mysql_voters_pool = PooledDB(
+    creator=pymysql,
+    maxconnections=20,
+    mincached=2,
+    maxcached=10,
+    blocking=True,
+    host=config.MYSQL_HOST,
+    port=config.MYSQL_PORT,
+    user=config.MYSQL_USER,
+    passwd=config.MYSQL_PASSWORD,
+    db=config.MYSQL_VOTERS_DB,
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=True,
 )
-db = mongo_client[config.MONGO_DB_NAME]
-voters_col = db[config.MONGO_VOTERS_COLLECTION]
+VOTERS_TABLE = config.MYSQL_VOTERS_TABLE
+logger.info("MySQL connection pool created for voter data (read-only).")
 
-# ── MongoDB Setup (Generated Voters DB - all card-generation activity) ──
-gen_mongo_client = MongoClient(
-    config.GEN_MONGO_URI,
-    serverSelectionTimeoutMS=5000,
-    maxPoolSize=200,         # SCALABILITY FIX: Increased from 50
-    minPoolSize=20,          # SCALABILITY FIX: Increased from 5
-    maxIdleTimeMS=30000,
-    connectTimeoutMS=5000,
-    socketTimeoutMS=10000,
-    # PHASE 2: Use secondary preferred for read-heavy operations
-    readPreference='secondaryPreferred',
-    # PHASE 2: Enable retryable reads/writes
-    retryReads=True,
-    retryWrites=True,
+# ── Load assembly → table_name mapping at startup ─────────────────
+_ASSEMBLY_TABLES = []   # list of {'table_name':..., 'assembly_name':..., 'assembly_no':..., 'district_name':...}
+_TABLE_BY_ASSEMBLY = {} # assembly_name (lower) → table_name
+try:
+    _tmp_conn = mysql_voters_pool.connection()
+    try:
+        with _tmp_conn.cursor() as _cur:
+            _cur.execute("SELECT table_name, assembly_name, assembly_no, district_name, total_voters FROM tbl_assembly_consitituency ORDER BY assembly_no")
+            _ASSEMBLY_TABLES = list(_cur.fetchall())
+            for _row in _ASSEMBLY_TABLES:
+                _TABLE_BY_ASSEMBLY[(_row.get('assembly_name') or '').lower()] = _row['table_name']
+    finally:
+        _tmp_conn.close()
+    logger.info("Loaded %d assembly table mappings.", len(_ASSEMBLY_TABLES))
+except Exception as _e:
+    logger.warning("Could not load assembly table mapping: %s", _e)
+
+def _get_voter_tables(assembly: str = '', district: str = '') -> list[str]:
+    """Return list of voter table names, optionally filtered by assembly/district."""
+    if assembly:
+        tbl = _TABLE_BY_ASSEMBLY.get(assembly.lower())
+        return [tbl] if tbl else []
+    if district:
+        return [r['table_name'] for r in _ASSEMBLY_TABLES
+                if (r.get('district_name') or '').lower() == district.lower()]
+    return [r['table_name'] for r in _ASSEMBLY_TABLES]
+
+# ── MySQL Setup (Generated data — READ/WRITE) ────────────────────
+mysql_pool = PooledDB(
+    creator=pymysql,
+    maxconnections=50,
+    mincached=5,
+    maxcached=20,
+    blocking=True,
+    host=config.MYSQL_HOST,
+    port=config.MYSQL_PORT,
+    user=config.MYSQL_USER,
+    passwd=config.MYSQL_PASSWORD,
+    db=config.MYSQL_DB,
+    charset='utf8mb4',
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=True,
 )
-gen_db = gen_mongo_client[config.GEN_MONGO_DB_NAME]
-gen_voters_col = gen_db[config.GEN_MONGO_COLLECTION]
-stats_col = gen_db[config.MONGO_STATS_COLLECTION]
-verified_mobiles_col = gen_db['verified_mobiles']
-otp_col = gen_db['otp_sessions']
-volunteer_requests_col = gen_db['volunteer_requests']
-booth_agent_requests_col = gen_db['booth_agent_requests']
-
-# ── Background import state ──
-import_status = {
-    'running': False,
-    'phase': '',        # 'parsing', 'inserting', 'done', 'error'
-    'processed': 0,
-    'inserted': 0,
-    'total': 0,         # 0 until known
-    'message': '',
-    'error': '',
-}
-_import_lock = threading.Lock()
-
-# Ensure indexes (graceful - don't crash if Atlas is unreachable)
-try:
-    # 1st MongoDB - voter data only
-    voters_col.create_index('epic_no', unique=True)
-    # Compound indexes for filter & search at scale
-    voters_col.create_index([('assembly', 1), ('district', 1)])
-    voters_col.create_index([('name', 1)])
-    # Text index for fast $text search across multiple fields
-    try:
-        voters_col.create_index(
-            [('name', 'text'), ('epic_no', 'text'), ('assembly', 'text'), ('district', 'text')],
-            name='voters_text_search',
-            default_language='none',
-        )
-    except Exception:
-        pass  # Text index may already exist with different spec
-    logger.info("MongoDB (voters) connected & indexes ensured.")
-except Exception as e:
-    logger.warning(f"MongoDB (voters) index creation skipped: {e}")
-
-try:
-    # 2nd MongoDB - all generation activity
-    stats_col.create_index('epic_no', unique=True)
-    stats_col.create_index([('count', 1)])
-    stats_col.create_index([('auth_mobile', 1)])  # SCALABILITY FIX: Index for PIN verification
-    gen_voters_col.create_index('ptc_code', unique=True)
-    gen_voters_col.create_index('epic_no')
-    gen_voters_col.create_index('mobile')
-    gen_voters_col.create_index('referral_id', unique=True, sparse=True)
-    gen_voters_col.create_index('referred_by_ptc')
-    # CONCURRENCY FIX: Unique compound index to prevent race conditions
-    gen_voters_col.create_index([('epic_no', 1), ('mobile', 1)], unique=True, name='epic_mobile_unique')
-    # Compound indexes for filter, search & sort at scale
-    gen_voters_col.create_index([('assembly', 1), ('district', 1)])
-    gen_voters_col.create_index([('generated_at', -1)])
-    gen_voters_col.create_index([('name', 1)])
-    # Text index for fast $text search across multiple fields
-    try:
-        gen_voters_col.create_index(
-            [('name', 'text'), ('epic_no', 'text'), ('ptc_code', 'text'), ('mobile', 'text'), ('assembly', 'text'), ('district', 'text')],
-            name='gen_voters_text_search',
-            default_language='none',
-        )
-    except Exception:
-        pass  # Text index may already exist with different spec
-    otp_col.create_index('mobile', unique=True)
-    otp_col.create_index('created_at_dt', expireAfterSeconds=600)  # Auto-expire OTPs after 10 minutes
-    verified_mobiles_col.create_index('mobile', unique=True)
-    verified_mobiles_col.create_index('verified_at_dt', expireAfterSeconds=86400)  # Auto-expire after 24 hours
-    volunteer_requests_col.create_index('ptc_code', unique=True)
-    volunteer_requests_col.create_index('mobile')
-    volunteer_requests_col.create_index('status')
-    # Compound indexes for status + sort
-    volunteer_requests_col.create_index([('status', 1), ('requested_at', -1)])
-    volunteer_requests_col.create_index([('name', 1)])
-    booth_agent_requests_col.create_index('ptc_code', unique=True)
-    booth_agent_requests_col.create_index('mobile')
-    booth_agent_requests_col.create_index('status')
-    # Compound indexes for status + sort
-    booth_agent_requests_col.create_index([('status', 1), ('requested_at', -1)])
-    booth_agent_requests_col.create_index([('name', 1)])
-    logger.info("MongoDB (generated) connected & indexes ensured.")
-except Exception as e:
-    logger.warning(f"MongoDB (generated) index creation skipped: {e}")
+logger.info("MySQL connection pool created for generated data.")
 
 # ── Cloudinary Setup ─────────────────────────────────────────────
 cloudinary.config(
@@ -392,258 +331,182 @@ def _cache_set(key: str, value: dict, ttl: int = 60):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  MONGODB SEARCH / FILTER HELPERS  (for 5.6 Cr scale)
+#  SQL SEARCH / FILTER HELPERS
 # ══════════════════════════════════════════════════════════════════
 
-def _build_search_filter(search: str, fields: list[str]) -> dict:
-    """Build a MongoDB $or filter using case-insensitive regex across fields."""
+def _build_search_where(search: str, fields: list[str]) -> tuple[str, list]:
+    """Build a WHERE clause for searching across multiple fields. Returns (clause, params)."""
     if not search:
-        return {}
-    escaped = re.escape(search)
-    regex = {'$regex': escaped, '$options': 'i'}
-    return {'$or': [{f: regex} for f in fields]}
+        return '', []
+    like_val = f'%{search}%'
+    parts = [f'`{f}` LIKE %s' for f in fields]
+    return f"({' OR '.join(parts)})", [like_val] * len(parts)
 
 
-def _merge_conditions(conditions: list[dict]) -> dict:
-    """Merge a list of query conditions into a single MongoDB query."""
-    if not conditions:
-        return {}
-    if len(conditions) == 1:
-        return conditions[0]
-    return {'$and': conditions}
-
-
-def _build_cursor_filter(cursor_id: str, direction: str = 'next', descending: bool = True) -> dict:
-    """Build after/before filter for cursor-based pagination using _id.
-
-    descending=True  (sort _id:-1): 'next' = $lt, 'prev' = $gt
-    descending=False (sort _id:1):  'next' = $gt, 'prev' = $lt
-    """
-    if not cursor_id:
-        return {}
-    from bson import ObjectId
-    try:
-        oid = ObjectId(cursor_id)
-    except Exception:
-        return {}
-    if descending:
-        return {'_id': {'$lt': oid}} if direction == 'next' else {'_id': {'$gt': oid}}
-    else:
-        return {'_id': {'$gt': oid}} if direction == 'next' else {'_id': {'$lt': oid}}
+def _gen_mysql_upsert(table: str, data: dict, unique_keys: list[str]) -> tuple[str, list]:
+    """Build INSERT ... ON DUPLICATE KEY UPDATE query."""
+    cols = list(data.keys())
+    placeholders = ', '.join(['%s'] * len(cols))
+    col_names = ', '.join(f'`{c}`' for c in cols)
+    update_parts = ', '.join(f'`{c}` = VALUES(`{c}`)' for c in cols if c not in unique_keys)
+    sql = f"INSERT INTO `{table}` ({col_names}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_parts}"
+    return sql, list(data.values())
 
 
 
 # ══════════════════════════════════════════════════════════════════
-#  FILE PARSING HELPERS (XLSX / CSV -> list of dicts)
+#  MYSQL DATABASE HELPERS
 # ══════════════════════════════════════════════════════════════════
 
-def _match_column(header: str, candidates: list[str]) -> bool:
-    h = header.strip().lower()
-    for c in candidates:
-        if c.lower() == h or c.lower() in h or h in c.lower():
-            return True
-    return False
+def _get_voters_mysql():
+    """Get a connection from the voters MySQL pool (read-only DB)."""
+    return mysql_voters_pool.connection()
 
 
-def _safe_str(val):
-    """Convert cell value to clean string, return '' for None."""
-    if val is None:
-        return ''
-    return str(val).strip()
+def _get_mysql():
+    """Get a connection from the generated-data MySQL pool (read/write DB)."""
+    return mysql_pool.connection()
 
 
-def _iter_xlsx(xlsx_path: str):
-    """Generator: yield one voter dict at a time from an XLSX file (low memory)."""
-    import openpyxl
-    wb = openpyxl.load_workbook(xlsx_path, read_only=True)
-    ws = wb.active
-
-    headers = []
-    for cell in next(ws.iter_rows(min_row=1, max_row=1)):
-        headers.append(str(cell.value).strip() if cell.value else '')
-
-    col_map = {}
-    for field, candidates in config.XLSX_COLUMNS.items():
-        for idx, h in enumerate(headers):
-            if _match_column(h, candidates):
-                col_map[field] = idx
-                break
-
-    mapped_indices = set(col_map.values())
-    seen_epics = set()
-
-    for row in ws.iter_rows(min_row=2):
-        cells = [cell.value for cell in row]
-        epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
-
-        if not epic:
-            continue
-
-        epic_upper = epic.strip().upper()
-        if epic_upper in seen_epics:
-            continue
-        seen_epics.add(epic_upper)
-
-        voter = {'epic_no': epic}
-        # 1) Add all standard mapped fields EXCEPT lat_long
-        for field, idx in col_map.items():
-            if field in ('epic_no', 'lat_long'):
-                continue
-            voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
-
-        # 2) Add any extra/unmapped columns (after booth_address, before lat_long)
-        for idx, h in enumerate(headers):
-            if idx not in mapped_indices and h:
-                key = h.replace(' ', '_').lower()
-                val = _safe_str(cells[idx] if idx < len(cells) else '')
-                if val:
-                    voter[key] = val
-
-        # 3) Lat Long always last
-        if 'lat_long' in col_map:
-            ll_val = _safe_str(cells[col_map['lat_long']] if col_map['lat_long'] < len(cells) else '')
-            if ll_val:
-                parts = ll_val.split(',')
-                if len(parts) == 2:
-                    voter['latitude'] = parts[0].strip()
-                    voter['longitude'] = parts[1].strip()
-
-        yield voter
-
-    wb.close()
+def _translate_voter_row(row: dict) -> dict | None:
+    """Map MySQL column names to the internal field names used across the app.
+    Also preserves raw uppercase DB column values for generated_voters storage."""
+    if not row:
+        return None
+    r = {
+        'epic_no': row.get('EPIC_NO') or '',
+        'name': f"{row.get('FM_NAME_EN') or ''} {row.get('LASTNAME_EN') or ''}".strip(),
+        'assembly': str(row.get('AC_NO') or ''),
+        'age': row.get('AGE') or '',
+        'sex': row.get('GENDER') or '',
+        'relation_type': row.get('RLN_TYPE') or '',
+        'relation_name': f"{row.get('RLN_FM_NM_EN') or ''} {row.get('RLN_L_NM_EN') or ''}".strip(),
+        'mobile': row.get('MOBILE_NO') or '',
+        'part_no': str(row.get('PART_NO') or ''),
+        'section_no': str(row.get('SECTION_NO') or ''),
+        'slno_in_part': str(row.get('SLNOINPART') or ''),
+        'house_no': row.get('C_HOUSE_NO') or '',
+        'dob': row.get('DOB') or '',
+        'name_v1': f"{row.get('FM_NAME_V1') or ''} {row.get('LASTNAME_V1') or ''}".strip(),
+        'relation_name_v1': f"{row.get('RLN_FM_NM_V1') or ''} {row.get('RLN_L_NM_V1') or ''}".strip(),
+        'house_no_v1': row.get('C_HOUSE_NO_V1') or '',
+        'org_list_no': str(row.get('ORG_LIST_NO') or ''),
+        'assembly_name': row.get('ASSEMBLY_NAME') or '',
+        'district': row.get('DISTRICT_NAME') or '',
+        'district_id': row.get('DISTRICT_ID') or '',
+        'id': row.get('id', ''),
+    }
+    # Preserve raw DB column values (needed for generated_voters upsert)
+    for k in ('AC_NO','ASSEMBLY_NAME','PART_NO','SECTION_NO','SLNOINPART','C_HOUSE_NO','C_HOUSE_NO_V1',
+              'FM_NAME_EN','LASTNAME_EN','FM_NAME_V1','LASTNAME_V1','RLN_TYPE',
+              'RLN_FM_NM_EN','RLN_L_NM_EN','RLN_FM_NM_V1','RLN_L_NM_V1',
+              'EPIC_NO','GENDER','AGE','DOB','MOBILE_NO','ORG_LIST_NO','DISTRICT_ID','DISTRICT_NAME'):
+        if k in row:
+            r[k] = row[k]
+    return r
 
 
-def _iter_csv_bytes(raw: bytes):
-    """Generator: yield one voter dict at a time from CSV bytes (low memory)."""
-    for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        text = raw.decode('latin-1')
+def _translate_gen_row(row: dict) -> dict | None:
+    """Translate a generated_voters row to internal format (lowercase keys)."""
+    if not row:
+        return None
+    r = _translate_voter_row(row)
+    for k in ('ptc_code','photo_url','card_url','secret_pin','referral_id','referral_link',
+              'referred_by_ptc','referred_by_referral_id','referred_members_count',
+              'source','generated_at','created_at'):
+        r[k] = row.get(k)
+    return r
 
-    reader = csv.reader(io.StringIO(text))
-    try:
-        headers = [h.strip() for h in next(reader)]
-    except StopIteration:
-        return
-
-    col_map = {}
-    for field, candidates in config.XLSX_COLUMNS.items():
-        for idx, h in enumerate(headers):
-            if _match_column(h, candidates):
-                col_map[field] = idx
-                break
-
-    mapped_indices = set(col_map.values())
-    seen_epics = set()
-
-    for cells in reader:
-        epic = _safe_str(cells[col_map['epic_no']] if 'epic_no' in col_map and col_map['epic_no'] < len(cells) else '')
-        if not epic:
-            continue
-
-        epic_upper = epic.strip().upper()
-        if epic_upper in seen_epics:
-            continue
-        seen_epics.add(epic_upper)
-
-        voter = {'epic_no': epic}
-        # 1) Add all standard mapped fields EXCEPT lat_long
-        for field, idx in col_map.items():
-            if field in ('epic_no', 'lat_long'):
-                continue
-            voter[field] = _safe_str(cells[idx] if idx < len(cells) else '')
-
-        # 2) Add any extra/unmapped columns (after booth_address, before lat_long)
-        for idx, h in enumerate(headers):
-            if idx not in mapped_indices and h:
-                key = h.replace(' ', '_').lower()
-                val = _safe_str(cells[idx] if idx < len(cells) else '')
-                if val:
-                    voter[key] = val
-
-        # 3) Lat Long always last
-        if 'lat_long' in col_map:
-            ll_val = _safe_str(cells[col_map['lat_long']] if col_map['lat_long'] < len(cells) else '')
-            if ll_val:
-                parts = ll_val.split(',')
-                if len(parts) == 2:
-                    voter['latitude'] = parts[0].strip()
-                    voter['longitude'] = parts[1].strip()
-
-        yield voter
-
-
-# ══════════════════════════════════════════════════════════════════
-#  MONGODB DATABASE HELPERS
-# ══════════════════════════════════════════════════════════════════
 
 def load_voters_from_db() -> list[dict]:
-    """Return all voters from MongoDB."""
-    return list(voters_col.find({}, {'_id': 0}))
+    """Return all voters from MySQL (across all assembly tables)."""
+    conn = _get_voters_mysql()
+    try:
+        all_voters = []
+        with conn.cursor() as cur:
+            for tbl in _get_voter_tables():
+                cur.execute(f"SELECT * FROM `{tbl}`")
+                all_voters.extend(_translate_voter_row(r) for r in cur.fetchall())
+        return all_voters
+    finally:
+        conn.close()
 
 
 def find_voter_by_epic(epic_no: str) -> dict | None:
     epic_no = epic_no.strip().upper()
-    doc = voters_col.find_one({'epic_no': epic_no}, {'_id': 0})
-    return doc
+    conn = _get_voters_mysql()
+    try:
+        with conn.cursor() as cur:
+            for tbl in _get_voter_tables():
+                cur.execute(f"SELECT * FROM `{tbl}` WHERE `EPIC_NO` = %s LIMIT 1", (epic_no,))
+                row = cur.fetchone()
+                if row:
+                    return _translate_voter_row(row)
+        return None
+    finally:
+        conn.close()
 
 
-def _stream_upsert(voter_iter, status: dict) -> int:
-    """Stream-upsert voters from an iterator into MongoDB in batches."""
-    from pymongo import UpdateOne
-    total = 0
-    BATCH = 500
-    batch = []
-    for v in voter_iter:
-        batch.append(v)
-        status['processed'] += 1
-        if len(batch) >= BATCH:
-            ops = [UpdateOne({'epic_no': d['epic_no']}, {'$set': {k: val for k, val in d.items() if k != '_id'}}, upsert=True) for d in batch]
-            result = voters_col.bulk_write(ops, ordered=False)
-            total += result.upserted_count + result.modified_count
-            status['inserted'] = total
-            batch = []
-    if batch:
-        ops = [UpdateOne({'epic_no': d['epic_no']}, {'$set': {k: val for k, val in d.items() if k != '_id'}}, upsert=True) for d in batch]
-        result = voters_col.bulk_write(ops, ordered=False)
-        total += result.upserted_count + result.modified_count
-        status['inserted'] = total
-    return total
+def _mysql_count(where: str = '', params: tuple = (), tables: list[str] | None = None) -> int:
+    """Return count of voters matching optional WHERE clause across assembly tables.
+    Optimized: uses tbl_assembly_consitituency.total_voters when no WHERE filter."""
+    target_tables = tables or _get_voter_tables()
+    if not target_tables:
+        return 0
+    # Fast path: no WHERE clause → use pre-computed totals from mapping table
+    if not where:
+        target_set = set(target_tables)
+        return sum(
+            int(r.get('total_voters') or 0) for r in _ASSEMBLY_TABLES
+            if r['table_name'] in target_set
+        )
+    # Slow path: search filter → query only target tables
+    conn = _get_voters_mysql()
+    try:
+        total = 0
+        with conn.cursor() as cur:
+            for tbl in target_tables:
+                sql = f"SELECT COUNT(*) AS cnt FROM `{tbl}`"
+                if where:
+                    sql += f" WHERE {where}"
+                cur.execute(sql, params)
+                row = cur.fetchone()
+                total += row['cnt'] if row else 0
+        return total
+    finally:
+        conn.close()
 
 
-def _stream_replace(voter_iter, status: dict) -> int:
-    """Drop existing voters and stream-insert from iterator in batches."""
-    voters_col.delete_many({})
-    total = 0
-    BATCH = 500
-    batch = []
-    for v in voter_iter:
-        batch.append(v)
-        status['processed'] += 1
-        if len(batch) >= BATCH:
-            voters_col.insert_many(batch, ordered=False)
-            total += len(batch)
-            status['inserted'] = total
-            batch = []
-    if batch:
-        voters_col.insert_many(batch, ordered=False)
-        total += len(batch)
-        status['inserted'] = total
-    return total
+def _mysql_distinct(column: str) -> list[str]:
+    """Return sorted distinct non-empty values for a column using assembly mapping."""
+    if column == 'ASSEMBLY_NAME':
+        return sorted(set(r.get('assembly_name') or '' for r in _ASSEMBLY_TABLES) - {''})
+    if column == 'DISTRICT_NAME':
+        return sorted(set(r.get('district_name') or '' for r in _ASSEMBLY_TABLES) - {''})
+    # fallback: scan tables
+    conn = _get_voters_mysql()
+    try:
+        values = set()
+        with conn.cursor() as cur:
+            for tbl in _get_voter_tables():
+                cur.execute(
+                    f"SELECT DISTINCT `{column}` FROM `{tbl}` "
+                    f"WHERE `{column}` IS NOT NULL AND `{column}` != '' "
+                )
+                for row in cur.fetchall():
+                    values.add(str(row[column]))
+        return sorted(values)
+    finally:
+        conn.close()
 
 
 # ══════════════════════════════════════════════════════════════════
-#  GENERATION STATS (MongoDB)
+#  GENERATION STATS (MySQL)
 # ══════════════════════════════════════════════════════════════════
 
 def generate_ptc_code() -> str:
     """Generate a unique PTC-XXXXXXX code (collision-free under concurrent load)."""
     import uuid
-    # Use UUID4 hex for guaranteed uniqueness - no DB check loop needed
     uid = uuid.uuid4().hex[:7].upper()
     return f'PTC-{uid}'
 
@@ -651,77 +514,88 @@ def generate_ptc_code() -> str:
 def save_generated_voter(voter: dict, mobile: str, photo_url: str, card_url: str, ptc_code: str,
                         referred_by_ptc: str = '', referred_by_referral_id: str = '',
                         secret_pin: str = ''):
-    """Save a generated voter record to the new Generated Voters DB with atomic upsert."""
-    import pymongo.errors
-    
-    doc = {
-        'ptc_code': ptc_code,
-        'epic_no': voter.get('epic_no', ''),
-        'name': voter.get('name', ''),
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'mobile': mobile,
-        'photo_url': photo_url,
-        'card_url': card_url,
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-    }
-    if secret_pin:
-        # SECURITY: Hash PIN before storing
-        doc['secret_pin'] = hash_pin(secret_pin)
-    if referred_by_ptc:
-        doc['referred_by_ptc'] = referred_by_ptc
-    if referred_by_referral_id:
-        doc['referred_by_referral_id'] = referred_by_referral_id
-    
-    # CONCURRENCY FIX: Atomic upsert with duplicate key handling
+    """Save a generated voter record to MySQL with upsert on (EPIC_NO, MOBILE_NO)."""
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    hashed = hash_pin(secret_pin) if secret_pin else None
+    conn = _get_mysql()
     try:
-        gen_voters_col.update_one(
-            {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
-            {'$set': doc, '$setOnInsert': {'created_at': datetime.now(timezone.utc).isoformat()}},
-            upsert=True
-        )
-    except pymongo.errors.DuplicateKeyError:
-        # Race condition: record already exists, just update it
-        gen_voters_col.update_one(
-            {'epic_no': voter.get('epic_no', ''), 'mobile': mobile},
-            {'$set': doc}
-        )
-    
-    # CONCURRENCY FIX: Atomic referral count increment
-    if referred_by_ptc:
-        gen_voters_col.update_one(
-            {'ptc_code': referred_by_ptc},
-            {'$inc': {'referred_members_count': 1}}
-        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO generated_voters
+                   (ptc_code, AC_NO, ASSEMBLY_NAME, PART_NO, SECTION_NO, SLNOINPART,
+                    C_HOUSE_NO, C_HOUSE_NO_V1,
+                    FM_NAME_EN, LASTNAME_EN, FM_NAME_V1, LASTNAME_V1,
+                    RLN_TYPE, RLN_FM_NM_EN, RLN_L_NM_EN, RLN_FM_NM_V1, RLN_L_NM_V1,
+                    EPIC_NO, GENDER, AGE, DOB, MOBILE_NO, ORG_LIST_NO, DISTRICT_NAME,
+                    photo_url, card_url, secret_pin,
+                    referred_by_ptc, referred_by_referral_id, generated_at, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON DUPLICATE KEY UPDATE
+                     ptc_code=VALUES(ptc_code),
+                     AC_NO=VALUES(AC_NO), ASSEMBLY_NAME=VALUES(ASSEMBLY_NAME),
+                     PART_NO=VALUES(PART_NO),
+                     SECTION_NO=VALUES(SECTION_NO), SLNOINPART=VALUES(SLNOINPART),
+                     C_HOUSE_NO=VALUES(C_HOUSE_NO), C_HOUSE_NO_V1=VALUES(C_HOUSE_NO_V1),
+                     FM_NAME_EN=VALUES(FM_NAME_EN), LASTNAME_EN=VALUES(LASTNAME_EN),
+                     FM_NAME_V1=VALUES(FM_NAME_V1), LASTNAME_V1=VALUES(LASTNAME_V1),
+                     RLN_TYPE=VALUES(RLN_TYPE), RLN_FM_NM_EN=VALUES(RLN_FM_NM_EN),
+                     RLN_L_NM_EN=VALUES(RLN_L_NM_EN), RLN_FM_NM_V1=VALUES(RLN_FM_NM_V1),
+                     RLN_L_NM_V1=VALUES(RLN_L_NM_V1),
+                     GENDER=VALUES(GENDER), AGE=VALUES(AGE), DOB=VALUES(DOB),
+                     ORG_LIST_NO=VALUES(ORG_LIST_NO), DISTRICT_NAME=VALUES(DISTRICT_NAME),
+                     photo_url=VALUES(photo_url), card_url=VALUES(card_url),
+                     secret_pin=COALESCE(VALUES(secret_pin), secret_pin),
+                     referred_by_ptc=VALUES(referred_by_ptc),
+                     referred_by_referral_id=VALUES(referred_by_referral_id),
+                     generated_at=VALUES(generated_at)""",
+                (ptc_code,
+                 voter.get('AC_NO'), voter.get('ASSEMBLY_NAME'),
+                 voter.get('PART_NO'),
+                 voter.get('SECTION_NO'), voter.get('SLNOINPART'),
+                 voter.get('C_HOUSE_NO'), voter.get('C_HOUSE_NO_V1'),
+                 voter.get('FM_NAME_EN', ''), voter.get('LASTNAME_EN', ''),
+                 voter.get('FM_NAME_V1', ''), voter.get('LASTNAME_V1', ''),
+                 voter.get('RLN_TYPE', ''),
+                 voter.get('RLN_FM_NM_EN', ''), voter.get('RLN_L_NM_EN', ''),
+                 voter.get('RLN_FM_NM_V1', ''), voter.get('RLN_L_NM_V1', ''),
+                 voter.get('EPIC_NO', voter.get('epic_no', '')),
+                 voter.get('GENDER', ''), voter.get('AGE'),
+                 voter.get('DOB', ''), mobile, voter.get('ORG_LIST_NO'),
+                 voter.get('DISTRICT_NAME'),
+                 photo_url, card_url, hashed,
+                 referred_by_ptc or None, referred_by_referral_id or None,
+                 now, now)
+            )
+            if referred_by_ptc:
+                cur.execute(
+                    "UPDATE generated_voters SET referred_members_count = referred_members_count + 1 WHERE ptc_code = %s",
+                    (referred_by_ptc,)
+                )
+    finally:
+        conn.close()
 
 
 def get_or_create_referral(ptc_code: str) -> dict | None:
     """Return { referral_id, referral_link } - idempotent."""
-    voter = gen_voters_col.find_one({'ptc_code': ptc_code})
-    if not voter:
-        return None
-    if voter.get('referral_id'):
-        return {
-            'referral_id': voter['referral_id'],
-            'referral_link': f"{config.BASE_URL}/refer/{ptc_code}/{voter['referral_id']}"
-        }
-    import uuid
-    rid = 'REF-' + uuid.uuid4().hex[:8].upper()
-    link = f"{config.BASE_URL}/refer/{ptc_code}/{rid}"
-    gen_voters_col.update_one(
-        {'ptc_code': ptc_code},
-        {'$set': {
-            'referral_id': rid,
-            'referral_link': link,
-        },
-         '$setOnInsert': {'referred_members_count': 0}}
-    )
-    # Ensure referred_members_count exists
-    gen_voters_col.update_one(
-        {'ptc_code': ptc_code, 'referred_members_count': {'$exists': False}},
-        {'$set': {'referred_members_count': 0}}
-    )
-    return {'referral_id': rid, 'referral_link': link}
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT referral_id, referral_link FROM generated_voters WHERE ptc_code = %s", (ptc_code,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            if row.get('referral_id'):
+                return {'referral_id': row['referral_id'], 'referral_link': row['referral_link']}
+            import uuid
+            rid = 'REF-' + uuid.uuid4().hex[:8].upper()
+            link = f"{config.BASE_URL}/refer/{ptc_code}/{rid}"
+            cur.execute(
+                "UPDATE generated_voters SET referral_id=%s, referral_link=%s WHERE ptc_code=%s",
+                (rid, link, ptc_code)
+            )
+            return {'referral_id': rid, 'referral_link': link}
+    finally:
+        conn.close()
 
 
 def generate_secret_pin() -> str:
@@ -732,52 +606,85 @@ def generate_secret_pin() -> str:
 def increment_generation_count(epic_no: str, photo_url: str = '', card_url: str = '',
                                auth_mobile: str = '', secret_pin: str = ''):
     """Increment generation count; optionally update photo_url, card_url, auth_mobile, secret_pin."""
-    update = {
-        '$inc': {'count': 1},
-        '$set': {'last_generated': datetime.now(timezone.utc).isoformat()},
-        '$setOnInsert': {'epic_no': epic_no},
-    }
-    if photo_url:
-        update['$set']['photo_url'] = photo_url
-    if card_url:
-        update['$set']['card_url'] = card_url
-    if auth_mobile:
-        update['$set']['auth_mobile'] = auth_mobile
-    if secret_pin:
-        # SECURITY: Hash PIN before storing
-        update['$set']['secret_pin'] = hash_pin(secret_pin)
-    stats_col.update_one({'epic_no': epic_no}, update, upsert=True)
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    hashed = hash_pin(secret_pin) if secret_pin else None
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            if cur.fetchone():
+                parts = ['`count` = `count` + 1', 'last_generated = %s']
+                vals = [now]
+                if photo_url:
+                    parts.append('photo_url = %s'); vals.append(photo_url)
+                if card_url:
+                    parts.append('card_url = %s'); vals.append(card_url)
+                if auth_mobile:
+                    parts.append('auth_mobile = %s'); vals.append(auth_mobile)
+                if hashed:
+                    parts.append('secret_pin = %s'); vals.append(hashed)
+                vals.append(epic_no)
+                cur.execute(f"UPDATE generation_stats SET {', '.join(parts)} WHERE epic_no = %s", vals)
+            else:
+                cur.execute(
+                    """INSERT INTO generation_stats (epic_no, `count`, last_generated, photo_url, card_url, auth_mobile, secret_pin)
+                       VALUES (%s, 1, %s, %s, %s, %s, %s)""",
+                    (epic_no, now, photo_url or '', card_url or '', auth_mobile or '', hashed)
+                )
+    finally:
+        conn.close()
 
 
 def get_voter_gen_count(epic_no: str) -> int:
-    doc = stats_col.find_one({'epic_no': epic_no}, {'count': 1})
-    return doc.get('count', 0) if doc else 0
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT `count` FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            row = cur.fetchone()
+            return row['count'] if row else 0
+    finally:
+        conn.close()
 
 
 def get_voter_photo_url(epic_no: str) -> str:
-    """Get Cloudinary photo URL for a voter (from stats collection)."""
-    doc = stats_col.find_one({'epic_no': epic_no}, {'photo_url': 1})
-    return doc.get('photo_url', '') if doc else ''
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT photo_url FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            row = cur.fetchone()
+            return row['photo_url'] if row else ''
+    finally:
+        conn.close()
 
 
 def get_voter_card_url(epic_no: str) -> str:
-    """Get Cloudinary card URL for a voter."""
-    doc = stats_col.find_one({'epic_no': epic_no}, {'card_url': 1})
-    return doc.get('card_url', '') if doc else ''
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT card_url FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            row = cur.fetchone()
+            return row['card_url'] if row else ''
+    finally:
+        conn.close()
 
 
 def get_all_stats() -> dict:
-    """Return {epic_no: {count, last_generated, photo_url, card_url, auth_mobile}} dict."""
-    result = {}
-    for doc in stats_col.find({}, {'_id': 0}):
-        result[doc['epic_no']] = {
-            'count': doc.get('count', 0),
-            'last_generated': doc.get('last_generated', ''),
-            'photo_url': doc.get('photo_url', ''),
-            'card_url': doc.get('card_url', ''),
-            'auth_mobile': doc.get('auth_mobile', ''),
-        }
-    return result
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, `count`, last_generated, photo_url, card_url, auth_mobile FROM generation_stats")
+            result = {}
+            for row in cur.fetchall():
+                result[row['epic_no']] = {
+                    'count': row.get('count', 0),
+                    'last_generated': str(row.get('last_generated', '')) if row.get('last_generated') else '',
+                    'photo_url': row.get('photo_url', ''),
+                    'card_url': row.get('card_url', ''),
+                    'auth_mobile': row.get('auth_mobile', ''),
+                }
+            return result
+    finally:
+        conn.close()
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -835,20 +742,40 @@ def _get_external_stats() -> dict:
     if cached and 'db1_size_mb' in cached:
         return cached
 
-    result = {'mongodb_size_mb': 0, 'db1_size_mb': 0, 'db2_size_mb': 0,
-              'db2_storage_mb': 0, 'db2_collections': 0, 'db2_objects': 0,
+    result = {'mysql_size_mb': 0, 'db1_size_mb': 0, 'db2_size_mb': 0, 'db2_objects': 0,
               'cloudinary_credits': 'N/A', 'sms_balance': 'N/A'}
     try:
-        db_stats_1 = db.command('dbstats')
-        db_stats_2 = gen_db.command('dbstats')
-        d1 = db_stats_1.get('dataSize', 0)
-        d2 = db_stats_2.get('dataSize', 0)
-        result['mongodb_size_mb'] = round((d1 + d2) / (1024 * 1024), 2)
-        result['db1_size_mb'] = round(d1 / (1024 * 1024), 2)
-        result['db2_size_mb'] = round(d2 / (1024 * 1024), 2)
-        result['db2_storage_mb'] = round(db_stats_2.get('storageSize', 0) / (1024 * 1024), 2)
-        result['db2_collections'] = db_stats_2.get('collections', 0)
-        result['db2_objects'] = db_stats_2.get('objects', 0)
+        # Voters DB size
+        conn1 = _get_voters_mysql()
+        try:
+            with conn1.cursor() as cur:
+                cur.execute(
+                    "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb "
+                    "FROM information_schema.TABLES WHERE table_schema = %s",
+                    (config.MYSQL_VOTERS_DB,)
+                )
+                row = cur.fetchone()
+                result['db1_size_mb'] = float(row['size_mb']) if row and row['size_mb'] else 0
+        finally:
+            conn1.close()
+
+        # Generated data DB size + row count
+        conn2 = _get_mysql()
+        try:
+            with conn2.cursor() as cur:
+                cur.execute(
+                    "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb, "
+                    "SUM(table_rows) AS total_rows "
+                    "FROM information_schema.TABLES WHERE table_schema = %s",
+                    (config.MYSQL_DB,)
+                )
+                row = cur.fetchone()
+                result['db2_size_mb'] = float(row['size_mb']) if row and row['size_mb'] else 0
+                result['db2_objects'] = int(row['total_rows']) if row and row['total_rows'] else 0
+        finally:
+            conn2.close()
+
+        result['mysql_size_mb'] = round(result['db1_size_mb'] + result['db2_size_mb'], 2)
     except Exception:
         pass
 
@@ -872,13 +799,25 @@ def _get_external_stats() -> dict:
     return result
 
 
-def _get_cached_dropdowns(collection, cache_key: str) -> tuple[list, list]:
-    """Return (assemblies, districts) from cache or distinct() scan."""
+def _get_cached_dropdowns(table_or_name: str, cache_key: str) -> tuple[list, list]:
+    """Return (assemblies, districts) from cache or distinct() scan.
+    table_or_name is now a MySQL table name or 'mysql_voters'."""
     cached = _cache_get(cache_key)
     if cached:
         return cached.get('assemblies', []), cached.get('districts', [])
-    assemblies = sorted(a for a in collection.distinct('assembly') if a)
-    districts = sorted(d for d in collection.distinct('district') if d)
+    if table_or_name == 'mysql_voters':
+        assemblies = _mysql_distinct('ASSEMBLY_NAME')
+        districts = _mysql_distinct('DISTRICT_NAME')
+    else:
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT DISTINCT ASSEMBLY_NAME FROM `{table_or_name}` WHERE ASSEMBLY_NAME IS NOT NULL AND ASSEMBLY_NAME != '' ORDER BY ASSEMBLY_NAME")
+                assemblies = [str(r['ASSEMBLY_NAME']) for r in cur.fetchall()]
+                cur.execute(f"SELECT DISTINCT DISTRICT_NAME FROM `{table_or_name}` WHERE DISTRICT_NAME IS NOT NULL AND DISTRICT_NAME != '' ORDER BY DISTRICT_NAME")
+                districts = [str(r['DISTRICT_NAME']) for r in cur.fetchall()]
+        finally:
+            conn.close()
     _cache_set(cache_key, {'assemblies': assemblies, 'districts': districts}, REDIS_DROPDOWN_TTL)
     return assemblies, districts
 
@@ -890,70 +829,46 @@ def get_dashboard_stats():
         return cached
 
     try:
-        # Use estimated_document_count - O(1) via collection metadata (fast at 5.6 Cr)
-        total_voters = voters_col.estimated_document_count()
+        # MySQL voter count
+        total_voters = _mysql_count()
 
-        # P1: Single aggregation for stats_col (1 query instead of loading ALL docs)
-        stats_agg = list(stats_col.aggregate([
-            {'$group': {
-                '_id': None,
-                'total_generated': {'$sum': {'$cond': [{'$gt': ['$count', 0]}, 1, 0]}},
-                'total_generations': {'$sum': '$count'},
-                'cards_on_cloud': {'$sum': {'$cond': [{'$gt': ['$card_url', '']}, 1, 0]}},
-            }}
-        ]))
-        if stats_agg:
-            total_generated = stats_agg[0].get('total_generated', 0)
-            total_generations = stats_agg[0].get('total_generations', 0)
-            cards_on_cloud = stats_agg[0].get('cards_on_cloud', 0)
-        else:
-            total_generated = 0
-            total_generations = 0
-            cards_on_cloud = 0
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                # Stats aggregation
+                cur.execute("""SELECT
+                    COUNT(CASE WHEN `count` > 0 THEN 1 END) AS total_generated,
+                    COALESCE(SUM(`count`), 0) AS total_generations,
+                    COUNT(CASE WHEN card_url != '' AND card_url IS NOT NULL THEN 1 END) AS cards_on_cloud
+                    FROM generation_stats""")
+                sa = cur.fetchone()
+                total_generated = sa['total_generated']
+                total_generations = sa['total_generations']
+                cards_on_cloud = sa['cards_on_cloud']
+
+                # Generated voters count
+                cur.execute("SELECT COUNT(*) AS cnt FROM generated_voters")
+                generated_voters_count = cur.fetchone()['cnt']
+
+                # Referral total
+                cur.execute("SELECT COALESCE(SUM(referred_members_count), 0) AS total FROM generated_voters")
+                total_referrals = cur.fetchone()['total']
+
+                # Volunteer status counts
+                cur.execute("SELECT status, COUNT(*) AS cnt FROM volunteer_requests GROUP BY status")
+                vol_counts = {r['status']: r['cnt'] for r in cur.fetchall()}
+                pending_volunteers = vol_counts.get('pending', 0)
+                confirmed_volunteers = vol_counts.get('confirmed', 0)
+
+                # Booth agent status counts
+                cur.execute("SELECT status, COUNT(*) AS cnt FROM booth_agent_requests GROUP BY status")
+                ba_counts = {r['status']: r['cnt'] for r in cur.fetchall()}
+                pending_booth_agents = ba_counts.get('pending', 0)
+                confirmed_booth_agents = ba_counts.get('confirmed', 0)
+        finally:
+            conn.close()
 
         db_connected = True
-
-        # Generated voters count - O(1)
-        try:
-            generated_voters_count = gen_voters_col.estimated_document_count()
-        except Exception:
-            generated_voters_count = 0
-
-        # P1: Single aggregation for gen_voters referral total
-        try:
-            ref_agg = list(gen_voters_col.aggregate([
-                {'$group': {
-                    '_id': None,
-                    'total_referrals': {'$sum': {'$ifNull': ['$referred_members_count', 0]}},
-                }}
-            ]))
-            total_referrals = ref_agg[0]['total_referrals'] if ref_agg else 0
-        except Exception:
-            total_referrals = 0
-
-        # P1: Single aggregation for volunteer status counts
-        try:
-            vol_agg = list(volunteer_requests_col.aggregate([
-                {'$group': {'_id': '$status', 'count': {'$sum': 1}}}
-            ]))
-            vol_counts = {doc['_id']: doc['count'] for doc in vol_agg}
-            pending_volunteers = vol_counts.get('pending', 0)
-            confirmed_volunteers = vol_counts.get('confirmed', 0)
-        except Exception:
-            pending_volunteers = 0
-            confirmed_volunteers = 0
-
-        # P1: Single aggregation for booth agent status counts
-        try:
-            ba_agg = list(booth_agent_requests_col.aggregate([
-                {'$group': {'_id': '$status', 'count': {'$sum': 1}}}
-            ]))
-            ba_counts = {doc['_id']: doc['count'] for doc in ba_agg}
-            pending_booth_agents = ba_counts.get('pending', 0)
-            confirmed_booth_agents = ba_counts.get('confirmed', 0)
-        except Exception:
-            pending_booth_agents = 0
-            confirmed_booth_agents = 0
 
     except Exception:
         total_voters = 0
@@ -978,7 +893,7 @@ def get_dashboard_stats():
         'cards_on_cloud': cards_on_cloud,
         'generated_voters_count': generated_voters_count,
         'db_connected': db_connected,
-        'mongodb_size_mb': '...',
+        'mysql_size_mb': '...',  # loaded via external stats AJAX
         'cloudinary_credits': '...',
         'sms_balance': '...',
         'total_referrals': total_referrals,
@@ -1065,10 +980,20 @@ def chat_send_otp():
     mobile = result
 
     # Rate limit: max 1 OTP per mobile per 60 seconds
-    existing = otp_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         try:
-            created = datetime.fromisoformat(existing['created_at'])
+            created = existing['created_at']
+            if isinstance(created, str):
+                created = datetime.fromisoformat(created)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             elapsed = (datetime.now(timezone.utc) - created).total_seconds()
             if elapsed < 60:
                 wait = int(60 - elapsed)
@@ -1079,24 +1004,11 @@ def chat_send_otp():
     # SECURITY FIX: Use cryptographically secure random for OTP
     otp = str(secrets.randbelow(900000) + 100000)
 
-    # Store OTP in DB
-    otp_col.update_one(
-        {'mobile': mobile},
-        {'$set': {
-            'otp': otp,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'created_at_dt': datetime.now(timezone.utc),
-            'verified': False,
-        }},
-        upsert=True
-    )
-
-    # PHASE 1: Send OTP via 2Factor.in with circuit breaker
+    # Send OTP via 2Factor.in FIRST, only store in DB if SMS succeeds
     otp_sent = False
     sms_api_key = os.getenv('SMS_API_KEY', '')
     if sms_api_key:
         try:
-            # Use circuit breaker for SMS API
             @sms_breaker
             def send_sms():
                 resp = http_requests.get(
@@ -1106,23 +1018,34 @@ def chat_send_otp():
                 if resp.status_code == 200 and resp.json().get('Status') == 'Success':
                     return True
                 return False
-            
+
             otp_sent = send_sms()
             if otp_sent:
-                # SECURITY FIX: Mask mobile number in logs
                 logger.info(f"OTP call sent to {mobile[:2]}****{mobile[-2:]}")
         except Exception as e:
-            # SECURITY FIX: Mask mobile number in logs
             logger.warning(f"OTP send failed for {mobile[:2]}****{mobile[-2:]}: {e}")
-            # Circuit breaker may be open
             if 'CircuitBreakerError' in str(type(e).__name__):
                 logger.warning("SMS API circuit breaker is OPEN - service unavailable")
 
     if not otp_sent:
-        # SECURITY FIX: Mask mobile number in logs
         logger.warning(f"OTP not sent for {mobile[:2]}****{mobile[-2:]}")
+        return jsonify({'success': False, 'message': 'Could not send OTP. Please try again.'}), 500
 
-    return jsonify({'success': otp_sent})
+    # Store OTP in DB only after SMS was sent successfully
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO otp_sessions (mobile, otp, created_at, verified)
+                   VALUES (%s, %s, %s, 0)
+                   ON DUPLICATE KEY UPDATE otp = VALUES(otp), created_at = VALUES(created_at), verified = 0, purpose = NULL""",
+                (mobile, otp, now)
+            )
+    finally:
+        conn.close()
+
+    return jsonify({'success': True})
 
 
 @app.route('/api/chat/verify-otp', methods=['POST'])
@@ -1144,30 +1067,57 @@ def chat_verify_otp():
         return jsonify({'success': False, 'message': otp_result}), 400
     otp = otp_result
 
-    doc = otp_col.find_one({'mobile': mobile})
-    if not doc or doc.get('otp') != otp:
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT otp, created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            doc = cur.fetchone()
+    finally:
+        conn.close()
+    if not doc:
+        logger.warning(f"OTP verify: no session found for mobile {mobile[:2]}****{mobile[-2:]}")
+        return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
+    if doc.get('otp') != otp:
+        logger.warning(f"OTP verify: mismatch for {mobile[:2]}****{mobile[-2:]} — sent={otp!r} db={doc.get('otp')!r}")
         return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
 
     # Check expiry (5 minutes)
     try:
-        created = datetime.fromisoformat(doc['created_at'])
+        created = doc['created_at']
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - created).total_seconds() > 300:
             return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
     except Exception:
         pass
 
     # Mark OTP as verified (but don't mark mobile as verified yet - that happens after card generation)
-    otp_col.update_one({'mobile': mobile}, {'$set': {'verified': True}})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE otp_sessions SET verified = 1 WHERE mobile = %s", (mobile,))
+    finally:
+        conn.close()
     
     # SECURITY FIX: Store verified mobile in session for authorization checks
     session['verified_mobile'] = mobile
     session.permanent = True
 
     # Check if this mobile already has a linked card
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'name': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url, name FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+            gen_doc = None
+            if stat and stat.get('card_url'):
+                cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
-        # For existing users, fetch voter name from gen_voters_col
-        gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
         return jsonify({
             'success': True,
             'has_card': True,
@@ -1188,7 +1138,13 @@ def chat_check_mobile():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url, secret_pin FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if stat and stat.get('card_url'):
         has_pin = bool(stat.get('secret_pin'))
         return jsonify({'success': True, 'has_card': True, 'has_pin': has_pin})
@@ -1214,7 +1170,13 @@ def chat_verify_pin():
         return jsonify({'success': False, 'message': pin_result}), 400
     pin = pin_result
 
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1, 'secret_pin': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, card_url, secret_pin FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if not stat or not stat.get('secret_pin'):
         return jsonify({'success': False, 'message': 'No PIN found for this mobile.'}), 404
 
@@ -1222,7 +1184,13 @@ def chat_verify_pin():
     if not verify_pin(pin, stat['secret_pin']):
         return jsonify({'success': False, 'message': 'Invalid PIN. Please try again.'}), 400
 
-    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     return jsonify({
         'success': True,
         'has_card': True,
@@ -1242,15 +1210,31 @@ def chat_forgot_pin():
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
     # Verify this mobile actually has a card
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+    finally:
+        conn.close()
     if not stat:
         return jsonify({'success': False, 'message': 'No account found for this mobile.'}), 404
 
     # Rate limit: max 1 OTP per mobile per 60 seconds
-    existing = otp_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         try:
-            created = datetime.fromisoformat(existing['created_at'])
+            created = existing['created_at']
+            if isinstance(created, str):
+                created = datetime.fromisoformat(created)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             elapsed = (datetime.now(timezone.utc) - created).total_seconds()
             if elapsed < 60:
                 wait = int(60 - elapsed)
@@ -1260,18 +1244,8 @@ def chat_forgot_pin():
 
     # SECURITY FIX: Use cryptographically secure random for OTP
     otp = str(secrets.randbelow(900000) + 100000)
-    otp_col.update_one(
-        {'mobile': mobile},
-        {'$set': {
-            'otp': otp,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'created_at_dt': datetime.now(timezone.utc),
-            'verified': False,
-            'purpose': 'pin_reset',
-        }},
-        upsert=True
-    )
 
+    # Send OTP via SMS FIRST, only store in DB if sent successfully
     otp_sent = False
     sms_api_key = os.getenv('SMS_API_KEY', '')
     if sms_api_key:
@@ -1282,11 +1256,28 @@ def chat_forgot_pin():
             )
             if resp.status_code == 200 and resp.json().get('Status') == 'Success':
                 otp_sent = True
-                logger.info(f"PIN reset OTP sent to {mobile}")
+                logger.info(f"PIN reset OTP sent to {mobile[:2]}****{mobile[-2:]}")
         except Exception as e:
-            logger.warning(f"PIN reset OTP send failed for {mobile}: {e}")
+            logger.warning(f"PIN reset OTP send failed for {mobile[:2]}****{mobile[-2:]}: {e}")
 
-    return jsonify({'success': otp_sent})
+    if not otp_sent:
+        return jsonify({'success': False, 'message': 'Could not send OTP. Please try again.'}), 500
+
+    # Store OTP in DB only after SMS was sent successfully
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO otp_sessions (mobile, otp, created_at, verified, purpose)
+                   VALUES (%s, %s, %s, 0, 'pin_reset')
+                   ON DUPLICATE KEY UPDATE otp=VALUES(otp), created_at=VALUES(created_at), verified=0, purpose='pin_reset'""",
+                (mobile, otp, now)
+            )
+    finally:
+        conn.close()
+
+    return jsonify({'success': True})
 
 
 @app.route('/api/chat/reset-pin', methods=['POST'])
@@ -1308,13 +1299,23 @@ def chat_reset_pin():
         return jsonify({'success': False, 'message': otp_result}), 400
     otp = otp_result
 
-    doc = otp_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT otp, created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            doc = cur.fetchone()
+    finally:
+        conn.close()
     if not doc or doc.get('otp') != otp:
         return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
 
     # Check expiry (5 minutes)
     try:
-        created = datetime.fromisoformat(doc['created_at'])
+        created = doc['created_at']
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - created).total_seconds() > 300:
             return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
     except Exception:
@@ -1329,14 +1330,20 @@ def chat_reset_pin():
 
     # SECURITY: Hash PIN before saving
     hashed_pin = hash_pin(new_pin)
-    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
-    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
-    # Clean up OTP
-    otp_col.delete_one({'mobile': mobile})
-
-    # Get card info to return
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
-    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'name': 1, 'photo_url': 1})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE generation_stats SET secret_pin = %s WHERE auth_mobile = %s", (hashed_pin, mobile))
+            cur.execute("UPDATE generated_voters SET secret_pin = %s WHERE MOBILE_NO = %s", (hashed_pin, mobile))
+            # Clean up OTP
+            cur.execute("DELETE FROM otp_sessions WHERE mobile = %s", (mobile,))
+            # Get card info to return
+            cur.execute("SELECT epic_no, card_url FROM generation_stats WHERE auth_mobile = %s", (mobile,))
+            stat = cur.fetchone()
+            cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
 
     logger.info(f"PIN reset successful for {mobile}")
 
@@ -1353,10 +1360,11 @@ def chat_reset_pin():
 @app.route('/api/chat/set-pin', methods=['POST'])
 @rate_limit(max_requests=3, window_seconds=300)
 def chat_set_pin():
-    """Set the 4-digit PIN for a user who just registered (card exists, no PIN yet)."""
+    """Set the 4-digit PIN for a user during registration or after card exists."""
     data = request.get_json()
     mobile = data.get('mobile', '').strip()
     pin = data.get('pin', '').strip()
+    epic_no = data.get('epic_no', '').strip().upper()
 
     # Validate inputs
     valid_mobile, mobile_result = validate_mobile(mobile)
@@ -1369,15 +1377,33 @@ def chat_set_pin():
         return jsonify({'success': False, 'message': pin_result}), 400
     pin = pin_result
 
-    # Verify this mobile has a card
-    stat = stats_col.find_one({'auth_mobile': mobile}, {'epic_no': 1, 'card_url': 1})
-    if not stat or not stat.get('card_url'):
-        return jsonify({'success': False, 'message': 'No card found for this mobile.'}), 404
+    if epic_no:
+        valid_epic, epic_result = validate_epic(epic_no)
+        if not valid_epic:
+            return jsonify({'success': False, 'message': epic_result}), 400
+        epic_no = epic_result
 
     # SECURITY: Hash PIN before saving
     hashed_pin = hash_pin(pin)
-    stats_col.update_one({'auth_mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
-    gen_voters_col.update_one({'mobile': mobile}, {'$set': {'secret_pin': hashed_pin}})
+
+    # Upsert into generation_stats so PIN is saved even before card generation
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            if epic_no:
+                cur.execute(
+                    "INSERT INTO generation_stats (epic_no, secret_pin, auth_mobile) VALUES (%s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE secret_pin = VALUES(secret_pin), auth_mobile = VALUES(auth_mobile)",
+                    (epic_no, hashed_pin, mobile)
+                )
+            else:
+                cur.execute(
+                    "UPDATE generation_stats SET secret_pin = %s WHERE auth_mobile = %s",
+                    (hashed_pin, mobile)
+                )
+            cur.execute("UPDATE generated_voters SET secret_pin = %s WHERE MOBILE_NO = %s", (hashed_pin, mobile))
+    finally:
+        conn.close()
 
     logger.info(f"PIN set for {mobile}")
     return jsonify({'success': True})
@@ -1393,12 +1419,22 @@ def chat_verify_forgot_otp():
     if not mobile or not otp:
         return jsonify({'success': False, 'message': 'Mobile and OTP required'}), 400
 
-    doc = otp_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT otp, created_at FROM otp_sessions WHERE mobile = %s", (mobile,))
+            doc = cur.fetchone()
+    finally:
+        conn.close()
     if not doc or doc.get('otp') != otp:
         return jsonify({'success': False, 'message': 'Invalid OTP'}), 400
 
     try:
-        created = datetime.fromisoformat(doc['created_at'])
+        created = doc['created_at']
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - created).total_seconds() > 300:
             return jsonify({'success': False, 'message': 'OTP expired. Please request a new one.'}), 400
     except Exception:
@@ -1525,68 +1561,78 @@ def chat_generate_card():
 
         # Save to generated voters collection
         from security_fixes import hash_pin
-        doc = {
-            'ptc_code': ptc_code,
-            'epic_no': epic_no,
-            'name': voter.get('name', ''),
-            'assembly': voter.get('assembly', ''),
-            'district': voter.get('district', ''),
-            'mobile': mobile_num,
-            'photo_url': photo_url,
-            'card_url': card_url,
-            'generated_at': datetime.now(timezone.utc).isoformat(),
-        }
-        if ref_ptc:
-            doc['referred_by_ptc'] = ref_ptc
-        if ref_rid:
-            doc['referred_by_referral_id'] = ref_rid
 
-        import pymongo.errors
+        conn = _get_mysql()
         try:
-            gen_voters_col.update_one(
-                {'epic_no': epic_no, 'mobile': mobile_num},
-                {'$set': doc, '$setOnInsert': {'created_at': datetime.now(timezone.utc).isoformat()}},
-                upsert=True
-            )
-        except pymongo.errors.DuplicateKeyError:
-            gen_voters_col.update_one(
-                {'epic_no': epic_no, 'mobile': mobile_num},
-                {'$set': doc}
-            )
+            with conn.cursor() as cur:
+                now_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                # Upsert generated voter
+                cur.execute(
+                    "INSERT INTO generated_voters (ptc_code, "
+                    "AC_NO, ASSEMBLY_NAME, PART_NO, SECTION_NO, SLNOINPART, "
+                    "C_HOUSE_NO, C_HOUSE_NO_V1, "
+                    "FM_NAME_EN, LASTNAME_EN, FM_NAME_V1, LASTNAME_V1, "
+                    "RLN_TYPE, RLN_FM_NM_EN, RLN_L_NM_EN, RLN_FM_NM_V1, RLN_L_NM_V1, "
+                    "EPIC_NO, GENDER, AGE, DOB, MOBILE_NO, ORG_LIST_NO, DISTRICT_NAME, "
+                    "photo_url, card_url, generated_at, referred_by_ptc, referred_by_referral_id, created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "ON DUPLICATE KEY UPDATE ptc_code=VALUES(ptc_code), "
+                    "AC_NO=VALUES(AC_NO), ASSEMBLY_NAME=VALUES(ASSEMBLY_NAME), "
+                    "PART_NO=VALUES(PART_NO), "
+                    "SECTION_NO=VALUES(SECTION_NO), SLNOINPART=VALUES(SLNOINPART), "
+                    "C_HOUSE_NO=VALUES(C_HOUSE_NO), C_HOUSE_NO_V1=VALUES(C_HOUSE_NO_V1), "
+                    "FM_NAME_EN=VALUES(FM_NAME_EN), LASTNAME_EN=VALUES(LASTNAME_EN), "
+                    "FM_NAME_V1=VALUES(FM_NAME_V1), LASTNAME_V1=VALUES(LASTNAME_V1), "
+                    "RLN_TYPE=VALUES(RLN_TYPE), RLN_FM_NM_EN=VALUES(RLN_FM_NM_EN), "
+                    "RLN_L_NM_EN=VALUES(RLN_L_NM_EN), RLN_FM_NM_V1=VALUES(RLN_FM_NM_V1), "
+                    "RLN_L_NM_V1=VALUES(RLN_L_NM_V1), "
+                    "GENDER=VALUES(GENDER), AGE=VALUES(AGE), DOB=VALUES(DOB), "
+                    "ORG_LIST_NO=VALUES(ORG_LIST_NO), DISTRICT_NAME=VALUES(DISTRICT_NAME), "
+                    "photo_url=VALUES(photo_url), card_url=VALUES(card_url), "
+                    "generated_at=VALUES(generated_at), referred_by_ptc=VALUES(referred_by_ptc), "
+                    "referred_by_referral_id=VALUES(referred_by_referral_id)",
+                    (ptc_code,
+                     voter.get('AC_NO'), voter.get('ASSEMBLY_NAME'),
+                     voter.get('PART_NO'),
+                     voter.get('SECTION_NO'), voter.get('SLNOINPART'),
+                     voter.get('C_HOUSE_NO'), voter.get('C_HOUSE_NO_V1'),
+                     voter.get('FM_NAME_EN', ''), voter.get('LASTNAME_EN', ''),
+                     voter.get('FM_NAME_V1', ''), voter.get('LASTNAME_V1', ''),
+                     voter.get('RLN_TYPE', ''),
+                     voter.get('RLN_FM_NM_EN', ''), voter.get('RLN_L_NM_EN', ''),
+                     voter.get('RLN_FM_NM_V1', ''), voter.get('RLN_L_NM_V1', ''),
+                     epic_no, voter.get('GENDER', ''), voter.get('AGE'),
+                     voter.get('DOB', ''), mobile_num, voter.get('ORG_LIST_NO'),
+                     voter.get('DISTRICT_NAME'),
+                     photo_url, card_url, now_str,
+                     ref_ptc or None, ref_rid or None, now_str)
+                )
 
-        # Increment referrer count
-        if ref_ptc:
-            gen_voters_col.update_one(
-                {'ptc_code': ref_ptc},
-                {'$inc': {'referred_members_count': 1}}
-            )
+                # Increment referrer count
+                if ref_ptc:
+                    cur.execute(
+                        "UPDATE generated_voters SET referred_members_count = referred_members_count + 1 "
+                        "WHERE ptc_code = %s", (ref_ptc,)
+                    )
 
-        # Update stats
-        stats_col.update_one(
-            {'epic_no': epic_no},
-            {
-                '$set': {
-                    'card_url': card_url,
-                    'photo_url': photo_url,
-                    'last_generated': datetime.now(timezone.utc).isoformat(),
-                    'auth_mobile': mobile_num,
-                },
-                '$inc': {'count': 1}
-            },
-            upsert=True
-        )
+                # Update stats
+                cur.execute(
+                    "INSERT INTO generation_stats (epic_no, card_url, photo_url, last_generated, auth_mobile, count) "
+                    "VALUES (%s, %s, %s, %s, %s, 1) "
+                    "ON DUPLICATE KEY UPDATE card_url=VALUES(card_url), photo_url=VALUES(photo_url), "
+                    "last_generated=VALUES(last_generated), auth_mobile=VALUES(auth_mobile), count=count+1",
+                    (epic_no, card_url, photo_url, datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), mobile_num)
+                )
 
-        # Mark mobile as verified
-        verified_mobiles_col.update_one(
-            {'mobile': mobile_num},
-            {'$set': {
-                'mobile': mobile_num,
-                'epic_no': epic_no,
-                'verified_at': datetime.now(timezone.utc).isoformat(),
-                'verified_at_dt': datetime.now(timezone.utc)
-            }},
-            upsert=True
-        )
+                # Mark mobile as verified
+                cur.execute(
+                    "INSERT INTO verified_mobiles (mobile, epic_no, verified_at) "
+                    "VALUES (%s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE epic_no=VALUES(epic_no), verified_at=VALUES(verified_at)",
+                    (mobile_num, epic_no, datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+                )
+        finally:
+            conn.close()
 
         logger.info(f"Card generation completed for {epic_no}")
         
@@ -1637,16 +1683,17 @@ def check_card_status(job_id):
             if result.get('success') and result.get('epic_no'):
                 mobile = session.get('verified_mobile')
                 if mobile:
-                    verified_mobiles_col.update_one(
-                        {'mobile': mobile},
-                        {'$set': {
-                            'mobile': mobile,
-                            'epic_no': result['epic_no'],
-                            'verified_at': datetime.now(timezone.utc).isoformat(),
-                            'verified_at_dt': datetime.now(timezone.utc)
-                        }},
-                        upsert=True
-                    )
+                    conn = _get_mysql()
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "INSERT INTO verified_mobiles (mobile, epic_no, verified_at) "
+                                "VALUES (%s, %s, %s) "
+                                "ON DUPLICATE KEY UPDATE epic_no=VALUES(epic_no), verified_at=VALUES(verified_at)",
+                                (mobile, result['epic_no'], datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+                            )
+                    finally:
+                        conn.close()
         elif task.state == 'FAILURE':
             response = {
                 'status': 'failed',
@@ -1700,7 +1747,13 @@ def user_serve_card(epic_no):
     
     # Verify this mobile generated this card
     epic_no = epic_no.strip().upper()
-    gen_doc = gen_voters_col.find_one({'epic_no': epic_no, 'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM generated_voters WHERE EPIC_NO = %s AND MOBILE_NO = %s", (epic_no, mobile))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     if not gen_doc:
         return jsonify({'error': 'Forbidden. You do not have access to this card.'}), 403
     
@@ -1720,7 +1773,13 @@ def user_download_card(epic_no):
     
     # Verify this mobile generated this card
     epic_no = epic_no.strip().upper()
-    gen_doc = gen_voters_col.find_one({'epic_no': epic_no, 'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM generated_voters WHERE EPIC_NO = %s AND MOBILE_NO = %s", (epic_no, mobile))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     if not gen_doc:
         return jsonify({'error': 'Forbidden. You do not have access to this card.'}), 403
     
@@ -1745,7 +1804,23 @@ def verify_voter(epic_no):
         return redirect(url_for('user_home'))
 
     # Attach stats (exclude secret_pin — never expose in QR/verify page)
-    s = stats_col.find_one({'epic_no': epic_no}, {'_id': 0, 'secret_pin': 0}) or {}
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT epic_no, count, last_generated, photo_url, card_url, auth_mobile FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            s = cur.fetchone() or {}
+            cur.execute("SELECT ptc_code FROM generated_voters WHERE EPIC_NO = %s LIMIT 1", (epic_no,))
+            gen_doc = cur.fetchone()
+
+            # Volunteer request status
+            cur.execute("SELECT status, requested_at FROM volunteer_requests WHERE epic_no = %s ORDER BY requested_at DESC LIMIT 1", (epic_no,))
+            vol_req = cur.fetchone()
+
+            # Booth agent request status
+            cur.execute("SELECT status, requested_at FROM booth_agent_requests WHERE epic_no = %s ORDER BY requested_at DESC LIMIT 1", (epic_no,))
+            ba_req = cur.fetchone()
+    finally:
+        conn.close()
     voter['gen_count'] = s.get('count', 0)
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
@@ -1759,13 +1834,29 @@ def verify_voter(epic_no):
         voter['auth_mobile_masked'] = ''
 
     # Attach PTC code from generated voters DB
-    gen_doc = gen_voters_col.find_one({'epic_no': epic_no}, {'ptc_code': 1})
     voter['ptc_code'] = gen_doc.get('ptc_code', '') if gen_doc else ''
 
+    # Attach volunteer and booth agent request status
+    voter['volunteer_status'] = vol_req.get('status', '') if vol_req else ''
+    voter['volunteer_requested_at'] = str(vol_req.get('requested_at', '')) if vol_req else ''
+    voter['booth_agent_status'] = ba_req.get('status', '') if ba_req else ''
+    voter['booth_agent_requested_at'] = str(ba_req.get('requested_at', '')) if ba_req else ''
+
     # Separate core fields from extra fields
-    core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count',
+    core_keys = {'epic_no', 'name', 'assembly', 'age', 'sex', 'relation_type',
+                 'relation_name', 'mobile', 'part_no', 'dob', 'section_no',
+                 'slno_in_part', 'house_no', 'name_v1', 'relation_name_v1',
+                 'house_no_v1', 'org_list_no', 'id', 'gen_count',
                  'last_generated', 'photo_url', 'card_url', 'serial_number',
-                 'verify_url', 'auth_mobile', 'ptc_code'}
+                 'verify_url', 'auth_mobile', 'ptc_code',
+                 'auth_mobile_masked',
+                 'volunteer_status', 'volunteer_requested_at',
+                 'booth_agent_status', 'booth_agent_requested_at',
+                 'AC_NO','PART_NO','SECTION_NO','SLNOINPART','C_HOUSE_NO','C_HOUSE_NO_V1',
+                 'FM_NAME_EN','LASTNAME_EN','FM_NAME_V1','LASTNAME_V1','RLN_TYPE',
+                 'RLN_FM_NM_EN','RLN_L_NM_EN','RLN_FM_NM_V1','RLN_L_NM_V1',
+                 'EPIC_NO','GENDER','AGE','DOB','MOBILE_NO','ORG_LIST_NO','DISTRICT_ID','DISTRICT_NAME',
+                 'district'}
     extra_fields = {k: v for k, v in voter.items() if k not in core_keys and v}
 
     return render_template('user/verify.html',
@@ -1778,7 +1869,13 @@ def verify_voter(epic_no):
 @app.route('/refer/<ptc_code>/<referral_id>')
 def referral_landing(ptc_code, referral_id):
     """Serve OG-tagged page for WhatsApp preview, then redirect to chatbot."""
-    voter = gen_voters_col.find_one({'ptc_code': ptc_code, 'referral_id': referral_id})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name FROM generated_voters WHERE ptc_code = %s AND referral_id = %s", (ptc_code, referral_id))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter:
         flash('Invalid referral link.', 'danger')
         return redirect(url_for('user_home'))
@@ -1820,15 +1917,26 @@ def chat_profile():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'_id': 0, 'secret_pin': 0})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     if not gen_doc:
         return jsonify({'success': False, 'message': 'Profile not found.'}), 404
 
-    # Also fetch original voter data for additional fields
+    gen_doc = _translate_gen_row(gen_doc)
+
+    # Remove secret_pin from gen_doc
+    gen_doc.pop('secret_pin', None)
+
+    # Also fetch original voter data from MySQL
     voter_doc = None
     epic = gen_doc.get('epic_no', '')
     if epic:
-        voter_doc = voters_col.find_one({'epic_no': epic}, {'_id': 0})
+        voter_doc = find_voter_by_epic(epic)
 
     # Merge: gen_doc fields take priority, but include extra voter_doc fields
     profile = {}
@@ -1852,12 +1960,19 @@ def chat_booth():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    gen_doc = gen_voters_col.find_one({'mobile': mobile}, {'_id': 0})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            gen_doc = cur.fetchone()
+    finally:
+        conn.close()
     if not gen_doc:
         return jsonify({'success': False, 'message': 'Profile not found.'}), 404
 
+    gen_doc = _translate_gen_row(gen_doc)
     epic = gen_doc.get('epic_no', '')
-    voter_doc = voters_col.find_one({'epic_no': epic}, {'_id': 0}) if epic else None
+    voter_doc = find_voter_by_epic(epic) if epic else None
 
     # Merge to get all fields
     merged = {}
@@ -1923,9 +2038,7 @@ def chat_booth():
         'latlong_field': latlong_key or '',
         'address_field': address_key or '',
         'assembly': merged.get('assembly', ''),
-        'district': merged.get('district', ''),
         'part_no': merged.get('part_no', ''),
-        'polling_station': merged.get('polling_station', ''),
     }
 
     has_data = bool(detected_latlong or detected_address)
@@ -1940,7 +2053,13 @@ def chat_get_referral_link():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    voter = gen_voters_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         return jsonify({'success': False, 'message': 'Voter not found.'}), 404
 
@@ -1964,16 +2083,29 @@ def chat_my_members():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    voter = gen_voters_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ptc_code, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         return jsonify({'success': False, 'message': 'Voter not found.'}), 404
 
     ptc_code = voter['ptc_code']
-    members = list(gen_voters_col.find(
-        {'referred_by_ptc': ptc_code},
-        {'_id': 0, 'name': 1, 'epic_no': 1, 'assembly': 1, 'district': 1,
-         'ptc_code': 1, 'generated_at': 1, 'mobile': 1}
-    ).sort('generated_at', -1))
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, "
+                "EPIC_NO AS epic_no, CAST(AC_NO AS CHAR) AS assembly, ptc_code, generated_at, MOBILE_NO AS mobile "
+                "FROM generated_voters WHERE referred_by_ptc = %s ORDER BY generated_at DESC",
+                (ptc_code,)
+            )
+            members = cur.fetchall()
+    finally:
+        conn.close()
 
     return jsonify({
         'success': True,
@@ -1992,11 +2124,28 @@ def chat_request_volunteer():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    voter = gen_voters_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ptc_code, EPIC_NO AS epic_no, "
+                "CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, "
+                "COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, "
+                "DISTRICT_NAME AS district, photo_url "
+                "FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         return jsonify({'success': False, 'message': 'Voter not found.'}), 404
 
-    existing = volunteer_requests_col.find_one({'ptc_code': voter['ptc_code']})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM volunteer_requests WHERE ptc_code = %s", (voter['ptc_code'],))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         return jsonify({
             'success': True,
@@ -2005,20 +2154,18 @@ def chat_request_volunteer():
             'message': 'You have already submitted a volunteer request.'
         })
 
-    doc = {
-        'ptc_code': voter['ptc_code'],
-        'epic_no': voter.get('epic_no', ''),
-        'name': voter.get('name', ''),
-        'mobile': mobile,
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'photo_url': voter.get('photo_url', ''),
-        'status': 'pending',
-        'requested_at': datetime.now(timezone.utc).isoformat(),
-        'reviewed_at': None,
-        'reviewed_by': None,
-    }
-    volunteer_requests_col.insert_one(doc)
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO volunteer_requests (ptc_code, epic_no, name, mobile, assembly, photo_url, status, requested_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (voter['ptc_code'], voter.get('epic_no', ''), voter.get('name', ''),
+                 mobile, voter.get('assembly', ''), voter.get('photo_url', ''),
+                 'pending', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+            )
+    finally:
+        conn.close()
     return jsonify({'success': True, 'already_requested': False, 'message': 'Volunteer request submitted.'})
 
 
@@ -2030,11 +2177,28 @@ def chat_request_booth_agent():
     if not mobile or len(mobile) != 10:
         return jsonify({'success': False, 'message': 'Invalid mobile number'}), 400
 
-    voter = gen_voters_col.find_one({'mobile': mobile})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ptc_code, EPIC_NO AS epic_no, "
+                "CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, "
+                "COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, "
+                "DISTRICT_NAME AS district, photo_url "
+                "FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+            voter = cur.fetchone()
+    finally:
+        conn.close()
     if not voter or not voter.get('ptc_code'):
         return jsonify({'success': False, 'message': 'Voter not found.'}), 404
 
-    existing = booth_agent_requests_col.find_one({'ptc_code': voter['ptc_code']})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM booth_agent_requests WHERE ptc_code = %s", (voter['ptc_code'],))
+            existing = cur.fetchone()
+    finally:
+        conn.close()
     if existing:
         return jsonify({
             'success': True,
@@ -2043,20 +2207,18 @@ def chat_request_booth_agent():
             'message': 'You have already submitted a booth agent request.'
         })
 
-    doc = {
-        'ptc_code': voter['ptc_code'],
-        'epic_no': voter.get('epic_no', ''),
-        'name': voter.get('name', ''),
-        'mobile': mobile,
-        'assembly': voter.get('assembly', ''),
-        'district': voter.get('district', ''),
-        'photo_url': voter.get('photo_url', ''),
-        'status': 'pending',
-        'requested_at': datetime.now(timezone.utc).isoformat(),
-        'reviewed_at': None,
-        'reviewed_by': None,
-    }
-    booth_agent_requests_col.insert_one(doc)
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO booth_agent_requests (ptc_code, epic_no, name, mobile, assembly, photo_url, status, requested_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (voter['ptc_code'], voter.get('epic_no', ''), voter.get('name', ''),
+                 mobile, voter.get('assembly', ''), voter.get('photo_url', ''),
+                 'pending', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+            )
+    finally:
+        conn.close()
     return jsonify({'success': True, 'already_requested': False, 'message': 'Booth agent request submitted.'})
 
 
@@ -2141,9 +2303,9 @@ def voters_list():
 
     # Only fetch lightweight data for the template shell
     # Actual voter data is loaded via AJAX from /api/voters
-    assemblies, districts = _get_cached_dropdowns(voters_col, REDIS_DROPDOWN_VOTERS_KEY)
+    assemblies, districts = _get_cached_dropdowns('mysql_voters', REDIS_DROPDOWN_VOTERS_KEY)
     try:
-        total = voters_col.estimated_document_count()
+        total = _mysql_count()
     except Exception:
         total = 0
 
@@ -2154,138 +2316,6 @@ def voters_list():
                            assemblies=assemblies, districts=districts,
                            filter_assembly='',
                            filter_district='')
-
-
-def _run_import_thread(file_path: str, csv_bytes: bytes, ext: str, import_mode: str):
-    """Background thread: parse file and stream-insert into MongoDB."""
-    global import_status
-    try:
-        import_status['phase'] = 'parsing'
-
-        # Count total rows first for progress tracking
-        if ext == 'csv':
-            for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
-                try:
-                    text_preview = csv_bytes.decode(enc)
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                text_preview = csv_bytes.decode('latin-1')
-            total_rows = max(text_preview.count('\n'), 0)
-            if total_rows > 0:
-                total_rows -= 1  # subtract header row
-            del text_preview
-            import_status['total'] = total_rows
-            voter_iter = _iter_csv_bytes(csv_bytes)
-        else:
-            import openpyxl as _opx
-            _wb_count = _opx.load_workbook(file_path, read_only=True)
-            _ws_count = _wb_count.active
-            total_rows = (_ws_count.max_row - 1) if _ws_count.max_row else 0
-            _wb_count.close()
-            import_status['total'] = max(total_rows, 0)
-            voter_iter = _iter_xlsx(file_path)
-
-        import_status['phase'] = 'inserting'
-
-        if import_mode == 'replace':
-            count = _stream_replace(voter_iter, import_status)
-            import_status['message'] = f'Data replaced successfully! {count} unique voter records stored.'
-        else:
-            existing_count = voters_col.count_documents({})
-            count = _stream_upsert(voter_iter, import_status)
-            new_total = voters_col.count_documents({})
-            new_added = new_total - existing_count
-            updated = count - new_added if count > new_added else 0
-            import_status['message'] = (
-                f'Import merged! {import_status["processed"]} records processed - '
-                f'{new_added} new added, {updated} updated, '
-                f'{new_total} total in database.'
-            )
-
-        import_status['phase'] = 'done'
-
-    except Exception as e:
-        import_status['phase'] = 'error'
-        import_status['error'] = str(e)
-    finally:
-        import_status['running'] = False
-
-
-@admin_bp.route('/import', methods=['GET', 'POST'])
-def import_xlsx():
-    global import_status
-
-    if request.method == 'POST':
-        # Prevent concurrent imports
-        if import_status.get('running'):
-            flash('An import is already in progress. Please wait.', 'warning')
-            return redirect(url_for('admin.import_xlsx'))
-
-        if 'file' not in request.files:
-            flash('No file selected.', 'danger')
-            return redirect(url_for('admin.import_xlsx'))
-
-        file = request.files['file']
-        if not file or not file.filename:
-            flash('No file selected.', 'danger')
-            return redirect(url_for('admin.import_xlsx'))
-
-        if not allowed_file(file.filename, ALLOWED_DATA):
-            flash('Only .xlsx, .xls, and .csv files are accepted.', 'danger')
-            return redirect(url_for('admin.import_xlsx'))
-
-        ext = file.filename.rsplit('.', 1)[1].lower()
-        import_mode = request.form.get('import_mode', 'merge')
-
-        # Save file / read bytes BEFORE launching thread
-        csv_bytes = None
-        file_path = None
-        try:
-            if ext == 'csv':
-                csv_bytes = file.stream.read()
-            else:
-                os.makedirs(config.DATA_DIR, exist_ok=True)
-                file.save(config.VOTERS_XLSX)
-                file_path = config.VOTERS_XLSX
-        except Exception as e:
-            flash(f'Could not read file: {e}', 'danger')
-            return redirect(url_for('admin.import_xlsx'))
-
-        # Reset status and launch background thread
-        import_status.update({
-            'running': True,
-            'phase': 'parsing',
-            'processed': 0,
-            'inserted': 0,
-            'total': 0,
-            'message': '',
-            'error': '',
-        })
-
-        t = threading.Thread(
-            target=_run_import_thread,
-            args=(file_path, csv_bytes, ext, import_mode),
-            daemon=True
-        )
-        t.start()
-
-        # Return JSON so the frontend stays on the page and polls
-        return jsonify({'ok': True, 'status': 'started'})
-
-    # GET - show current status
-    try:
-        voters_count = voters_col.estimated_document_count()
-    except Exception:
-        voters_count = 0
-    return render_template('admin/import.html', voters_count=voters_count)
-
-
-@admin_bp.route('/api/import-status')
-def api_import_status():
-    """Polling endpoint for import progress."""
-    return jsonify(import_status)
 
 
 @admin_bp.route('/api/stats')
@@ -2308,7 +2338,13 @@ def voter_detail(epic_no):
         return redirect(url_for('admin.voters_list'))
 
     # Attach stats
-    s = stats_col.find_one({'epic_no': epic_no}, {'_id': 0}) or {}
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generation_stats WHERE epic_no = %s", (epic_no,))
+            s = cur.fetchone() or {}
+    finally:
+        conn.close()
     voter['gen_count'] = s.get('count', 0)
     voter['last_generated'] = s.get('last_generated', '')
     voter['photo_url'] = s.get('photo_url', '')
@@ -2316,8 +2352,16 @@ def voter_detail(epic_no):
     voter['auth_mobile'] = s.get('auth_mobile', '')
 
     # Separate core fields from extra fields for display
-    core_keys = {'epic_no', 'name', 'assembly', 'district', 'gen_count',
-                 'last_generated', 'photo_url', 'card_url', 'auth_mobile'}
+    core_keys = {'epic_no', 'name', 'assembly', 'age', 'sex', 'relation_type',
+                 'relation_name', 'mobile', 'part_no', 'dob', 'section_no',
+                 'slno_in_part', 'house_no', 'name_v1', 'relation_name_v1',
+                 'house_no_v1', 'org_list_no', 'id', 'gen_count',
+                 'last_generated', 'photo_url', 'card_url', 'auth_mobile',
+                 'AC_NO','ASSEMBLY_NAME','PART_NO','SECTION_NO','SLNOINPART','C_HOUSE_NO','C_HOUSE_NO_V1',
+                 'FM_NAME_EN','LASTNAME_EN','FM_NAME_V1','LASTNAME_V1','RLN_TYPE',
+                 'RLN_FM_NM_EN','RLN_L_NM_EN','RLN_FM_NM_V1','RLN_L_NM_V1',
+                 'EPIC_NO','GENDER','AGE','DOB','MOBILE_NO','ORG_LIST_NO','DISTRICT_ID','DISTRICT_NAME',
+                 'district', 'district_id', 'assembly_name'}
     extra_fields = {k: v for k, v in voter.items() if k not in core_keys}
 
     return render_template('admin/voter_detail.html',
@@ -2326,67 +2370,85 @@ def voter_detail(epic_no):
 @admin_bp.route('/api/voters')
 @rate_limit(max_requests=30, window_seconds=60)
 def api_voters():
-    """JSON API: search, filter, paginate voters - cursor-based and page-based."""
+    """JSON API: search, filter, paginate voters from MySQL (multi-table)."""
     search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
-    cursor = request.args.get('cursor', '').strip()
-    direction = request.args.get('direction', 'next').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    # Build MongoDB query - all filtering happens in DB, not Python
-    conditions = []
-    if assembly:
-        conditions.append({'assembly': assembly})
-    if district:
-        conditions.append({'district': district})
+    # Determine which tables to query based on filters
+    target_tables = _get_voter_tables(assembly=assembly, district=district)
+
+    # Build WHERE clause (without assembly/district since tables already filtered)
+    where_parts = []
+    params = []
     if search:
-        sf = _build_search_filter(search, ['epic_no', 'name', 'assembly', 'district'])
-        if sf:
-            conditions.append(sf)
-    base_query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append(
+            "(`EPIC_NO` LIKE %s OR CONCAT(`FM_NAME_EN`,' ',`LASTNAME_EN`) LIKE %s OR `ASSEMBLY_NAME` LIKE %s)"
+        )
+        params.extend([like, like, like])
 
-    # Server-side count (estimated for unfiltered, count_documents for filtered)
-    if base_query:
-        total = voters_col.count_documents(base_query)
-    else:
-        total = voters_col.estimated_document_count()
+    where_clause = " AND ".join(where_parts) if where_parts else ""
 
-    if cursor:
-        # ── P2: Cursor-based pagination (avoids skip at 5.6 Cr scale) ──
-        cursor_filter = _build_cursor_filter(cursor, direction, descending=False)
-        query = _merge_conditions([base_query, cursor_filter]) if cursor_filter else base_query
+    # Count across target tables
+    total = _mysql_count(where_clause, tuple(params), tables=target_tables)
 
-        sort_dir = ASCENDING
-        if direction == 'prev':
-            sort_dir = DESCENDING
-        voters = list(voters_col.find(query).sort('_id', sort_dir).limit(per_page))
-        if direction == 'prev':
-            voters.reverse()
+    # Paginate
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
 
-        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
-        prev_cursor = str(voters[0]['_id']) if voters else None
-        for v in voters:
-            v['_id'] = str(v['_id'])
-    else:
-        # ── Page-based (first load / fallback) ──
-        total_pages = max(1, (total + per_page - 1) // per_page)
-        page = min(page, total_pages)
-        skip = (page - 1) * per_page
-        voters = list(voters_col.find(base_query).sort('_id', ASCENDING).skip(skip).limit(per_page))
+    # Fetch paginated rows across tables
+    conn = _get_voters_mysql()
+    try:
+        voters = []
+        # Build a lookup for pre-computed table sizes (no-search optimization)
+        _tbl_totals = {r['table_name']: int(r.get('total_voters') or 0) for r in _ASSEMBLY_TABLES}
+        with conn.cursor() as cur:
+            remaining_offset = offset
+            remaining_limit = per_page
+            for tbl in target_tables:
+                if remaining_limit <= 0:
+                    break
+                # Use pre-computed count when no WHERE, otherwise query
+                if where_clause:
+                    cnt_sql = f"SELECT COUNT(*) AS cnt FROM `{tbl}`"
+                    cnt_sql += f" WHERE {where_clause}"
+                    cur.execute(cnt_sql, tuple(params))
+                    tbl_count = cur.fetchone()['cnt']
+                else:
+                    tbl_count = _tbl_totals.get(tbl, 0)
+                if remaining_offset >= tbl_count:
+                    remaining_offset -= tbl_count
+                    continue
+                sql = f"SELECT * FROM `{tbl}`"
+                if where_clause:
+                    sql += f" WHERE {where_clause}"
+                sql += " ORDER BY `id` ASC LIMIT %s OFFSET %s"
+                cur.execute(sql, tuple(params) + (remaining_limit, remaining_offset))
+                rows = cur.fetchall()
+                voters.extend(_translate_voter_row(r) for r in rows)
+                remaining_offset = 0
+                remaining_limit -= len(rows)
+    finally:
+        conn.close()
 
-        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
-        prev_cursor = None
-        for v in voters:
-            v['_id'] = str(v['_id'])
-
-    # Batch-fetch stats for ONLY this page (20 records) instead of ALL stats
+    # Batch-fetch stats for ONLY this page from MySQL
     epic_nos = [v['epic_no'] for v in voters if v.get('epic_no')]
-    stats_docs = {s['epic_no']: s for s in stats_col.find(
-        {'epic_no': {'$in': epic_nos}}, {'_id': 0}
-    )} if epic_nos else {}
+    stats_docs = {}
+    if epic_nos:
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                placeholders = ','.join(['%s'] * len(epic_nos))
+                cur.execute(f"SELECT * FROM generation_stats WHERE epic_no IN ({placeholders})", epic_nos)
+                for row in cur.fetchall():
+                    stats_docs[row['epic_no']] = row
+        finally:
+            conn.close()
 
     for v in voters:
         s = stats_docs.get(v.get('epic_no', ''), {})
@@ -2396,23 +2458,14 @@ def api_voters():
         v['card_url'] = s.get('card_url', '')
         v['auth_mobile'] = s.get('auth_mobile', '')
 
-    response = {
+    return jsonify({
         'voters': voters,
         'total': total,
         'per_page': per_page,
-        'next_cursor': next_cursor,
-        'prev_cursor': prev_cursor,
-    }
-    if cursor:
-        response['has_next'] = len(voters) == per_page
-        response['has_prev'] = bool(cursor)
-        response['cursor_mode'] = True
-    else:
-        response['page'] = page
-        response['total_pages'] = total_pages
-        response['cursor_mode'] = False
-
-    return jsonify(response)
+        'page': page,
+        'total_pages': total_pages,
+        'cursor_mode': False,
+    })
 
 
 # ── Generated Voters (from new DB) ──────────────────────────────
@@ -2427,7 +2480,13 @@ def generated_voters_list():
     # Only fetch lightweight count for the template shell
     # Actual data is loaded via AJAX from /api/generated-voters
     try:
-        total = gen_voters_col.estimated_document_count()
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS cnt FROM generated_voters")
+                total = cur.fetchone()['cnt']
+        finally:
+            conn.close()
     except Exception:
         total = 0
 
@@ -2451,42 +2510,68 @@ def api_generated_voters():
     per_page = min(max(per_page, 5), 100)
 
     # Cached dropdown options (5 min TTL - distinct() is expensive at scale)
-    assemblies, districts = _get_cached_dropdowns(gen_voters_col, REDIS_DROPDOWN_GEN_KEY)
+    assemblies, districts = _get_cached_dropdowns('generated_voters', REDIS_DROPDOWN_GEN_KEY)
 
-    # Build base MongoDB query - all filtering in DB
-    conditions = []
+    # Build MySQL WHERE conditions
+    where_parts = []
+    params = []
     if assembly:
-        conditions.append({'assembly': {'$regex': f'^{re.escape(assembly)}$', '$options': 'i'}})
-    if district:
-        conditions.append({'district': {'$regex': f'^{re.escape(district)}$', '$options': 'i'}})
+        where_parts.append("ASSEMBLY_NAME = %s")
+        params.append(assembly)
     if search:
-        sf = _build_search_filter(search, ['epic_no', 'name', 'ptc_code', 'mobile', 'assembly', 'district'])
-        if sf:
-            conditions.append(sf)
-    base_query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append(
+            "(EPIC_NO LIKE %s OR FM_NAME_EN LIKE %s OR LASTNAME_EN LIKE %s "
+            "OR ptc_code LIKE %s OR MOBILE_NO LIKE %s "
+            "OR CAST(AC_NO AS CHAR) LIKE %s)"
+        )
+        params.extend([like, like, like, like, like, like])
 
-    # Server-side count (estimated for unfiltered, count_documents for filtered)
-    if base_query:
-        total = gen_voters_col.count_documents(base_query)
-    else:
-        total = gen_voters_col.estimated_document_count()
+    where_clause = " AND ".join(where_parts) if where_parts else ""
+
+    # Server-side count
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            count_sql = "SELECT COUNT(*) AS cnt FROM generated_voters"
+            if where_clause:
+                count_sql += f" WHERE {where_clause}"
+            cur.execute(count_sql, tuple(params))
+            total = cur.fetchone()['cnt']
+    finally:
+        conn.close()
 
     if cursor:
-        # ── P2: Cursor-based pagination (no .skip - O(log n) for deep pages) ──
-        cursor_filter = _build_cursor_filter(cursor, direction, descending=True)
-        query = _merge_conditions([base_query, cursor_filter]) if cursor_filter else base_query
-
-        sort_dir = DESCENDING
+        # ── Cursor-based pagination (using id) ──
+        cursor_params = list(params)
         if direction == 'prev':
-            sort_dir = ASCENDING
-        voters = list(gen_voters_col.find(query).sort('_id', sort_dir).limit(per_page))
+            cursor_cond = "id > %s"
+            order = "ASC"
+        else:
+            cursor_cond = "id < %s"
+            order = "DESC"
+        cursor_params.append(int(cursor))
+
+        if where_clause:
+            full_where = f"{where_clause} AND {cursor_cond}"
+        else:
+            full_where = cursor_cond
+
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                sql = f"SELECT * FROM generated_voters WHERE {full_where} ORDER BY id {order} LIMIT %s"
+                cursor_params.append(per_page)
+                cur.execute(sql, tuple(cursor_params))
+                voters = [_translate_gen_row(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
         if direction == 'prev':
             voters.reverse()
 
-        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
-        prev_cursor = str(voters[0]['_id']) if voters else None
-        for v in voters:
-            v['_id'] = str(v['_id'])
+        next_cursor = str(voters[-1]['id']) if len(voters) == per_page else None
+        prev_cursor = str(voters[0]['id']) if voters else None
 
         return jsonify({
             'voters': voters,
@@ -2504,13 +2589,22 @@ def api_generated_voters():
         # ── Page-based (first load / fallback) ──
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, total_pages)
-        skip = (page - 1) * per_page
-        voters = list(gen_voters_col.find(base_query).sort('_id', DESCENDING).skip(skip).limit(per_page))
+        offset = (page - 1) * per_page
 
-        next_cursor = str(voters[-1]['_id']) if len(voters) == per_page else None
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                sql = "SELECT * FROM generated_voters"
+                if where_clause:
+                    sql += f" WHERE {where_clause}"
+                sql += " ORDER BY id DESC LIMIT %s OFFSET %s"
+                cur.execute(sql, tuple(params) + (per_page, offset))
+                voters = [_translate_gen_row(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+        next_cursor = str(voters[-1]['id']) if len(voters) == per_page else None
         prev_cursor = None
-        for v in voters:
-            v['_id'] = str(v['_id'])
 
         return jsonify({
             'voters': voters,
@@ -2531,20 +2625,44 @@ def api_generated_voters():
 @admin_bp.route('/generated-voters/<ptc_code>')
 def generated_voter_detail(ptc_code):
     """Show full details for a generated voter including referred voters."""
-    voter = gen_voters_col.find_one({'ptc_code': ptc_code}, {'_id': 0})
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM generated_voters WHERE ptc_code = %s", (ptc_code,))
+            voter = _translate_gen_row(cur.fetchone())
+    finally:
+        conn.close()
     if not voter:
         flash('Generated voter not found.', 'danger')
         return redirect(url_for('admin.generated_voters_list'))
 
     # Get referred voters
-    referred = list(gen_voters_col.find(
-        {'referred_by_ptc': ptc_code},
-        {'_id': 0, 'name': 1, 'epic_no': 1, 'ptc_code': 1, 'mobile': 1,
-         'assembly': 1, 'district': 1, 'generated_at': 1, 'photo_url': 1}
-    ).sort('generated_at', -1))
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, "
+                "EPIC_NO AS epic_no, ptc_code, MOBILE_NO AS mobile, "
+                "COALESCE(ASSEMBLY_NAME, CAST(AC_NO AS CHAR)) AS assembly, generated_at, photo_url "
+                "FROM generated_voters WHERE referred_by_ptc = %s ORDER BY generated_at DESC",
+                (ptc_code,)
+            )
+            referred = cur.fetchall()
+
+            # Get volunteer request status
+            cur.execute("SELECT status, requested_at, reviewed_at FROM volunteer_requests WHERE ptc_code = %s", (ptc_code,))
+            volunteer_req = cur.fetchone()
+
+            # Get booth agent request status
+            cur.execute("SELECT status, requested_at, reviewed_at FROM booth_agent_requests WHERE ptc_code = %s", (ptc_code,))
+            booth_agent_req = cur.fetchone()
+    finally:
+        conn.close()
 
     return render_template('admin/generated_voter_detail.html',
-                           voter=voter, referred=referred)
+                           voter=voter, referred=referred,
+                           volunteer_req=volunteer_req,
+                           booth_agent_req=booth_agent_req)
 
 
 # ── Volunteer Requests ───────────────────────────────────────────
@@ -2564,21 +2682,38 @@ def api_volunteer_requests():
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    conditions = []
+    where_parts = []
+    params = []
     if status:
-        conditions.append({'status': status})
+        where_parts.append("status = %s")
+        params.append(status)
     if search:
-        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile', 'assembly', 'district'])
-        if sf:
-            conditions.append(sf)
-    query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append("(name LIKE %s OR ptc_code LIKE %s OR epic_no LIKE %s OR mobile LIKE %s OR assembly LIKE %s OR district LIKE %s)")
+        params.extend([like, like, like, like, like, like])
+    where_clause = " AND ".join(where_parts) if where_parts else ""
 
-    total = volunteer_requests_col.count_documents(query)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            count_sql = "SELECT COUNT(*) AS cnt FROM volunteer_requests"
+            if where_clause:
+                count_sql += f" WHERE {where_clause}"
+            cur.execute(count_sql, tuple(params))
+            total = cur.fetchone()['cnt']
 
-    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('requested_at', -1).skip(skip).limit(per_page))
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            offset = (page - 1) * per_page
+
+            sql = "SELECT * FROM volunteer_requests"
+            if where_clause:
+                sql += f" WHERE {where_clause}"
+            sql += " ORDER BY requested_at DESC LIMIT %s OFFSET %s"
+            cur.execute(sql, tuple(params) + (per_page, offset))
+            items = cur.fetchall()
+    finally:
+        conn.close()
 
     return jsonify({
         'items': items,
@@ -2592,15 +2727,18 @@ def api_volunteer_requests():
 @admin_bp.route('/api/volunteer-requests/<ptc_code>/confirm', methods=['POST'])
 def confirm_volunteer(ptc_code):
     """Confirm a volunteer request."""
-    result = volunteer_requests_col.update_one(
-        {'ptc_code': ptc_code, 'status': 'pending'},
-        {'$set': {
-            'status': 'confirmed',
-            'reviewed_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_by': config.ADMIN_USERNAME,
-        }}
-    )
-    if result.modified_count:
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE volunteer_requests SET status = 'confirmed', reviewed_at = %s, reviewed_by = %s "
+                "WHERE ptc_code = %s AND status = 'pending'",
+                (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), config.ADMIN_USERNAME, ptc_code)
+            )
+            modified = cur.rowcount
+    finally:
+        conn.close()
+    if modified:
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
 
@@ -2608,15 +2746,18 @@ def confirm_volunteer(ptc_code):
 @admin_bp.route('/api/volunteer-requests/<ptc_code>/reject', methods=['POST'])
 def reject_volunteer(ptc_code):
     """Reject a volunteer request."""
-    result = volunteer_requests_col.update_one(
-        {'ptc_code': ptc_code, 'status': 'pending'},
-        {'$set': {
-            'status': 'rejected',
-            'reviewed_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_by': config.ADMIN_USERNAME,
-        }}
-    )
-    if result.modified_count:
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE volunteer_requests SET status = 'rejected', reviewed_at = %s, reviewed_by = %s "
+                "WHERE ptc_code = %s AND status = 'pending'",
+                (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), config.ADMIN_USERNAME, ptc_code)
+            )
+            modified = cur.rowcount
+    finally:
+        conn.close()
+    if modified:
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
 
@@ -2635,19 +2776,31 @@ def api_confirmed_volunteers():
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    conditions = [{'status': 'confirmed'}]
+    where_parts = ["status = 'confirmed'"]
+    params = []
     if search:
-        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile'])
-        if sf:
-            conditions.append(sf)
-    query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append("(name LIKE %s OR ptc_code LIKE %s OR epic_no LIKE %s OR mobile LIKE %s)")
+        params.extend([like, like, like, like])
+    where_clause = " AND ".join(where_parts)
 
-    total = volunteer_requests_col.count_documents(query)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS cnt FROM volunteer_requests WHERE {where_clause}", tuple(params))
+            total = cur.fetchone()['cnt']
 
-    items = list(volunteer_requests_col.find(query, {'_id': 0}).sort('reviewed_at', -1).skip(skip).limit(per_page))
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            offset = (page - 1) * per_page
+
+            cur.execute(
+                f"SELECT * FROM volunteer_requests WHERE {where_clause} ORDER BY reviewed_at DESC LIMIT %s OFFSET %s",
+                tuple(params) + (per_page, offset)
+            )
+            items = cur.fetchall()
+    finally:
+        conn.close()
 
     return jsonify({
         'items': items, 'total': total,
@@ -2672,21 +2825,38 @@ def api_booth_agent_requests():
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    conditions = []
+    where_parts = []
+    params = []
     if status:
-        conditions.append({'status': status})
+        where_parts.append("status = %s")
+        params.append(status)
     if search:
-        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile', 'assembly', 'district'])
-        if sf:
-            conditions.append(sf)
-    query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append("(name LIKE %s OR ptc_code LIKE %s OR epic_no LIKE %s OR mobile LIKE %s OR assembly LIKE %s OR district LIKE %s)")
+        params.extend([like, like, like, like, like, like])
+    where_clause = " AND ".join(where_parts) if where_parts else ""
 
-    total = booth_agent_requests_col.count_documents(query)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            count_sql = "SELECT COUNT(*) AS cnt FROM booth_agent_requests"
+            if where_clause:
+                count_sql += f" WHERE {where_clause}"
+            cur.execute(count_sql, tuple(params))
+            total = cur.fetchone()['cnt']
 
-    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('requested_at', -1).skip(skip).limit(per_page))
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            offset = (page - 1) * per_page
+
+            sql = "SELECT * FROM booth_agent_requests"
+            if where_clause:
+                sql += f" WHERE {where_clause}"
+            sql += " ORDER BY requested_at DESC LIMIT %s OFFSET %s"
+            cur.execute(sql, tuple(params) + (per_page, offset))
+            items = cur.fetchall()
+    finally:
+        conn.close()
 
     return jsonify({
         'items': items,
@@ -2700,15 +2870,18 @@ def api_booth_agent_requests():
 @admin_bp.route('/api/booth-agent-requests/<ptc_code>/confirm', methods=['POST'])
 def confirm_booth_agent(ptc_code):
     """Confirm a booth agent request."""
-    result = booth_agent_requests_col.update_one(
-        {'ptc_code': ptc_code, 'status': 'pending'},
-        {'$set': {
-            'status': 'confirmed',
-            'reviewed_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_by': config.ADMIN_USERNAME,
-        }}
-    )
-    if result.modified_count:
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE booth_agent_requests SET status = 'confirmed', reviewed_at = %s, reviewed_by = %s "
+                "WHERE ptc_code = %s AND status = 'pending'",
+                (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), config.ADMIN_USERNAME, ptc_code)
+            )
+            modified = cur.rowcount
+    finally:
+        conn.close()
+    if modified:
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
 
@@ -2716,15 +2889,18 @@ def confirm_booth_agent(ptc_code):
 @admin_bp.route('/api/booth-agent-requests/<ptc_code>/reject', methods=['POST'])
 def reject_booth_agent(ptc_code):
     """Reject a booth agent request."""
-    result = booth_agent_requests_col.update_one(
-        {'ptc_code': ptc_code, 'status': 'pending'},
-        {'$set': {
-            'status': 'rejected',
-            'reviewed_at': datetime.now(timezone.utc).isoformat(),
-            'reviewed_by': config.ADMIN_USERNAME,
-        }}
-    )
-    if result.modified_count:
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE booth_agent_requests SET status = 'rejected', reviewed_at = %s, reviewed_by = %s "
+                "WHERE ptc_code = %s AND status = 'pending'",
+                (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), config.ADMIN_USERNAME, ptc_code)
+            )
+            modified = cur.rowcount
+    finally:
+        conn.close()
+    if modified:
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Not found or already reviewed.'}), 404
 
@@ -2743,19 +2919,31 @@ def api_confirmed_booth_agents():
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    conditions = [{'status': 'confirmed'}]
+    where_parts = ["status = 'confirmed'"]
+    params = []
     if search:
-        sf = _build_search_filter(search, ['name', 'ptc_code', 'epic_no', 'mobile'])
-        if sf:
-            conditions.append(sf)
-    query = _merge_conditions(conditions)
+        like = f"%{search}%"
+        where_parts.append("(name LIKE %s OR ptc_code LIKE %s OR epic_no LIKE %s OR mobile LIKE %s)")
+        params.extend([like, like, like, like])
+    where_clause = " AND ".join(where_parts)
 
-    total = booth_agent_requests_col.count_documents(query)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    skip = (page - 1) * per_page
+    conn = _get_mysql()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS cnt FROM booth_agent_requests WHERE {where_clause}", tuple(params))
+            total = cur.fetchone()['cnt']
 
-    items = list(booth_agent_requests_col.find(query, {'_id': 0}).sort('reviewed_at', -1).skip(skip).limit(per_page))
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            page = min(page, total_pages)
+            offset = (page - 1) * per_page
+
+            cur.execute(
+                f"SELECT * FROM booth_agent_requests WHERE {where_clause} ORDER BY reviewed_at DESC LIMIT %s OFFSET %s",
+                tuple(params) + (per_page, offset)
+            )
+            items = cur.fetchall()
+    finally:
+        conn.close()
 
     return jsonify({
         'items': items, 'total': total,
@@ -2792,7 +2980,7 @@ if __name__ == '__main__':
     print(f"  User  : http://{args.host}:{args.port}/")
     print(f"  Admin : http://{args.host}:{args.port}/admin")
     print(f"  WhatsApp Webhook : http://{args.host}:{args.port}/whatsapp/webhook")
-    print("  Database: MongoDB Atlas | Photos: Cloudinary")
+    print("  Database: MySQL | Photos: Cloudinary")
     print("=" * 60)
 
     app.run(host=args.host, port=args.port, debug=args.debug)

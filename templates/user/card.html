@@ -457,23 +457,18 @@
           <span class="d-label">Epic Number</span>
           <span class="d-value">{{ epic_no }}</span>
         </div>
-        {% if voter.assembly %}
+        {% if voter.assembly_name or voter.assembly %}
         <div class="d-item">
           <span class="d-label">Assembly</span>
-          <span class="d-value">{{ voter.assembly }}</span>
-        </div>
-        {% endif %}
-        {% if voter.district %}
-        <div class="d-item">
-          <span class="d-label">District</span>
-          <span class="d-value">{{ voter.district }}</span>
+          <span class="d-value">{{ voter.assembly_name or voter.assembly }}</span>
         </div>
         {% endif %}
       </div>
 
       <!-- Action Buttons -->
       <div class="d-flex gap-2 justify-content-center flex-wrap">
-        <a href="{{ url_for('user_download_card', epic_no=epic_no) }}" class="btn btn-download">
+        {% set dl_url = card_url.replace('/upload/', '/upload/fl_attachment:' ~ epic_no ~ '_VoterID/') if '/upload/' in card_url else card_url %}
+        <a href="{{ dl_url }}" class="btn btn-download" target="_blank">
           <i class="bi bi-download me-2"></i>Download Card
         </a>
         <a href="{{ url_for('user_home') }}" class="btn btn-generate-another">
@@ -497,7 +492,7 @@
             target="_blank" class="share-btn twitter" title="Share on Twitter">
             <i class="bi bi-twitter-x"></i>
           </a>
-          <a href="{{ url_for('user_download_card', epic_no=epic_no) }}" class="share-btn download-sm" title="Download">
+          <a href="{{ dl_url }}" class="share-btn download-sm" title="Download" target="_blank">
             <i class="bi bi-download"></i>
           </a>
         </div>
