@@ -2,7 +2,16 @@
 {% block title %}Voters{% endblock %}
 {% block page_title %}Voters (<span id="countLabel">{{ total }}</span>){% endblock %}
 
-{% block extra_css %}{% endblock %}
+{% block extra_css %}
+<style>
+.epic-copy-cell { cursor:pointer; position:relative; }
+.epic-copy-cell:hover { background:rgba(255,255,255,0.04); }
+.epic-copy-cell .copy-icon { font-size:0.72rem; opacity:0.3; margin-left:2px; transition:opacity 0.15s; }
+.epic-copy-cell:hover .copy-icon { opacity:0.7; }
+.epic-copy-cell.copied code { color:#66BB6A !important; }
+.epic-copy-cell.copied .copy-icon::before { content:'\F26E'; } /* bi-clipboard-check */
+</style>
+{% endblock %}
 
 {% block content %}
 
@@ -146,6 +155,13 @@ updateActiveFilters(q, asm, dist);
       spinner.classList.add('active');
       tableCard.classList.add('table-loading');
 
+      // Show skeleton rows for perceived instant loading
+      var skelHtml = '';
+      for (var si = 0; si < Math.min(perPage, 10); si++) {
+        skelHtml += '<tr class="skeleton-row"><td colspan="8"><div class="skeleton-line"></div></td></tr>';
+      }
+      tbody.innerHTML = skelHtml;
+
       fetch(API_URL + '?' + params.toString(), { signal: fetchController.signal })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -204,7 +220,7 @@ updateActiveFilters(q, asm, dist);
         html += '<tr class="voter-row" onclick="window.location=\'' + url + '\'" title="Click to view details">' +
           '<td class="text-muted">' + num + '</td>' +
           '<td>' + photoCell + '</td>' +
-          '<td><code>' + highlight(v.epic_no, hl) + '</code></td>' +
+          '<td class="epic-copy-cell" data-epic="' + escHtml(v.epic_no) + '" onclick="event.stopPropagation();copyEpic(this)" title="Click to copy"><code>' + highlight(v.epic_no, hl) + '</code> <i class="bi bi-clipboard copy-icon"></i></td>' +
           '<td class="fw-semibold">' + highlight(v.name, hl) + '</td>' +
           '<td>' + highlight(v.assembly_name || v.assembly || '-', hl) + '</td>' +
           '<td>' + highlight(v.district || '-', hl) + '</td>' +
@@ -359,13 +375,16 @@ updateActiveFilters(q, asm, dist);
       cursorMode = false;
       pageCache = {};
       clearTimeout(debounceTimer);
+      // Require minimum 2 chars for search to avoid scanning 62M rows
+      var q = searchInput.value.trim();
+      if (q.length > 0 && q.length < 2) return;
       debounceTimer = setTimeout(fetchVoters, delay);
     }
 
-    /* â”€â”€ Event Listeners â”€â”€ */
+    /* ── Event Listeners ── */
     searchInput.addEventListener('input', function () {
       updateClearBtn(this.value.trim());
-      triggerSearch(250);
+      triggerSearch(400);
     });
 
     searchInput.addEventListener('keydown', function (e) {
@@ -433,5 +452,13 @@ updateActiveFilters(q, asm, dist);
     searchInput.focus();
     fetchVoters();
   })();
-</script>
+  /* ââ Copy EPIC number to clipboard ââ */
+  function copyEpic(cell) {
+    var epic = cell.getAttribute('data-epic');
+    if (!epic) return;
+    navigator.clipboard.writeText(epic).then(function() {
+      cell.classList.add('copied');
+      setTimeout(function() { cell.classList.remove('copied'); }, 1200);
+    });
+  }</script>
 {% endblock %}

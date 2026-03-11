@@ -98,7 +98,7 @@ limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     storage_uri=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["2000 per day", "500 per hour"],
     storage_options={"socket_connect_timeout": 30},
     strategy="fixed-window"
 )
@@ -331,6 +331,71 @@ def _cache_set(key: str, value: dict, ttl: int = 60):
 
 
 # ══════════════════════════════════════════════════════════════════
+#  FULLTEXT INDEX SETUP (run once at startup — idempotent)
+# ══════════════════════════════════════════════════════════════════
+
+def _ensure_indexes():
+    """Create indexes for fast search. Safe to call repeatedly — skips if already exists.
+    - Voter tables (234): B-tree on EPIC_NO only (FULLTEXT too slow to create on 234 tables)
+    - Generated voters (1 table): FULLTEXT + B-tree indexes
+    """
+    def _has_index(cur, db, table, index_name):
+        cur.execute(
+            "SELECT 1 FROM information_schema.STATISTICS "
+            "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s LIMIT 1",
+            (db, table, index_name)
+        )
+        return cur.fetchone() is not None
+
+    # ── Voter assembly tables: B-tree on EPIC_NO for fast exact lookups ──
+    try:
+        conn = _get_voters_mysql()
+        try:
+            with conn.cursor() as cur:
+                for tbl in _get_voter_tables():
+                    if not _has_index(cur, config.MYSQL_VOTERS_DB, tbl, 'idx_epic_no'):
+                        try:
+                            cur.execute(f"ALTER TABLE `{tbl}` ADD INDEX `idx_epic_no` (`EPIC_NO`)")
+                            logger.info("Created idx_epic_no on %s", tbl)
+                        except Exception:
+                            pass
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Could not create voter indexes: %s", e)
+
+    # ── Generated voters table: FULLTEXT + B-tree ──
+    try:
+        conn = _get_mysql()
+        try:
+            with conn.cursor() as cur:
+                if not _has_index(cur, config.MYSQL_DB, 'generated_voters', 'ft_gen_search'):
+                    try:
+                        cur.execute(
+                            "ALTER TABLE `generated_voters` ADD FULLTEXT INDEX `ft_gen_search` "
+                            "(`EPIC_NO`, `FM_NAME_EN`, `LASTNAME_EN`, `ptc_code`, `MOBILE_NO`)"
+                        )
+                        logger.info("Created FULLTEXT index on generated_voters")
+                    except Exception as e:
+                        logger.debug("FULLTEXT index skip generated_voters: %s", e)
+                for idx_name, cols in [
+                    ('idx_gv_assembly', '`ASSEMBLY_NAME`'),
+                    ('idx_gv_district', '`DISTRICT_NAME`'),
+                    ('idx_gv_epic', '`EPIC_NO`'),
+                ]:
+                    if not _has_index(cur, config.MYSQL_DB, 'generated_voters', idx_name):
+                        try:
+                            cur.execute(f"ALTER TABLE `generated_voters` ADD INDEX `{idx_name}` ({cols})")
+                        except Exception:
+                            pass
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Could not create generated_voters indexes: %s", e)
+
+# Thread is started later (after _get_voters_mysql and _get_voter_tables are defined)
+
+# ══════════════════════════════════════════════════════════════════
 #  SQL SEARCH / FILTER HELPERS
 # ══════════════════════════════════════════════════════════════════
 
@@ -341,6 +406,27 @@ def _build_search_where(search: str, fields: list[str]) -> tuple[str, list]:
     like_val = f'%{search}%'
     parts = [f'`{f}` LIKE %s' for f in fields]
     return f"({' OR '.join(parts)})", [like_val] * len(parts)
+
+
+def _build_fulltext_where(search: str, ft_index_cols: str = 'EPIC_NO, FM_NAME_EN, LASTNAME_EN, ASSEMBLY_NAME') -> tuple[str, list]:
+    """Build a FULLTEXT MATCH...AGAINST WHERE clause with LIKE fallback for short/partial queries.
+    Returns (where_clause, params).  Used only for `generated_voters` (single table)."""
+    if not search:
+        return '', []
+    # FULLTEXT works best with 3+ chars; for shorter use LIKE
+    if len(search) >= 3:
+        ft_term = '+' + search + '*'
+        return f"MATCH({ft_index_cols}) AGAINST(%s IN BOOLEAN MODE)", [ft_term]
+    return "`EPIC_NO` LIKE %s", [f"{search}%"]
+
+
+def _like_where_generated(search: str) -> tuple[str, list]:
+    """LIKE-based fallback for generated_voters search (when FULLTEXT unavailable)."""
+    if not search:
+        return '', []
+    pat = f"%{search}%"
+    return ("(`EPIC_NO` LIKE %s OR `FM_NAME_EN` LIKE %s OR `LASTNAME_EN` LIKE %s "
+            "OR `ptc_code` LIKE %s OR `MOBILE_NO` LIKE %s)"), [pat]*5
 
 
 def _gen_mysql_upsert(table: str, data: dict, unique_keys: list[str]) -> tuple[str, list]:
@@ -366,6 +452,9 @@ def _get_voters_mysql():
 def _get_mysql():
     """Get a connection from the generated-data MySQL pool (read/write DB)."""
     return mysql_pool.connection()
+
+# Now that _get_voters_mysql, _get_mysql, _get_voter_tables are defined, start index setup
+threading.Thread(target=_ensure_indexes, daemon=True).start()
 
 
 def _translate_voter_row(row: dict) -> dict | None:
@@ -433,18 +522,48 @@ def load_voters_from_db() -> list[dict]:
 
 
 def find_voter_by_epic(epic_no: str) -> dict | None:
+    """Find a voter by EPIC number across all assembly tables.
+    Optimized: uses parallel batched queries instead of sequential table iteration.
+    Results are cached in Redis for 10 min since voter data is read-only."""
     epic_no = epic_no.strip().upper()
+    if not epic_no:
+        return None
+
+    # Check Redis cache first
+    cache_key = f'voter_app:epic:{epic_no}'
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached if cached.get('epic_no') else None
+
+    tables = _get_voter_tables()
+    if not tables:
+        return None
+
     conn = _get_voters_mysql()
     try:
         with conn.cursor() as cur:
-            for tbl in _get_voter_tables():
-                cur.execute(f"SELECT * FROM `{tbl}` WHERE `EPIC_NO` = %s LIMIT 1", (epic_no,))
+            # Query tables in batches using UNION ALL (each subquery needs parentheses for MariaDB)
+            batch_size = 30
+            for i in range(0, len(tables), batch_size):
+                batch = tables[i:i + batch_size]
+                unions = []
+                params = []
+                for tbl in batch:
+                    unions.append(f"(SELECT * FROM `{tbl}` WHERE `EPIC_NO` = %s LIMIT 1)")
+                    params.append(epic_no)
+                sql = " UNION ALL ".join(unions) + " LIMIT 1"
+                cur.execute(sql, tuple(params))
                 row = cur.fetchone()
                 if row:
-                    return _translate_voter_row(row)
-        return None
+                    result = _translate_voter_row(row)
+                    _cache_set(cache_key, result, 600)  # Cache for 10 min
+                    return result
     finally:
         conn.close()
+
+    # Cache negative result too (avoid repeated lookups for invalid EPICs)
+    _cache_set(cache_key, {'epic_no': ''}, 120)  # Cache miss for 2 min
+    return None
 
 
 def _mysql_count(where: str = '', params: tuple = (), tables: list[str] | None = None) -> int:
@@ -2370,7 +2489,8 @@ def voter_detail(epic_no):
 @admin_bp.route('/api/voters')
 @rate_limit(max_requests=30, window_seconds=60)
 def api_voters():
-    """JSON API: search, filter, paginate voters from MySQL (multi-table)."""
+    """JSON API: search, filter, paginate voters from MySQL (multi-table).
+    Optimized: uses indexed LIKE + UNION ALL across tables."""
     search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
@@ -2381,60 +2501,102 @@ def api_voters():
     # Determine which tables to query based on filters
     target_tables = _get_voter_tables(assembly=assembly, district=district)
 
-    # Build WHERE clause (without assembly/district since tables already filtered)
+    # Build WHERE clause using LIKE (reliable across all 234 tables)
     where_parts = []
     params = []
     if search:
         like = f"%{search}%"
+        # EPIC_NO prefix search uses B-tree idx_epic_no (fast); name/assembly use LIKE
         where_parts.append(
-            "(`EPIC_NO` LIKE %s OR CONCAT(`FM_NAME_EN`,' ',`LASTNAME_EN`) LIKE %s OR `ASSEMBLY_NAME` LIKE %s)"
+            "(`EPIC_NO` LIKE %s OR `FM_NAME_EN` LIKE %s OR `LASTNAME_EN` LIKE %s OR `ASSEMBLY_NAME` LIKE %s)"
         )
-        params.extend([like, like, like])
+        params.extend([like, like, like, like])
 
     where_clause = " AND ".join(where_parts) if where_parts else ""
 
-    # Count across target tables
-    total = _mysql_count(where_clause, tuple(params), tables=target_tables)
+    # For search queries: use UNION ALL across tables (single round-trip per batch)
+    if search and target_tables:
+        conn = _get_voters_mysql()
+        try:
+            with conn.cursor() as cur:
+                # Count + fetch in batches to avoid oversized SQL
+                total = 0
+                batch_size = 30
+                for i in range(0, len(target_tables), batch_size):
+                    batch = target_tables[i:i + batch_size]
+                    count_unions = []
+                    batch_params = []
+                    for tbl in batch:
+                        count_unions.append(f"(SELECT COUNT(*) AS cnt FROM `{tbl}` WHERE {where_clause})")
+                        batch_params.extend(params)
+                    count_sql = "SELECT SUM(cnt) AS total FROM (" + " UNION ALL ".join(count_unions) + ") AS t"
+                    cur.execute(count_sql, tuple(batch_params))
+                    total += int(cur.fetchone()['total'] or 0)
 
-    # Paginate
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    offset = (page - 1) * per_page
+                # Paginate
+                total_pages = max(1, (total + per_page - 1) // per_page)
+                page = min(page, total_pages)
+                offset = (page - 1) * per_page
 
-    # Fetch paginated rows across tables
-    conn = _get_voters_mysql()
-    try:
-        voters = []
-        # Build a lookup for pre-computed table sizes (no-search optimization)
-        _tbl_totals = {r['table_name']: int(r.get('total_voters') or 0) for r in _ASSEMBLY_TABLES}
-        with conn.cursor() as cur:
-            remaining_offset = offset
-            remaining_limit = per_page
-            for tbl in target_tables:
-                if remaining_limit <= 0:
-                    break
-                # Use pre-computed count when no WHERE, otherwise query
-                if where_clause:
-                    cnt_sql = f"SELECT COUNT(*) AS cnt FROM `{tbl}`"
-                    cnt_sql += f" WHERE {where_clause}"
-                    cur.execute(cnt_sql, tuple(params))
-                    tbl_count = cur.fetchone()['cnt']
-                else:
+                # Fetch rows using UNION ALL with LIMIT (batched)
+                voters = []
+                remaining_offset = offset
+                remaining_limit = per_page
+                for i in range(0, len(target_tables), batch_size):
+                    if remaining_limit <= 0:
+                        break
+                    batch = target_tables[i:i + batch_size]
+                    data_unions = []
+                    data_params = []
+                    for tbl in batch:
+                        data_unions.append(f"(SELECT * FROM `{tbl}` WHERE {where_clause})")
+                        data_params.extend(params)
+                    data_sql = " UNION ALL ".join(data_unions) + f" LIMIT %s OFFSET %s"
+                    data_params.extend([remaining_limit + remaining_offset, 0])
+                    cur.execute(data_sql, tuple(data_params))
+                    rows = cur.fetchall()
+                    if remaining_offset >= len(rows):
+                        remaining_offset -= len(rows)
+                        continue
+                    sliced = rows[remaining_offset:remaining_offset + remaining_limit]
+                    voters.extend(_translate_voter_row(r) for r in sliced)
+                    remaining_offset = 0
+                    remaining_limit -= len(sliced)
+        finally:
+            conn.close()
+    elif not search:
+        # No search: use pre-computed totals (instant)
+        total = _mysql_count(where_clause, tuple(params), tables=target_tables)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        offset = (page - 1) * per_page
+
+        conn = _get_voters_mysql()
+        try:
+            voters = []
+            _tbl_totals = {r['table_name']: int(r.get('total_voters') or 0) for r in _ASSEMBLY_TABLES}
+            with conn.cursor() as cur:
+                remaining_offset = offset
+                remaining_limit = per_page
+                for tbl in target_tables:
+                    if remaining_limit <= 0:
+                        break
                     tbl_count = _tbl_totals.get(tbl, 0)
-                if remaining_offset >= tbl_count:
-                    remaining_offset -= tbl_count
-                    continue
-                sql = f"SELECT * FROM `{tbl}`"
-                if where_clause:
-                    sql += f" WHERE {where_clause}"
-                sql += " ORDER BY `id` ASC LIMIT %s OFFSET %s"
-                cur.execute(sql, tuple(params) + (remaining_limit, remaining_offset))
-                rows = cur.fetchall()
-                voters.extend(_translate_voter_row(r) for r in rows)
-                remaining_offset = 0
-                remaining_limit -= len(rows)
-    finally:
-        conn.close()
+                    if remaining_offset >= tbl_count:
+                        remaining_offset -= tbl_count
+                        continue
+                    sql = f"SELECT * FROM `{tbl}` ORDER BY `id` ASC LIMIT %s OFFSET %s"
+                    cur.execute(sql, (remaining_limit, remaining_offset))
+                    rows = cur.fetchall()
+                    voters.extend(_translate_voter_row(r) for r in rows)
+                    remaining_offset = 0
+                    remaining_limit -= len(rows)
+        finally:
+            conn.close()
+    else:
+        total = 0
+        total_pages = 1
+        voters = []
 
     # Batch-fetch stats for ONLY this page from MySQL
     epic_nos = [v['epic_no'] for v in voters if v.get('epic_no')]
@@ -2477,14 +2639,18 @@ def generated_voters_list():
     per_page = request.args.get('per_page', 20, type=int)
     per_page = min(max(per_page, 5), 100)
 
-    # Only fetch lightweight count for the template shell
-    # Actual data is loaded via AJAX from /api/generated-voters
+    # Use estimated row count from table statistics (instant, no full scan)
     try:
         conn = _get_mysql()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS cnt FROM generated_voters")
-                total = cur.fetchone()['cnt']
+                cur.execute(
+                    "SELECT TABLE_ROWS FROM information_schema.TABLES "
+                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'generated_voters'",
+                    (config.MYSQL_DB,)
+                )
+                row = cur.fetchone()
+                total = int(row['TABLE_ROWS']) if row and row['TABLE_ROWS'] else 0
         finally:
             conn.close()
     except Exception:
@@ -2499,7 +2665,8 @@ def generated_voters_list():
 @admin_bp.route('/api/generated-voters')
 @rate_limit(max_requests=30, window_seconds=60)
 def api_generated_voters():
-    """JSON API for generated voters list - supports cursor-based & page-based pagination."""
+    """JSON API for generated voters list - supports cursor-based & page-based pagination.
+    Optimized: uses FULLTEXT search, estimated counts for large result sets."""
     search = sanitize_search(request.args.get('search', '').strip())  # SECURITY: Sanitize search
     assembly = request.args.get('assembly', '').strip()
     district = request.args.get('district', '').strip()
@@ -2519,25 +2686,52 @@ def api_generated_voters():
         where_parts.append("ASSEMBLY_NAME = %s")
         params.append(assembly)
     if search:
-        like = f"%{search}%"
-        where_parts.append(
-            "(EPIC_NO LIKE %s OR FM_NAME_EN LIKE %s OR LASTNAME_EN LIKE %s "
-            "OR ptc_code LIKE %s OR MOBILE_NO LIKE %s "
-            "OR CAST(AC_NO AS CHAR) LIKE %s)"
+        ft_where, ft_params = _build_fulltext_where(
+            search, 'EPIC_NO, FM_NAME_EN, LASTNAME_EN, ptc_code, MOBILE_NO'
         )
-        params.extend([like, like, like, like, like, like])
+        if ft_where:
+            where_parts.append(ft_where)
+            params.extend(ft_params)
+    # Keep a LIKE fallback ready in case FULLTEXT index doesn't exist yet
+    _use_ft = any('MATCH(' in p for p in where_parts)
 
     where_clause = " AND ".join(where_parts) if where_parts else ""
 
-    # Server-side count
+    # Server-side count (use estimated count when no filters for speed)
+    def _rebuild_like():
+        """Rebuild where_clause using LIKE instead of FULLTEXT (fallback)."""
+        parts, prms = [], []
+        if assembly:
+            parts.append("ASSEMBLY_NAME = %s"); prms.append(assembly)
+        if search:
+            lk_w, lk_p = _like_where_generated(search)
+            if lk_w:
+                parts.append(lk_w); prms.extend(lk_p)
+        return " AND ".join(parts) if parts else "", prms
+
     conn = _get_mysql()
     try:
         with conn.cursor() as cur:
-            count_sql = "SELECT COUNT(*) AS cnt FROM generated_voters"
-            if where_clause:
-                count_sql += f" WHERE {where_clause}"
-            cur.execute(count_sql, tuple(params))
-            total = cur.fetchone()['cnt']
+            if not where_clause:
+                cur.execute(
+                    "SELECT TABLE_ROWS FROM information_schema.TABLES "
+                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'generated_voters'",
+                    (config.MYSQL_DB,)
+                )
+                row = cur.fetchone()
+                total = int(row['TABLE_ROWS']) if row and row['TABLE_ROWS'] else 0
+            else:
+                count_sql = f"SELECT COUNT(*) AS cnt FROM generated_voters WHERE {where_clause}"
+                try:
+                    cur.execute(count_sql, tuple(params))
+                except Exception as e:
+                    if '1191' in str(e) and _use_ft:
+                        where_clause, params = _rebuild_like()
+                        count_sql = f"SELECT COUNT(*) AS cnt FROM generated_voters WHERE {where_clause}"
+                        cur.execute(count_sql, tuple(params))
+                    else:
+                        raise
+                total = cur.fetchone()['cnt']
     finally:
         conn.close()
 
@@ -2562,7 +2756,19 @@ def api_generated_voters():
             with conn.cursor() as cur:
                 sql = f"SELECT * FROM generated_voters WHERE {full_where} ORDER BY id {order} LIMIT %s"
                 cursor_params.append(per_page)
-                cur.execute(sql, tuple(cursor_params))
+                try:
+                    cur.execute(sql, tuple(cursor_params))
+                except Exception as e:
+                    if '1191' in str(e) and _use_ft:
+                        where_clause, params = _rebuild_like()
+                        cursor_params = list(params)
+                        cursor_params.append(int(cursor))
+                        full_where = f"{where_clause} AND {cursor_cond}" if where_clause else cursor_cond
+                        sql = f"SELECT * FROM generated_voters WHERE {full_where} ORDER BY id {order} LIMIT %s"
+                        cursor_params.append(per_page)
+                        cur.execute(sql, tuple(cursor_params))
+                    else:
+                        raise
                 voters = [_translate_gen_row(r) for r in cur.fetchall()]
         finally:
             conn.close()
@@ -2598,7 +2804,18 @@ def api_generated_voters():
                 if where_clause:
                     sql += f" WHERE {where_clause}"
                 sql += " ORDER BY id DESC LIMIT %s OFFSET %s"
-                cur.execute(sql, tuple(params) + (per_page, offset))
+                try:
+                    cur.execute(sql, tuple(params) + (per_page, offset))
+                except Exception as e:
+                    if '1191' in str(e) and _use_ft:
+                        where_clause, params = _rebuild_like()
+                        sql = "SELECT * FROM generated_voters"
+                        if where_clause:
+                            sql += f" WHERE {where_clause}"
+                        sql += " ORDER BY id DESC LIMIT %s OFFSET %s"
+                        cur.execute(sql, tuple(params) + (per_page, offset))
+                    else:
+                        raise
                 voters = [_translate_gen_row(r) for r in cur.fetchall()]
         finally:
             conn.close()

@@ -1572,6 +1572,25 @@
       0% { background-position: 200% 0; }
       100% { background-position: -200% 0; }
     }
+
+    /* Skeleton loading rows */
+    .skeleton-row td {
+      padding: 0.6rem 0.75rem !important;
+    }
+    .skeleton-line {
+      height: 16px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+      background-size: 400% 100%;
+      animation: skeletonPulse 1.2s ease-in-out infinite;
+      width: 80%;
+    }
+    .skeleton-row:nth-child(odd) .skeleton-line { width: 65%; }
+    .skeleton-row:nth-child(3n) .skeleton-line { width: 90%; }
+    @keyframes skeletonPulse {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
   </style>
   <style>{% block extra_css %}{% endblock %}</style>
 </head>
