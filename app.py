@@ -84,6 +84,10 @@ app = Flask(__name__,
             template_folder=os.path.join(config.BASE_DIR, 'templates'),
             static_folder=os.path.join(config.BASE_DIR, 'static'))
 app.secret_key = os.getenv('FLASK_SECRET', 'voter-id-gen-secret-2026')
+
+# Trust proxy headers (Nginx → Varnish → Apache → PHP proxy → Gunicorn)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1, x_prefix=1)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload
 
 # ══════════════════════════════════════════════════════════════════
@@ -94,12 +98,13 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 # Replace in-memory rate limiter with Redis-based limiter
+_limiter_storage = os.getenv('REDIS_URL') if os.getenv('REDIS_URL') else 'memory://'
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    storage_uri=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+    storage_uri=_limiter_storage,
     default_limits=["2000 per day", "500 per hour"],
-    storage_options={"socket_connect_timeout": 30},
+    storage_options={"socket_connect_timeout": 5, "max_connections": 3} if os.getenv('REDIS_URL') else {},
     strategy="fixed-window"
 )
 
@@ -111,26 +116,13 @@ logger = setup_logging()
 #  PHASE 2: REDIS SESSION STORE (For Horizontal Scaling)
 # ══════════════════════════════════════════════════════════════════
 
-from flask_session import Session
-
-# Configure Redis-based session storage for multi-instance deployment
-app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_PERMANENT'] = True
-app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_KEY_PREFIX'] = 'voter_session:'
+# Session configuration — use Flask's default signed cookie sessions
+# This works reliably through proxy chains (Nginx → Varnish → Apache → PHP → Gunicorn)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') != 'development'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
-
-# Connect to Redis for sessions
-if os.getenv('REDIS_URL'):
-    import redis
-    app.config['SESSION_REDIS'] = redis.from_url(
-        os.getenv('REDIS_URL'),
-        decode_responses=False  # Keep binary for session data
-    )
-    Session(app)
-    logger.info("Redis session store configured for horizontal scaling")
-else:
-    logger.warning("REDIS_URL not set - using default Flask sessions (not suitable for multi-instance)")
+logger.info("Using Flask signed cookie sessions")
 
 # ══════════════════════════════════════════════════════════════════
 #  SECURITY: HTTPS ENFORCEMENT & CORS
@@ -179,9 +171,11 @@ def set_security_headers(response):
     # Static assets get long cache
     if request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-    # API responses should not be cached
-    elif request.path.startswith('/api/'):
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    # Admin/login/API responses must NEVER be cached (cookies/sessions break)
+    elif request.path.startswith('/admin') or request.path.startswith('/api/') or 'session' in (response.headers.get('Set-Cookie', '').lower()):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     # HTML pages — no cache in dev, short cache in production
     elif os.getenv('FLASK_ENV') == 'development':
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -299,11 +293,14 @@ REDIS_DROPDOWN_GEN_KEY = 'voter_app:dropdown:gen_voters'
 REDIS_DROPDOWN_TTL = 300  # 5 min - assembly/district lists change very rarely
 
 try:
-    _redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-    if _redis_lib:
-        _redis_client = _redis_lib.from_url(_redis_url, socket_connect_timeout=2, decode_responses=True)
+    _redis_url = os.getenv('REDIS_URL')
+    if _redis_lib and _redis_url:
+        _cache_pool = _redis_lib.ConnectionPool.from_url(_redis_url, max_connections=3, socket_connect_timeout=2, decode_responses=True)
+        _redis_client = _redis_lib.Redis(connection_pool=_cache_pool)
         _redis_client.ping()
-        logger.info(f"Redis connected: {_redis_url}")
+        logger.info(f"Redis cache connected: {_redis_url}")
+    else:
+        logger.info("Redis not configured - dashboard cache disabled")
 except Exception as _re:
     _redis_client = None
     logger.info(f"Redis not available (dashboard cache disabled): {_re}")

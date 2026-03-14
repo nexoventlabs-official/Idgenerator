@@ -1,0 +1,10 @@
+RewriteEngine On
+
+# Don't rewrite requests to static files that exist
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule \.(jpg|jpeg|png|gif|css|js|ico|svg|woff|woff2|ttf|eot)$ - [L]
+
+# Route everything else through index.php (which proxies to Gunicorn)
+RewriteCond %{REQUEST_FILENAME} !-f [OR]
+RewriteCond %{REQUEST_URI} !.*\.(jpg|jpeg|png|gif|css|js|ico|svg|woff|woff2|ttf|eot)$
+RewriteRule ^(.*)$ index.php [QSA,L]

@@ -5,6 +5,8 @@ Background job processing for card generation to prevent blocking workers.
 """
 
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from celery import Celery
 from datetime import datetime, timezone
 from PIL import Image
