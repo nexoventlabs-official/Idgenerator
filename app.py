@@ -757,7 +757,12 @@ def get_voter_gen_count(epic_no: str) -> int:
         with conn.cursor() as cur:
             cur.execute("SELECT `count` FROM generation_stats WHERE epic_no = %s", (epic_no,))
             row = cur.fetchone()
-            return row['count'] if row else 0
+            if row and row.get('count'):
+                return row['count']
+            # Fallback: check if card exists in generated_voters
+            cur.execute("SELECT COUNT(*) AS cnt FROM generated_voters WHERE EPIC_NO = %s", (epic_no,))
+            row = cur.fetchone()
+            return row['cnt'] if row else 0
     finally:
         conn.close()
 
@@ -779,7 +784,12 @@ def get_voter_card_url(epic_no: str) -> str:
         with conn.cursor() as cur:
             cur.execute("SELECT card_url FROM generation_stats WHERE epic_no = %s", (epic_no,))
             row = cur.fetchone()
-            return row['card_url'] if row else ''
+            if row and row.get('card_url'):
+                return row['card_url']
+            # Fallback: check generated_voters table
+            cur.execute("SELECT card_url FROM generated_voters WHERE EPIC_NO = %s ORDER BY generated_at DESC LIMIT 1", (epic_no,))
+            row = cur.fetchone()
+            return row['card_url'] if row and row.get('card_url') else ''
     finally:
         conn.close()
 
@@ -1231,6 +1241,12 @@ def chat_verify_otp():
             if stat and stat.get('card_url'):
                 cur.execute("SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
                 gen_doc = cur.fetchone()
+            elif not stat or not stat.get('card_url'):
+                # Fallback: check generated_voters directly
+                cur.execute("SELECT EPIC_NO AS epic_no, card_url, CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url FROM generated_voters WHERE MOBILE_NO = %s ORDER BY generated_at DESC LIMIT 1", (mobile,))
+                gen_doc = cur.fetchone()
+                if gen_doc and gen_doc.get('card_url'):
+                    stat = gen_doc
     finally:
         conn.close()
     if stat and stat.get('card_url'):
@@ -1259,11 +1275,35 @@ def chat_check_mobile():
         with conn.cursor() as cur:
             cur.execute("SELECT epic_no, card_url, secret_pin FROM generation_stats WHERE auth_mobile = %s", (mobile,))
             stat = cur.fetchone()
+            if not stat or not stat.get('card_url'):
+                # Fallback: check generated_voters directly
+                cur.execute("SELECT EPIC_NO AS epic_no, card_url FROM generated_voters WHERE MOBILE_NO = %s ORDER BY generated_at DESC LIMIT 1", (mobile,))
+                gen_row = cur.fetchone()
+                if gen_row and gen_row.get('card_url'):
+                    stat = {'epic_no': gen_row['epic_no'], 'card_url': gen_row['card_url'], 'secret_pin': None}
     finally:
         conn.close()
     if stat and stat.get('card_url'):
         has_pin = bool(stat.get('secret_pin'))
-        return jsonify({'success': True, 'has_card': True, 'has_pin': has_pin})
+        result = {'success': True, 'has_card': True, 'has_pin': has_pin}
+        if not has_pin:
+            # Return card details so frontend can skip OTP and show card after PIN creation
+            result['epic_no'] = stat.get('epic_no', '')
+            result['card_url'] = stat.get('card_url', '')
+            # Fetch voter name and photo
+            conn2 = _get_mysql()
+            try:
+                with conn2.cursor() as cur2:
+                    cur2.execute(
+                        "SELECT CONCAT(COALESCE(FM_NAME_EN,''),' ',COALESCE(LASTNAME_EN,'')) AS name, photo_url "
+                        "FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                    gen_doc = cur2.fetchone()
+                    if gen_doc:
+                        result['voter_name'] = gen_doc.get('name', '')
+                        result['photo_url'] = gen_doc.get('photo_url', '')
+            finally:
+                conn2.close()
+        return jsonify(result)
     return jsonify({'success': True, 'has_card': False, 'has_pin': False})
 
 
@@ -1331,6 +1371,10 @@ def chat_forgot_pin():
         with conn.cursor() as cur:
             cur.execute("SELECT epic_no FROM generation_stats WHERE auth_mobile = %s", (mobile,))
             stat = cur.fetchone()
+            if not stat:
+                # Fallback: check generated_voters
+                cur.execute("SELECT EPIC_NO AS epic_no FROM generated_voters WHERE MOBILE_NO = %s LIMIT 1", (mobile,))
+                stat = cur.fetchone()
     finally:
         conn.close()
     if not stat:

@@ -77,7 +77,7 @@ FONT_FALLBACK = 'C:/Windows/Fonts/arial.ttf'
 FONT_BOLD_FALLBACK = 'C:/Windows/Fonts/arialbd.ttf'
 
 # ── Template Dimensions ──────────────────────────────────────────
-TEMPLATE_WIDTH = 1005
+TEMPLATE_WIDTH = 1004
 TEMPLATE_HEIGHT = 650
 
 # ── Text Field Coordinates (bold, centred) ────────────────────────
