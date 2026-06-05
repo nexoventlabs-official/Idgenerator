@@ -1,518 +1,397 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="light">
-
+﻿<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your Member ID Card — All India Puratchi Thalaivar Makkal Munnetra Kazhagam | புரட்சித்தாய் அங்கத்தவர் அட்டை</title>
-  <meta name="description" content="Your official All India Puratchi Thalaivar Makkal Munnetra Kazhagam digital membership ID card. Download and share your member card. Tamil Nadu political movement inspired by Jayalalithaa, MGR & Sasikala.">
+  <title>Your Member ID Card — We The Leaders | LEAD THE CHANGE</title>
   <meta name="robots" content="noindex, nofollow">
-  <link rel="canonical" href="https://www.puratchithaai.org/">
-  <link rel="icon" type="image/jpeg" href="/favicon.ico">
-  <link rel="shortcut icon" type="image/jpeg" href="/favicon.ico">
+  <link rel="icon" type="image/png" href="/favicon.ico">
+  <link rel="shortcut icon" type="image/png" href="/favicon.ico">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
     :root {
-      --brand: #3390ec;
+      --brand: #1565c0;
+      --brand2: #2e7d32;
     }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #e9ebee;
       min-height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      padding: 0;
+      background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #0d1b2a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #f0f0f0;
     }
 
-    /* Navigation Bar */
+    /* ── Navbar ── */
     .site-navbar {
-      background: #fff;
-      border-bottom: 2px solid #e0e0e0;
+      background: rgba(13, 27, 42, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       padding: 0;
-      position: sticky;
-      top: 0;
-      z-index: 1040;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      position: sticky; top: 0; z-index: 100;
     }
-
     .site-navbar .nav-link {
-      color: #333;
-      font-weight: 600;
-      font-size: 0.95rem;
-      padding: 14px 22px;
-      transition: color 0.2s, background 0.2s;
-      white-space: nowrap;
+      color: #ccc; font-weight: 600; font-size: 0.95rem;
+      padding: 14px 22px; transition: color 0.2s;
     }
+    .site-navbar .nav-link:hover { color: #fff; }
 
-    .site-navbar .nav-link:hover,
-    .site-navbar .nav-link.active {
-      color: #3390ec;
-      background: rgba(51, 144, 236, 0.06);
-    }
-
-    .site-navbar .nav-link i {
-      margin-right: 4px;
-    }
-
-    .navbar-toggler {
-      border: none;
-      padding: 8px 12px;
-    }
-
-    .navbar-toggler:focus {
-      box-shadow: none;
-    }
-
-    /* Hero Section */
-    .card-hero {
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 50%, #42a5f5 100%);
-      padding: 2.5rem 0 4rem;
+    /* ── Hero ── */
+    .hero {
       text-align: center;
-      color: #fff;
-      position: relative;
-      overflow: hidden;
+      padding: 2.5rem 1rem 1.5rem;
     }
-
-    .card-hero::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle at 30% 70%, rgba(255, 255, 255, 0.05) 0%, transparent 50%),
-        radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
-      pointer-events: none;
-    }
-
-    .card-hero .hero-icon {
-      width: 72px;
-      height: 72px;
-      background: rgba(255, 255, 255, 0.15);
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-      margin-bottom: 0.8rem;
-      backdrop-filter: blur(4px);
-      border: 2px solid rgba(255, 255, 255, 0.25);
-      animation: pop-in 0.5s ease-out;
-    }
-
-    @keyframes pop-in {
-      0% {
-        transform: scale(0.5);
-        opacity: 0;
-      }
-
-      100% {
-        transform: scale(1);
-        opacity: 1;
-      }
-    }
-
-    .card-hero h2 {
-      font-weight: 800;
-      font-size: 1.5rem;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    .hero h2 {
+      font-size: 1.6rem; font-weight: 800;
+      background: linear-gradient(90deg, #42a5f5, #66bb6a);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       margin-bottom: 0.3rem;
     }
+    .hero p { color: #aaa; font-size: 0.92rem; }
 
-    .card-hero p {
-      opacity: 0.85;
-      font-size: 0.92rem;
-      margin: 0;
-    }
-
-    /* Main Result Card */
-    .result-card {
-      background: #fff;
-      border-radius: 20px;
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
-      max-width: 560px;
+    /* ── 3D Card Flip Container ── */
+    .flip-scene {
       width: 100%;
-      margin: -2.5rem auto 2rem;
+      max-width: 600px;
+      margin: 0 auto 1.5rem;
+      padding: 0 16px;
+    }
+
+    /* Aspect ratio = 1536:1024 = 3:2 */
+    .flip-wrapper {
+      perspective: 1200px;
+      width: 100%;
+    }
+    .flip-inner {
       position: relative;
-      z-index: 10;
-      overflow: hidden;
-      border: 1px solid rgba(0, 0, 0, 0.04);
+      width: 100%;
+      padding-top: 66.67%;   /* 2/3 = 1024/1536 ratio */
+      transition: transform 0.85s cubic-bezier(0.4, 0.2, 0.2, 1);
+      transform-style: preserve-3d;
+      cursor: pointer;
+    }
+    .flip-inner.flipped {
+      transform: rotateY(180deg);
     }
 
-    .result-body {
-      padding: 2rem 1.8rem 2.2rem;
-      text-align: center;
-    }
-
-    /* Gen count badge */
-    .gen-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: linear-gradient(135deg, #fff8e1, #fff3e0);
-      color: #e65100;
-      padding: 6px 16px;
-      border-radius: 24px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      margin-bottom: 1.2rem;
-      border: 1px solid rgba(230, 81, 0, 0.15);
-      box-shadow: 0 2px 6px rgba(230, 81, 0, 0.08);
-    }
-
-    /* Card Image */
-    .card-image-wrapper {
-      background: linear-gradient(135deg, #f5f5f5, #eeeeee);
-      border-radius: 16px;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-      border: 1px solid #e8e8e8;
-    }
-
-    .card-preview {
-      max-width: 100%;
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-      transition: transform 0.3s ease;
-    }
-
-    .card-preview:hover {
-      transform: scale(1.02);
-    }
-
-    /* Voter Details */
-    .voter-details {
-      background: #fafafa;
-      border-radius: 14px;
-      padding: 0;
-      margin-bottom: 1.5rem;
-      text-align: left;
-      overflow: hidden;
-      border: 1px solid #e8e8e8;
-    }
-
-    .voter-details .d-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.7rem 1.2rem;
-      border-bottom: 1px solid #f0f0f0;
-      transition: background 0.15s;
-    }
-
-    .voter-details .d-item:last-child {
-      border-bottom: none;
-    }
-
-    .voter-details .d-item:hover {
-      background: #f5f5f5;
-    }
-
-    .voter-details .d-label {
-      color: #999;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      font-weight: 600;
-    }
-
-    .voter-details .d-value {
-      font-weight: 700;
-      color: #333;
-      font-size: 0.92rem;
-    }
-
-    /* Buttons */
-    .btn-download {
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 50%, #42a5f5 100%);
-      border: none;
-      color: #fff;
-      font-weight: 700;
-      padding: 0.8rem 2rem;
-      border-radius: 14px;
-      font-size: 1rem;
-      box-shadow: 0 4px 15px rgba(21, 101, 192, 0.3);
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .btn-download::before {
-      content: '';
+    .flip-front, .flip-back {
       position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-      transition: left 0.5s ease;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .flip-front img, .flip-back img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 16px;
+    }
+    .flip-back {
+      transform: rotateY(180deg);
     }
 
-    .btn-download:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(21, 101, 192, 0.4);
-      color: #fff;
+    /* Flip hint badge */
+    .flip-hint {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 0.82rem;
+      color: #8a9ab5;
+      animation: pulse-hint 2s ease-in-out infinite;
+    }
+    @keyframes pulse-hint {
+      0%, 100% { opacity: 0.6; }
+      50%       { opacity: 1.0; }
     }
 
-    .btn-download:hover::before {
-      left: 100%;
+    /* Flip button */
+    .btn-flip {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff; border-radius: 30px;
+      padding: 8px 22px; font-size: 0.88rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      backdrop-filter: blur(4px);
     }
-
-    .btn-generate-another {
-      border: 2px solid #e0e0e0;
-      color: #555;
-      font-weight: 700;
-      padding: 0.8rem 2rem;
-      border-radius: 14px;
-      font-size: 1rem;
-      background: #fff;
-      transition: all 0.3s ease;
-    }
-
-    .btn-generate-another:hover {
-      border-color: var(--brand);
-      color: var(--brand);
-      background: rgba(198, 40, 40, 0.03);
+    .btn-flip:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.3);
       transform: translateY(-1px);
     }
 
-    /* Share Section */
-    .share-section {
-      background: linear-gradient(135deg, #f8f9fa, #f5f5f5);
-      border-radius: 14px;
-      padding: 1rem 1.2rem;
-      margin-top: 1.5rem;
-      border: 1px solid #e8e8e8;
-    }
-
-    .share-section .share-label {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: #999;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 0.5rem;
-    }
-
-    .share-btn {
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      color: #fff;
-      border: none;
-      transition: transform 0.2s, box-shadow 0.2s;
-      text-decoration: none;
-    }
-
-    .share-btn:hover {
-      transform: scale(1.12);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      color: #fff;
-    }
-
-    .share-btn.whatsapp {
-      background: #25D366;
-    }
-
-    .share-btn.facebook {
-      background: #1877F2;
-    }
-
-    .share-btn.twitter {
-      background: #1DA1F2;
-    }
-
-    .share-btn.download-sm {
-      background: #555;
-    }
-
-    /* Footer note */
-    .footer-note {
+    /* ── Side label ── */
+    .side-label {
       text-align: center;
-      padding: 1.2rem;
-      font-size: 0.8rem;
-      color: #aaa;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-top: 10px;
+      color: #7a8fa6;
+      transition: color 0.3s;
     }
+    .side-label.back-active { color: #66bb6a; }
 
-    .footer-note i {
-      color: #43a047;
-      margin-right: 3px;
-    }
-
-    /* Floating WhatsApp */
-    .whatsapp-float {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      width: 56px;
-      height: 56px;
-      background: #25D366;
-      color: #fff;
-      border-radius: 50%;
+    /* ── Action buttons ── */
+    .action-bar {
       display: flex;
-      align-items: center;
+      gap: 12px;
       justify-content: center;
-      font-size: 28px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
-      z-index: 9999;
-      transition: transform .2s, box-shadow .2s;
-      text-decoration: none;
+      flex-wrap: wrap;
+      padding: 0 16px;
+      margin-bottom: 1.5rem;
     }
-
-    .whatsapp-float:hover {
-      transform: scale(1.1);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+    .btn-action {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-weight: 700; border: none; border-radius: 14px;
+      padding: 0.75rem 1.6rem; font-size: 0.95rem;
+      cursor: pointer; text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-action:hover { transform: translateY(-2px); }
+    .btn-dl {
+      background: linear-gradient(135deg, #1565c0, #42a5f5);
       color: #fff;
+      box-shadow: 0 4px 16px rgba(21,101,192,0.4);
+    }
+    .btn-dl:hover { box-shadow: 0 6px 22px rgba(21,101,192,0.55); color:#fff; }
+    .btn-home {
+      background: rgba(255,255,255,0.08);
+      color: #ddd;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .btn-home:hover { background: rgba(255,255,255,0.14); color:#fff; }
+
+    /* ── Voter info card ── */
+    .info-card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      max-width: 600px;
+      margin: 0 auto 1.5rem;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+    }
+    .info-card .info-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.65rem 1.2rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .info-card .info-row:last-child { border-bottom: none; }
+    .info-card .info-label {
+      font-size: 0.72rem; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #7a8fa6; font-weight: 600;
+    }
+    .info-card .info-value {
+      font-size: 0.90rem; font-weight: 700; color: #e8edf2;
     }
 
-    @media (max-width: 768px) {
-      .site-navbar .nav-link {
-        padding: 10px 18px;
-        font-size: 0.9rem;
-      }
+    /* ── Gen badge ── */
+    .gen-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(255,179,0,0.12); color: #ffb300;
+      border: 1px solid rgba(255,179,0,0.2);
+      padding: 5px 14px; border-radius: 24px;
+      font-size: 0.80rem; font-weight: 700;
+      margin-bottom: 1rem;
+    }
 
-      .card-hero {
-        padding: 2rem 1rem 3.5rem;
-      }
+    /* ── Share ── */
+    .share-row {
+      display: flex; gap: 10px; justify-content: center;
+      flex-wrap: wrap; padding: 0 16px;
+      margin-bottom: 2rem;
+    }
+    .share-btn {
+      width: 44px; height: 44px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1.15rem; color: #fff; border: none;
+      text-decoration: none; transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .share-btn:hover { transform: scale(1.12); color: #fff; }
+    .share-btn.wa  { background: #25D366; box-shadow: 0 4px 12px rgba(37,211,102,0.3); }
+    .share-btn.fb  { background: #1877F2; box-shadow: 0 4px 12px rgba(24,119,242,0.3); }
+    .share-btn.tw  { background: #1DA1F2; box-shadow: 0 4px 12px rgba(29,161,242,0.3); }
+    .share-btn.dl  { background: #546e7a; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
 
-      .card-hero h2 {
-        font-size: 1.25rem;
-      }
+    /* ── Footer ── */
+    .pg-footer {
+      text-align: center; padding: 1rem;
+      font-size: 0.78rem; color: #4a5a6e;
+    }
 
-      .result-card {
-        margin: -2rem 12px 1.5rem;
-        border-radius: 16px;
-      }
-
-      .result-body {
-        padding: 1.4rem 1.2rem 1.6rem;
-      }
+    @media (max-width: 576px) {
+      .hero h2 { font-size: 1.3rem; }
+      .btn-action { padding: 0.65rem 1.2rem; font-size: 0.88rem; }
     }
   </style>
 </head>
-
 <body>
 
-  <!-- Navigation Bar -->
+  <!-- Navbar -->
   <nav class="navbar navbar-expand-lg site-navbar">
     <div class="container">
-      <a class="navbar-brand d-flex align-items-center gap-2 me-3" href="{{ url_for('user_home') }}">
-        <img
-          src="/static/favicon.jpg"
-          alt="Logo" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid #3390ec;">
-        <img src="{{ url_for('static', filename='name-logo.png') }}" alt="All India Puratchi Thalaivar Makkal Munnetra Kazhagam"
-          style="height:32px;width:auto;">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('user_home') }}">
+        <img src="/static/newfavicon.png" alt="Logo"
+             style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+        <img src="{{ url_for('static', filename='new-name-logo.png') }}" alt="We The Leaders"
+             style="height:30px;width:auto;">
       </a>
       <div class="ms-auto">
-        <a href="{{ url_for('user_home') }}" class="nav-link"><i class="bi bi-house-door"></i> Home</a>
+        <a href="{{ url_for('user_home') }}" class="nav-link">
+          <i class="bi bi-house-door"></i> Home
+        </a>
       </div>
     </div>
   </nav>
 
-  <!-- Success Hero -->
-  <div class="card-hero">
-    <div class="hero-icon">
-      <i class="bi bi-check-circle-fill"></i>
-    </div>
-    <h2>Card Generated Successfully!</h2>
-    <p>Your Member ID card is ready to download / உங்கள் அட்டை தயாராக உள்ளது</p>
+  <!-- Hero -->
+  <div class="hero">
+    <h2><i class="bi bi-patch-check-fill me-2" style="font-size:1.3rem;"></i>Card Generated!</h2>
+    <p>Tap the card to flip and see the back side</p>
   </div>
 
-  <!-- Result Card -->
-  <div class="result-card">
-    <div class="result-body">
+  <!-- Gen badge -->
+  <div class="text-center mb-2">
+    <span class="gen-badge">
+      <i class="bi bi-arrow-repeat"></i>
+      Generated {{ gen_count }} time{{ 's' if gen_count != 1 }}
+    </span>
+  </div>
 
-      <!-- Flash Messages -->
-      {% with msgs = get_flashed_messages(with_categories=true) %}
-      {% if msgs %}
-      <div class="mb-3">
-        {% for cat, msg in msgs %}
-        <div class="alert alert-{{ cat }} py-2" style="font-size:0.9rem;">{{ msg }}</div>
-        {% endfor %}
-      </div>
-      {% endif %}
-      {% endwith %}
+  <!-- Flash messages -->
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+  {% if msgs %}
+  <div class="container" style="max-width:600px;margin-bottom:1rem;">
+    {% for cat, msg in msgs %}
+    <div class="alert alert-{{ cat }} py-2" style="font-size:0.9rem;">{{ msg }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
 
-      <!-- Generation count badge -->
-      <div class="gen-badge">
-        <i class="bi bi-arrow-repeat"></i> Generated {{ gen_count }} time{{ 's' if gen_count != 1 }}
-      </div>
+  <!-- 3D Flip Card -->
+  <div class="flip-scene">
+    <div class="flip-hint">
+      <i class="bi bi-arrow-repeat me-1"></i> Tap / Click card to flip
+    </div>
 
-      <!-- Card Image -->
-      <div class="card-image-wrapper">
-        <img src="{{ card_url }}" alt="Member ID Card — {{ epic_no }}" class="card-preview">
-      </div>
+    <div class="flip-wrapper">
+      <div class="flip-inner" id="flipInner" onclick="flipCard()">
 
-      <!-- Voter Details -->
-      <div class="voter-details">
-        <div class="d-item">
-          <span class="d-label">Name</span>
-          <span class="d-value">{{ voter.name }}</span>
+        <!-- Front -->
+        <div class="flip-front">
+          <img src="{{ card_url }}" alt="ID Card Front">
         </div>
-        <div class="d-item">
-          <span class="d-label">Epic Number</span>
-          <span class="d-value">{{ epic_no }}</span>
-        </div>
-        {% if voter.assembly_name or voter.assembly %}
-        <div class="d-item">
-          <span class="d-label">Assembly</span>
-          <span class="d-value">{{ voter.assembly_name or voter.assembly }}</span>
-        </div>
-        {% endif %}
-      </div>
 
-      <!-- Action Buttons -->
-      <div class="d-flex gap-2 justify-content-center flex-wrap">
-        {% set dl_url = card_url.replace('/upload/', '/upload/fl_attachment:' ~ epic_no ~ '_VoterID/') if '/upload/' in card_url else card_url %}
-        <a href="{{ dl_url }}" class="btn btn-download" target="_blank">
-          <i class="bi bi-download me-2"></i>Download Card
-        </a>
-        <a href="{{ url_for('user_home') }}" class="btn btn-generate-another">
-          <i class="bi bi-arrow-left me-2"></i>Generate Another
-        </a>
-      </div>
-
-      <!-- Share Section -->
-      <div class="share-section">
-        <div class="share-label">Share your card</div>
-        <div class="d-flex gap-2 justify-content-center">
-          <a href="https://wa.me/?text=Check%20out%20my%20All%20India%20Puratchi%20Thalaivar%20Makkal%20Munnetra%20Kazhagam%20Member%20ID%20Card!" target="_blank"
-            class="share-btn whatsapp" title="Share on WhatsApp">
-            <i class="bi bi-whatsapp"></i>
-          </a>
-          <a href="https://www.facebook.com/sharer/sharer.php" target="_blank" class="share-btn facebook"
-            title="Share on Facebook">
-            <i class="bi bi-facebook"></i>
-          </a>
-          <a href="https://twitter.com/intent/tweet?text=I%20just%20got%20my%20All%20India%20Puratchi%20Thalaivar%20Makkal%20Munnetra%20Kazhagam%20Member%20ID%20Card!"
-            target="_blank" class="share-btn twitter" title="Share on Twitter">
-            <i class="bi bi-twitter-x"></i>
-          </a>
-          <a href="{{ dl_url }}" class="share-btn download-sm" title="Download" target="_blank">
-            <i class="bi bi-download"></i>
-          </a>
+        <!-- Back -->
+        <div class="flip-back">
+          <img src="{{ url_for('static', filename='card_back.jpeg') }}" alt="ID Card Back">
         </div>
+
       </div>
+    </div>
+
+    <div class="side-label" id="sideLabel">FRONT SIDE</div>
+
+    <div class="text-center mt-3">
+      <button class="btn-flip" onclick="flipCard()">
+        <i class="bi bi-arrow-repeat"></i>
+        <span id="flipBtnText">Show Back</span>
+      </button>
     </div>
   </div>
 
-  <!-- Footer Note -->
-  <div class="footer-note">
-    <i class="bi bi-shield-check"></i> Card generated successfully &bull; Save your card for offline use
+  <!-- Action buttons -->
+  {% set dl_combined = combined_url.replace('/upload/', '/upload/fl_attachment:' ~ epic_no ~ '_WTL_Card/') if '/upload/' in combined_url else combined_url %}
+  <div class="action-bar">
+    <a href="{{ dl_combined }}" class="btn-action btn-dl" target="_blank">
+      <i class="bi bi-download"></i> Download (Front + Back)
+    </a>
+    <a href="{{ url_for('user_home') }}" class="btn-action btn-home">
+      <i class="bi bi-arrow-left"></i> Generate Another
+    </a>
   </div>
 
-  <!-- Floating WhatsApp Button -->
-  <a href="https://wa.me/" target="_blank" class="whatsapp-float" title="Chat on WhatsApp">
-    <i class="bi bi-whatsapp"></i>
-  </a>
+  <!-- Voter info -->
+  <div class="info-card mx-3" style="max-width:600px;margin-left:auto!important;margin-right:auto!important;">
+    <div class="info-row">
+      <span class="info-label">Name</span>
+      <span class="info-value">{{ voter.name }}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">EPIC Number</span>
+      <span class="info-value">{{ epic_no }}</span>
+    </div>
+    {% if voter.assembly_name or voter.assembly %}
+    <div class="info-row">
+      <span class="info-label">Assembly</span>
+      <span class="info-value">{{ voter.assembly_name or voter.assembly }}</span>
+    </div>
+    {% endif %}
+    {% if voter.district %}
+    <div class="info-row">
+      <span class="info-label">District</span>
+      <span class="info-value">{{ voter.district }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Share -->
+  <div class="share-row">
+    <a href="https://wa.me/?text=I%20just%20got%20my%20We%20The%20Leaders%20Member%20ID%20Card!" target="_blank" class="share-btn wa" title="Share on WhatsApp"><i class="bi bi-whatsapp"></i></a>
+    <a href="https://www.facebook.com/sharer/sharer.php" target="_blank" class="share-btn fb" title="Share on Facebook"><i class="bi bi-facebook"></i></a>
+    <a href="https://twitter.com/intent/tweet?text=I%20just%20got%20my%20We%20The%20Leaders%20Member%20ID%20Card!" target="_blank" class="share-btn tw" title="Share on Twitter"><i class="bi bi-twitter-x"></i></a>
+    <a href="{{ dl_url }}" class="share-btn dl" title="Download" target="_blank"><i class="bi bi-download"></i></a>
+  </div>
+
+  <!-- Footer -->
+  <div class="pg-footer">
+    <i class="bi bi-shield-check" style="color:#43a047;"></i>
+    Card generated successfully &bull; We The Leaders &bull; LEAD THE CHANGE
+  </div>
+
+  <script>
+    let isFlipped = false;
+
+    function flipCard() {
+      isFlipped = !isFlipped;
+      const inner    = document.getElementById('flipInner');
+      const label    = document.getElementById('sideLabel');
+      const btnText  = document.getElementById('flipBtnText');
+
+      if (isFlipped) {
+        inner.classList.add('flipped');
+        label.textContent = 'BACK SIDE';
+        label.classList.add('back-active');
+        btnText.textContent = 'Show Front';
+      } else {
+        inner.classList.remove('flipped');
+        label.textContent = 'FRONT SIDE';
+        label.classList.remove('back-active');
+        btnText.textContent = 'Show Back';
+      }
+    }
+
+    /* Auto-flip hint animation on load */
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        /* Subtle tilt to hint at 3D */
+        const inner = document.getElementById('flipInner');
+        inner.style.transform = 'rotateY(15deg)';
+        setTimeout(function () {
+          inner.style.transform = '';
+        }, 600);
+      }, 1200);
+    });
+  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-
-</html>
-
 </html>
