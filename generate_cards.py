@@ -352,7 +352,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     f_name  = load_bold_font(F_NAME)
     f_mid   = load_font(F_MID, bold=False)
     f_lbl   = load_bold_font(F_LBL)
-    f_val   = load_font(F_VAL, bold=False)
+    f_val   = load_bold_font(F_VAL)    # bold values
 
     # Shrink name to fit
     while _tw(name, f_name) > DET_W and F_NAME > 10 * S:
@@ -372,7 +372,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
 
     # Row metrics
     ROW_H   = _th("Mg", f_val)
-    ROW_GAP = int(ROW_H * 0.55)
+    ROW_GAP = int(ROW_H * 1.0)    # full row height gap — more breathing room
     MB_NAME = int(ROW_H * 0.55)
     MB_MID  = int(ROW_H * 1.10)
 
@@ -412,7 +412,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         fv, fvs = f_val, F_VAL
         while _tw(value, fv) > (DET_MAX_X - VAL_X) and fvs > 5 * S:
             fvs -= 1
-            fv   = load_font(fvs, bold=False)
+            fv   = load_bold_font(fvs)
         draw.text((VAL_X, row_y), value, font=fv, fill=(30, 41, 59))
 
     # ══════════════════════════════════════════════════════════════
@@ -445,12 +445,12 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         card.paste(Image.new('RGB', (QR_W, QR_H), (220, 220, 220)), (QR_X, QR_Y))
 
     # ── Footer — show PTC code below photo ───────────────────────
-    F_FOOT  = 7 * S    # 35 px
+    F_FOOT  = 9 * S    # 45 px — larger than before
     f_foot  = load_bold_font(F_FOOT)
     foot_y  = H - 14 * S - _th("M", f_foot)
     foot_text = member_id if member_id else "MEMBERSHIP ID CARD"
     draw.text((20 * S, foot_y), foot_text,
-              font=f_foot, fill=(100, 116, 139))
+              font=f_foot, fill=(51, 65, 85))
 
     # No outer border — CSS border-radius + overflow:hidden handles card rounding
 
