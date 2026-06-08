@@ -874,11 +874,25 @@ def chat_generate_card():
 
         # ── Create combined front+back download image ─────────────
         combined_url = card_url  # fallback to front only
+        back_url     = ''
         try:
             # Generate back card with newfavicon watermark
             back_img = generate_back_card()
             front_w, front_h = card_image.size
             back_resized = back_img.resize((front_w, front_h), Image.LANCZOS)
+
+            # Upload back card separately (used for flip card in UI)
+            back_buf = io.BytesIO()
+            back_resized.save(back_buf, format='JPEG', quality=95)
+            back_buf.seek(0)
+            back_up = cloudinary.uploader.upload(
+                back_buf.getvalue(),
+                folder='generated_cards',
+                public_id=f"{epic_no}_back",
+                overwrite=True, resource_type='image'
+            )
+            back_url = back_up['secure_url']
+            logger.info("Back card uploaded for %s: %s", epic_no, back_url)
 
             GAP = 30   # px gap between front and back
             combined_w = front_w + GAP + front_w
@@ -911,6 +925,7 @@ def chat_generate_card():
                 "ptc_code":       ptc_code,
                 "photo_url":      photo_url,
                 "card_url":       card_url,
+                "back_url":       back_url,
                 "combined_url":   combined_url,
                 "generated_at":   now,
                 "FM_NAME_EN":     voter.get('FM_NAME_EN', ''),
@@ -924,7 +939,8 @@ def chat_generate_card():
         )
         db.generation_stats.update_one(
             {"epic_no": epic_no},
-            {"$set":  {"card_url": card_url, "combined_url": combined_url,
+            {"$set":  {"card_url": card_url, "back_url": back_url,
+                       "combined_url": combined_url,
                        "photo_url": photo_url, "last_generated": now},
              "$inc":  {"count": 1},
              "$setOnInsert": {"epic_no": epic_no}},
@@ -934,6 +950,7 @@ def chat_generate_card():
         return jsonify({
             'success':      True,
             'card_url':     card_url,
+            'back_url':     back_url,
             'combined_url': combined_url,
             'photo_url':    photo_url,
             'epic_no':      epic_no,
@@ -990,11 +1007,12 @@ def user_card_page(epic_no):
     gen_count = get_voter_gen_count(epic_no)
     # Get combined URL from DB
     db  = _get_db()
-    gen = db.generation_stats.find_one({"epic_no": epic_no}, {"combined_url": 1}) or {}
+    gen = db.generation_stats.find_one({"epic_no": epic_no}, {"combined_url": 1, "back_url": 1}) or {}
     combined_url = gen.get('combined_url') or card_url
+    back_url     = gen.get('back_url') or ''
     return render_template('user/card.html', epic_no=epic_no, voter=voter,
                            gen_count=gen_count, card_url=card_url,
-                           combined_url=combined_url)
+                           combined_url=combined_url, back_url=back_url)
 
 
 @app.route('/mycard/<epic_no>')

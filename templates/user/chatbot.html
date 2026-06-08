@@ -1858,7 +1858,7 @@
         h += '        <img src="' + cached.card_url + '" alt="ID Card Front">';
         h += '      </div>';
         h += '      <div class="chat-flip-back">';
-        h += '        <img src="/static/card_back_new.png" alt="ID Card Back">';
+        h += '        <img src="' + (cached.back_url || '/static/card_back_new.png') + '" alt="ID Card Back">';
         h += '      </div>';
         h += '    </div>';
         h += '  </div>';
@@ -2125,7 +2125,7 @@
             h += '        <img src="' + res.card_url + '" alt="ID Card Front">';
             h += '      </div>';
             h += '      <div class="chat-flip-back">';
-            h += '        <img src="/static/card_back_new.png" alt="ID Card Back">';
+            h += '        <img src="' + (res.back_url || '/static/card_back_new.png') + '" alt="ID Card Back">';
             h += '      </div>';
             h += '    </div>';
             h += '  </div>';
@@ -2165,6 +2165,7 @@
             lsSave({
               epic_no:      epic,
               card_url:     res.card_url,
+              back_url:     res.back_url || '',
               combined_url: res.combined_url || res.card_url,
               voter_name:   voterName,
               photo_url:    res.photo_url || '',

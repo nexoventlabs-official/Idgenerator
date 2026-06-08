@@ -155,31 +155,42 @@ def generate_back_card():
     """
     Render the back side of the membership card.
     Background: we_the_leaders_back.png (full bleed)
-    Watermark:  newfavicon.png centred at 30% opacity
+    Watermark:  newfavicon.png centred at 35% opacity, 65% of card height
     Output:     1700 x 1070 RGB
     """
     W, H = CARD_W, CARD_H
 
-    # Background
+    # ── Background ───────────────────────────────────────────────
     back_path = _asset_path('we_the_leaders_back.png')
     if os.path.isfile(back_path):
         bg = Image.open(back_path).convert('RGB').resize((W, H), Image.LANCZOS)
     else:
         bg = Image.new('RGB', (W, H), (250, 248, 244))
 
-    # Centre watermark: newfavicon.png
+    # ── Centre watermark: newfavicon.png ─────────────────────────
     favicon = _load_static_rgba('newfavicon.png')
     if favicon:
-        wm_size = int(min(W, H) * 0.45)          # ~480 px
-        wm = favicon.resize((wm_size, wm_size), Image.LANCZOS)
-        r, g, b, a = wm.split()
-        a = a.point(lambda x: int(x * 0.30))     # 30% opacity
-        wm = Image.merge('RGBA', (r, g, b, a))
+        wm_size = int(H * 0.65)          # 695 px — large, prominent watermark
+        wm_img  = favicon.resize((wm_size, wm_size), Image.LANCZOS)
+
+        # Build a pure RGBA image for compositing
+        # newfavicon.png is already RGBA — apply 35% opacity by scaling alpha
+        wm_rgba = Image.new('RGBA', (wm_size, wm_size), (0, 0, 0, 0))
+        wm_rgba.paste(wm_img, (0, 0))          # paste RGBA → RGBA
+
+        # Scale alpha channel to 35%
+        r, g, b, a = wm_rgba.split()
+        a_scaled = a.point(lambda v: int(v * 0.35))
+        wm_rgba  = Image.merge('RGBA', (r, g, b, a_scaled))
+
+        # Composite onto background
+        bg_rgba  = bg.convert('RGBA')
         wx = (W - wm_size) // 2
         wy = (H - wm_size) // 2
-        bg.paste(wm, (wx, wy), mask=wm.split()[3])
+        bg_rgba.paste(wm_rgba, (wx, wy), mask=wm_rgba.split()[3])
+        bg = bg_rgba.convert('RGB')
 
-    return bg.convert('RGB')
+    return bg
 
 
 def generate_card(voter, template=None, photo_image=None, qr_image=None):

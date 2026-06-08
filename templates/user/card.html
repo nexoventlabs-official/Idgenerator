@@ -292,7 +292,7 @@
 
         <!-- Back -->
         <div class="flip-back">
-          <img src="{{ url_for('static', filename='card_back_new.png') }}" alt="ID Card Back">
+          <img src="{{ back_url if back_url else url_for('static', filename='card_back_new.png') }}" alt="ID Card Back">
         </div>
 
       </div>
