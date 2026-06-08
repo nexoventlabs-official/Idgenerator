@@ -386,8 +386,8 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     # Centre block vertically — but cap bottom so last row ends above QR top
     # QR top = QR_Y, so last row bottom must be ≤ QR_Y - gap
     MAX_BLOCK_BOTTOM = QR_Y - 20 * S
-    ideal_y = CONTENT_TOP + (AVAIL_H - block_h) // 2
-    # If centred block would overflow below QR, shift it up
+    ideal_y = PHOTO_Y   # align details top with photo top
+    # If block bottom would overflow below QR, shift it up
     if ideal_y + block_h > MAX_BLOCK_BOTTOM:
         DET_Y = MAX_BLOCK_BOTTOM - block_h
     else:
