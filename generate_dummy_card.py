@@ -1,13 +1,14 @@
 """
-Dummy card preview — uses newtemplate.jpeg
-Photo in passport-size position (bottom right), no QR.
+Dummy card preview — new ATM-ratio design (1700 × 1071)
+Run: python generate_dummy_card.py
+Opens: dummy_card_output.jpeg
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import config
-from generate_cards import generate_card
+from generate_cards import generate_card, CARD_W, CARD_H
 
 OUTPUT = "dummy_card_output.jpeg"
 
@@ -16,29 +17,38 @@ VOTER = {
     "epic_no":       "KFD3622586",
     "assembly_name": "EGMORE",
     "district":      "CHENNAI",
-    "ptc_code":      "PTC-A1B2C3D",
+    "ptc_code":      "PTC-A1B2C3",
     "verify_url":    "http://localhost:5000/verify/KFD3622586",
 }
 
-# Create a realistic placeholder photo (flesh-toned rectangle)
+# ── Realistic placeholder passport photo ─────────────────────────
 def make_placeholder_photo(w, h):
-    img = Image.new('RGB', (w, h), (210, 180, 140))   # skin tone bg
-    d = ImageDraw.Draw(img)
-    # head circle
-    cx, cy, r = w//2, int(h*0.35), int(w*0.28)
-    d.ellipse([cx-r, cy-r, cx+r, cy+r], fill=(230, 200, 160))
-    # body
-    d.rectangle([cx - int(w*0.35), int(h*0.62), cx + int(w*0.35), h],
-                fill=(255, 255, 255))
+    img = Image.new('RGB', (w, h), (241, 245, 249))
+    d   = ImageDraw.Draw(img)
+    cx  = w // 2
+    # head
+    r = int(w * 0.28)
+    cy_head = int(h * 0.33)
+    d.ellipse([cx - r, cy_head - r, cx + r, cy_head + r],
+              fill=(220, 190, 160))
+    # neck
+    nw = int(w * 0.14)
+    d.rectangle([cx - nw, cy_head + r - 4, cx + nw, int(h * 0.60)],
+                fill=(220, 190, 160))
+    # shirt
+    d.polygon([
+        (int(w * 0.05), h),
+        (int(w * 0.95), h),
+        (int(w * 0.82), int(h * 0.60)),
+        (int(w * 0.18), int(h * 0.60)),
+    ], fill=(100, 130, 200))
     return img
 
-template = Image.open(config.TEMPLATE_PATH)
-W, H = template.size
-PHOTO_W = int(H * 0.21)
-PHOTO_H = int(PHOTO_W * 9 / 7)
-sample_photo = make_placeholder_photo(PHOTO_W, PHOTO_H)
+# template arg is ignored in new design — pass None
+template      = None
+sample_photo  = make_placeholder_photo(425, 525)   # proportional to PHOTO box
 
 card = generate_card(VOTER, template, sample_photo)
 card.save(OUTPUT, quality=95)
-print(f"Saved: {OUTPUT}  ({W}x{H})")
+print(f"Saved: {OUTPUT}  ({CARD_W}x{CARD_H})")
 print("Open dummy_card_output.jpeg to preview.")

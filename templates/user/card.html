@@ -59,7 +59,7 @@
       padding: 0 16px;
     }
 
-    /* Aspect ratio = 1536:1024 = 3:2 */
+    /* Aspect ratio = 1700:1071 ≈ ATM/PAN card */
     .flip-wrapper {
       perspective: 1200px;
       width: 100%;
@@ -67,7 +67,7 @@
     .flip-inner {
       position: relative;
       width: 100%;
-      padding-top: 66.67%;   /* 2/3 = 1024/1536 ratio */
+      padding-top: 63%;   /* 1071/1700 = ATM/PAN card ratio */
       transition: transform 0.85s cubic-bezier(0.4, 0.2, 0.2, 1);
       transform-style: preserve-3d;
       cursor: pointer;
@@ -292,7 +292,7 @@
 
         <!-- Back -->
         <div class="flip-back">
-          <img src="{{ url_for('static', filename='card_back.jpeg') }}" alt="ID Card Back">
+          <img src="{{ url_for('static', filename='card_back_new.png') }}" alt="ID Card Back">
         </div>
 
       </div>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>We The Leaders Membership Card</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Plus Jakarta Sans',sans-serif;
+}
+
+body{
+    background: radial-gradient(circle at center, #f8fafc, #e2e8f0);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:40px;
+    min-height:100vh;
+    flex-wrap:wrap;
+    padding:20px;
+}
+
+/* ATM / PAN Card Size Ratio */
+.id-card{
+    width:340px;
+    height:214px;
+    border-radius:16px;
+    overflow:hidden;
+    position:relative;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 20px 45px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+
+.id-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1), 0 25px 60px rgba(0, 0, 0, 0.06);
+}
+
+.watermark {
+    position: absolute;
+    top: 59%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 140px;
+    height: auto;
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.1;
+}
+
+/* FRONT SIDE */
+.front{
+    background: linear-gradient(180deg, #ffffff 0%, #f4f5f7 100%);
+}
+
+.leader-watermark{
+    position: absolute;
+    right: -45px;
+    bottom: 52px;
+    height: 130px;
+    width: auto;
+    opacity: 0.1;
+    pointer-events: none;
+    z-index: 1;
+    filter: grayscale(100%);
+}
+
+.front-badge-logo {
+    position: absolute;
+    left: 18px;
+    top: 15px;
+    height: 38px;
+    width: auto;
+    z-index: 3;
+    object-fit: contain;
+}
+
+.member-subtitle {
+    font-size: 7px;
+    color: #64748b;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    margin-top: -6px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+}
+
+.member-id-val {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.front-qr-sec {
+    position: absolute;
+    right: 20px;
+    bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 2;
+}
+
+.front-qr {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 3px;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+
+.front-qr img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.front-qr-label {
+    font-size: 5px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    text-align: center;
+    margin-top: 3px;
+}
+
+.footer-left {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #64748b;
+    text-transform: uppercase;
+}
+
+.header{
+    position:relative;
+    z-index:2;
+    padding:16px 20px 0;
+    display: flex;
+    justify-content: center;
+}
+
+.logo{
+    height: 38px;
+    object-fit: contain;
+}
+
+.content{
+    display:flex;
+    padding:10px 20px;
+    gap:18px;
+    position:relative;
+    z-index:2;
+}
+
+.photo{
+    width:85px;
+    height:105px;
+    background:#ffffff;
+    border-radius:8px;
+    overflow:hidden;
+    border: 2px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.photo img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+.details{
+    flex:1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.member{
+    font-family: 'Outfit', sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+    letter-spacing: -0.2px;
+}
+
+.info div{
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: #334155;
+    display: flex;
+    align-items: center;
+}
+
+.info span{
+    width: 75px;
+    font-size: 8px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    display: inline-block;
+}
+
+.footer{
+    position:absolute;
+    bottom:14px;
+    left:20px;
+    right:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    z-index:2;
+}
+
+.member-id .number{
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    color: #1f2937;
+    letter-spacing: 0.5px;
+}
+
+.member-id .label{
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #64748b;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+}
+
+.member-id .val-thru{
+    font-family: 'Plus Jakarta Sans', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* BACK SIDE */
+.back{
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff url('we_the_leaders_back.png') no-repeat center center;
+    background-size: 100% 100%;
+}
+
+.back-watermark {
+    position: absolute;
+    top: 48%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 130px;
+    height: auto;
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.22;
+}
+
+.back-content{
+    position:relative;
+    z-index:2;
+    padding:10px 18px 0;
+    font-size:11px;
+    line-height:1.4;
+}
+
+</style>
+</head>
+<body>
+
+<!-- FRONT SIDE -->
+<div class="id-card front">
+    <img src="leader.png" class="leader-watermark" alt="Leader Watermark">
+    <img src="charity_logo.png" class="front-badge-logo" alt="Badge Logo">
+
+    <div class="header">
+        <img src="we_the_leaders_logo.png" class="logo" alt="We The Leaders">
+    </div>
+
+    <div class="content">
+
+        <div class="photo">
+            <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120' fill='%23cbd5e1'><rect width='100' height='120' fill='%23f1f5f9'/><circle cx='50' cy='45' r='22' fill='%23cbd5e1'/><path d='M10 110 C10 85 30 72 50 72 C70 72 90 85 90 110 Z' fill='%23cbd5e1'/></svg>" alt="Member">
+        </div>
+
+        <div class="details">
+            <div class="member">John Kumar</div>
+            <div class="member-id-val">M-2025-001</div>
+
+            <div class="info">
+                <div><span>EPIC No</span>: ABC1234567</div>
+                <div><span>Assembly</span>: Chennai South</div>
+                <div><span>District</span>: Chennai</div>
+            </div>
+        </div>
+
+    </div>
+
+
+
+    <div class="footer">
+        <div class="footer-left">MEMBERSHIP ID CARD</div>
+    </div>
+
+</div>
+
+<!-- BACK SIDE -->
+<div class="id-card back">
+    <img src="charity_logo.png" class="back-watermark" alt="Watermark">
+
+    <div class="back-content">
+    </div>
+
+</div>
+
+</body>
+</html>

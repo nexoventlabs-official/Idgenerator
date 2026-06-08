@@ -20,6 +20,11 @@ output/
 # IDE
 .vscode/
 .idea/
+.kiro/
+
+# Generated card previews / temp output
+dummy_card_output.jpeg
+dummy_card_output.png
 
 # OS
 Thumbs.db

@@ -62,9 +62,9 @@ FONT_BOLD_PATHS = [
 FONT_FALLBACK      = 'C:/Windows/Fonts/arial.ttf'
 FONT_BOLD_FALLBACK = 'C:/Windows/Fonts/arialbd.ttf'
 
-# ── Template Dimensions ───────────────────────────────────────────
-TEMPLATE_WIDTH  = 1536
-TEMPLATE_HEIGHT = 1024
+# ── Template Dimensions (new ATM/PAN card ratio) ─────────────────
+TEMPLATE_WIDTH  = 1700
+TEMPLATE_HEIGHT = 1071
 
 # ── Layout (% based — computed dynamically in generate_cards.py) ──
 # All coordinates are derived from template size at runtime.

@@ -855,7 +855,8 @@ def chat_generate_card():
         voter['ptc_code']  = ptc_code
         voter['verify_url']= f"{config.BASE_URL}/verify/{epic_no}"
 
-        template   = Image.open(config.TEMPLATE_PATH)
+        # template arg kept for backward compat — new design builds its own canvas
+        template   = None
         card_image = generate_card(voter, template, photo_image)
 
         # ── Upload front card ─────────────────────────────────────
@@ -873,7 +874,9 @@ def chat_generate_card():
         # ── Create combined front+back download image ─────────────
         combined_url = card_url  # fallback to front only
         try:
-            back_path = os.path.join(config.BASE_DIR, 'Id_card_back_side.jpeg')
+            back_path = os.path.join(config.BASE_DIR, 'static', 'card_back_new.png')
+            if not os.path.exists(back_path):
+                back_path = os.path.join(config.BASE_DIR, 'Id_card_back_side.jpeg')
             if os.path.exists(back_path):
                 back_img = Image.open(back_path).convert('RGB')
                 front_w, front_h = card_image.size
