@@ -332,20 +332,22 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     #  DETAILS BLOCK (right of photo)
     # ══════════════════════════════════════════════════════════════
     DET_X     = PHOTO_X + PHOTO_W + GAP
-    DET_MAX_X = W - 20 * S          # full right margin — QR is at bottom now
-    DET_W     = DET_MAX_X - DET_X
 
     # ── QR — bottom-right, close to bottom edge ───────────────────
     QR_W  = 50 * S                  # 250 px
     QR_H  = QR_W
     QR_X  = W - 20 * S - QR_W
-    QR_Y  = H - 10 * S - QR_H      # slightly lower, near bottom edge
+    QR_Y  = H - 10 * S - QR_H      # near bottom edge
+
+    # Details max-x = left edge of QR (with a small gap) so values never overlap QR
+    DET_MAX_X = QR_X - 15 * S
+    DET_W     = DET_MAX_X - DET_X
 
     # ── Font sizes ────────────────────────────────────────────────
-    F_NAME  = 17 * S   # 85 px  name — clean, not oversized
-    F_MID   = 10 * S   # 50 px  member-id — lighter, subordinate
-    F_LBL   = 7  * S   # 35 px  field labels CAPS
-    F_VAL   = 10 * S   # 50 px  field values
+    F_NAME  = 17 * S   # 85 px
+    F_MID   = 10 * S   # 50 px
+    F_LBL   = 7  * S   # 35 px
+    F_VAL   = 10 * S   # 50 px
 
     f_name  = load_bold_font(F_NAME)
     f_mid   = load_font(F_MID, bold=False)
@@ -378,11 +380,20 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     MID_H   = _th(member_id, f_mid)
     N_ROWS  = len(FIELDS)
     block_h = (NAME_H + MB_NAME +
-               MID_H  + MB_MID  + 2 * S +
+               MID_H  + MB_MID  +
                N_ROWS * ROW_H + (N_ROWS - 1) * ROW_GAP)
 
-    DET_Y = CONTENT_TOP + (AVAIL_H - block_h) // 2
-    y     = DET_Y
+    # Centre block vertically — but cap bottom so last row ends above QR top
+    # QR top = QR_Y, so last row bottom must be ≤ QR_Y - gap
+    MAX_BLOCK_BOTTOM = QR_Y - 20 * S
+    ideal_y = CONTENT_TOP + (AVAIL_H - block_h) // 2
+    # If centred block would overflow below QR, shift it up
+    if ideal_y + block_h > MAX_BLOCK_BOTTOM:
+        DET_Y = MAX_BLOCK_BOTTOM - block_h
+    else:
+        DET_Y = ideal_y
+
+    y = DET_Y
 
     # — Name —
     draw.text((DET_X, y), name, font=f_name, fill=(15, 23, 42))
@@ -404,6 +415,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         draw.text((DET_X + LBL_COL_W, row_y + lbl_off), " : ",
                   font=f_lbl, fill=(148, 163, 184))
 
+        # Auto-shrink value to fit within DET_MAX_X
         fv, fvs = f_val, F_VAL
         while _tw(value, fv) > (DET_MAX_X - VAL_X) and fvs > 5 * S:
             fvs -= 1
