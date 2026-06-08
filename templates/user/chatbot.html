@@ -1580,8 +1580,21 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js" onerror="window._cropperFailed=true"></script>
   <script>
+    /* Guard: if Cropper.js CDN failed, stub it so the rest of the app still works */
+    if (typeof Cropper === 'undefined' || window._cropperFailed) {
+      window.Cropper = function(img, opts) {
+        this.destroy = function(){};
+        this.getCroppedCanvas = function(o) {
+          var c = document.createElement('canvas');
+          c.width = o.width || 850; c.height = o.height || 1050;
+          var ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          return c;
+        };
+      };
+    }
     (function () {
 
       /* ═══════════════════════════════════════════════════════
@@ -1907,6 +1920,8 @@
       async function handleSend() {
         const txt = input.value.trim();
         if (!txt) return;
+        if (state === S.WELCOME || state === S.CONFIRM || state === S.GENERATING) return;
+        input.value = '';
 
         /* ── AWAIT_EPIC ── */
         if (state === S.AWAIT_EPIC) {
@@ -1916,7 +1931,6 @@
             await botReply('\u274C Please enter a valid <strong>EPIC Number</strong> (3 letters + 7 digits, e.g. KFD3622586).', 500);
             return;
           }
-          input.value = '';
           userMsg(ep);
           epic = ep;
           lockInput();
@@ -1978,8 +1992,8 @@
 
         /* ── DONE — generate another ── */
         if (state === S.DONE) {
-          input.value = '';
           userMsg(txt);
+          lsClear();
           state = S.AWAIT_EPIC;
           epic = ''; voter = null;
           setPlaceholder('Enter your EPIC Number...');
@@ -2231,7 +2245,19 @@
       });
 
       /* ── Boot ── */
-      window.addEventListener('load', init);
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        /* DOM already ready (script deferred or page cached) */
+        init();
+      }
+      /* Safety fallback — ensure init fires even if DOMContentLoaded was missed */
+      window.addEventListener('load', function() {
+        if (document.getElementById('chatMessages') &&
+            document.getElementById('chatMessages').children.length === 0) {
+          init();
+        }
+      });
 
     })();
   </script>
