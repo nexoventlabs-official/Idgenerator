@@ -450,12 +450,6 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     draw.text((20 * S, foot_y), "MEMBERSHIP ID CARD",
               font=f_foot, fill=(100, 116, 139))
 
-    # ── Outer card border: 1px solid rgba(0,0,0,0.08) ────────────
-    draw.rounded_rectangle(
-        [0, 0, W - 1, H - 1],
-        radius=16 * S,
-        outline=(0, 0, 0, 20),
-        width=S
-    )
+    # No outer border — CSS border-radius + overflow:hidden handles card rounding
 
     return card.convert('RGB')
