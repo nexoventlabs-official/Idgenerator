@@ -373,7 +373,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     # Row metrics
     ROW_H   = _th("Mg", f_val)
     ROW_GAP = int(ROW_H * 1.0)    # full row height gap — more breathing room
-    MB_NAME = int(ROW_H * 0.55)
+    MB_NAME = int(ROW_H * 1.2)    # gap between name and first field
     MB_MID  = int(ROW_H * 1.10)
 
     NAME_H  = _th(name, f_name)
