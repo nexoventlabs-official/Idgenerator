@@ -331,121 +331,93 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     # ══════════════════════════════════════════════════════════════
     #  DETAILS BLOCK (right of photo)
     # ══════════════════════════════════════════════════════════════
-    DET_X = PHOTO_X + PHOTO_W + GAP    # start of details column
-    # Reserve space for QR on far right
-    # QR CSS: right:20px; bottom:24px; width:45px; height:45px
-    QR_W  = 45 * S     # 225
-    QR_H  = 45 * S     # 225
-    QR_X  = W - 20 * S - QR_W         # right:20px
-    QR_Y  = H - 24 * S - QR_H         # bottom:24px
-    DET_MAX_X = QR_X - 10 * S
-    DET_W = DET_MAX_X - DET_X
+    DET_X     = PHOTO_X + PHOTO_W + GAP
+    DET_MAX_X = W - 20 * S          # full right margin — QR is at bottom now
+    DET_W     = DET_MAX_X - DET_X
 
-    # Vertically centre details in same content zone as photo
-    # Details consist of: name + member_id + 3 info rows
-    # Let's compute total height first to centre it
+    # ── QR — bottom-right, close to bottom edge ───────────────────
+    QR_W  = 50 * S                  # 250 px
+    QR_H  = QR_W
+    QR_X  = W - 20 * S - QR_W
+    QR_Y  = H - 10 * S - QR_H      # slightly lower, near bottom edge
 
-    # Font sizes from CSS (in px at 1× then × SCALE):
-    # .member  font-size:19px weight:700
-    # .member-id-val font-size:13px weight:800
-    # .info div font-size:11px; .info span font-size:8px weight:700
-    F_NAME   = 19 * S   # 95
-    F_MID    = 13 * S   # 65
-    F_VAL    = 11 * S   # 55
-    F_LBL    = 8  * S   # 40
+    # ── Font sizes ────────────────────────────────────────────────
+    F_NAME  = 17 * S   # 85 px  name — clean, not oversized
+    F_MID   = 10 * S   # 50 px  member-id — lighter, subordinate
+    F_LBL   = 7  * S   # 35 px  field labels CAPS
+    F_VAL   = 10 * S   # 50 px  field values
 
     f_name  = load_bold_font(F_NAME)
-    f_mid   = load_bold_font(F_MID)
-    f_val   = load_font(F_VAL, bold=False)
+    f_mid   = load_font(F_MID, bold=False)
     f_lbl   = load_bold_font(F_LBL)
+    f_val   = load_font(F_VAL, bold=False)
 
-    # Auto-shrink name if too wide
-    while _tw(name, f_name) > DET_W and F_NAME > 12 * S:
+    # Shrink name to fit
+    while _tw(name, f_name) > DET_W and F_NAME > 10 * S:
         F_NAME -= S
         f_name  = load_bold_font(F_NAME)
 
-    NAME_H   = _th(name, f_name)
-    MID_H    = _th(member_id, f_mid)
-    # .member margin-bottom:8px; .member-id-val margin-bottom:6px
-    # .info div margin-bottom:4px
-    MB_NAME  = 8  * S   # 40
-    MB_MID   = 6  * S   # 30
-    MB_INFO  = 4  * S   # 20
-    ROW_H    = _th("Ag", f_val)
-
     FIELDS = [
-        ("EPIC No",  epic_no),
-        ("Assembly", assembly),
-        ("District", district),
+        ("EPIC NO",  epic_no),
+        ("ASSEMBLY", assembly),
+        ("DISTRICT", district),
     ]
 
-    # Total block height
-    block_h  = (NAME_H + MB_NAME +
-                MID_H  + MB_MID  +
-                3 * ROW_H + 2 * MB_INFO)
+    # Fixed label column = widest label
+    LBL_COL_W = max(_tw(lbl, f_lbl) for lbl, _ in FIELDS)
+    COLON_W   = _tw(" : ", f_lbl)
+    VAL_X     = DET_X + LBL_COL_W + COLON_W
 
-    # Centre block vertically within the photo zone
+    # Row metrics
+    ROW_H   = _th("Mg", f_val)
+    ROW_GAP = int(ROW_H * 0.55)
+    MB_NAME = int(ROW_H * 0.55)
+    MB_MID  = int(ROW_H * 1.10)
+
+    NAME_H  = _th(name, f_name)
+    MID_H   = _th(member_id, f_mid)
+    N_ROWS  = len(FIELDS)
+    block_h = (NAME_H + MB_NAME +
+               MID_H  + MB_MID  + 2 * S +
+               N_ROWS * ROW_H + (N_ROWS - 1) * ROW_GAP)
+
     DET_Y = CONTENT_TOP + (AVAIL_H - block_h) // 2
+    y     = DET_Y
 
     # — Name —
-    # color:#0f172a  weight:700  font-family:Outfit (we use bold arial)
-    draw.text((DET_X, DET_Y), name,
-              font=f_name, fill=(15, 23, 42))
-    y = DET_Y + NAME_H + MB_NAME
+    draw.text((DET_X, y), name, font=f_name, fill=(15, 23, 42))
+    y += NAME_H + MB_NAME
 
-    # — Member ID —
-    # color:#111827  weight:800  font-size:13px
-    draw.text((DET_X, y), member_id,
-              font=f_mid, fill=(17, 24, 39))
-    y += MID_H + MB_MID
+    # — Member ID (grey, lighter) —
+    draw.text((DET_X, y), member_id, font=f_mid, fill=(100, 116, 139))
+    y += MID_H + int(MB_MID * 0.4)
 
-    # — Info rows —
-    # .info span width:75px (label column)
-    SPAN_W   = 75 * S   # 375 px
-    COLON_GAP = 0       # colon is part of value text ": value"
+    # — Thin divider line —
+    draw.line([(DET_X, y), (DET_MAX_X, y)], fill=(226, 232, 240), width=2 * S)
+    y += 2 * S + int(MB_MID * 0.6)
 
-    for label, value in FIELDS:
-        # value: color:#334155  font-size:11px — auto-shrink if needed
-        fv, fv_s = f_val, F_VAL
-        val_x    = DET_X + SPAN_W
-        max_vw   = DET_MAX_X - val_x
-        v_text   = f": {value}"
-        while _tw(v_text, fv) > max_vw and fv_s > 6 * S:
-            fv_s -= 1
-            fv = load_font(fv_s, bold=False)
-
-        # vertically align label (smaller) with value (larger) on same row
+    # — Field rows —
+    for i, (label, value) in enumerate(FIELDS):
+        row_y   = y + i * (ROW_H + ROW_GAP)
         lbl_h   = _th(label, f_lbl)
-        val_h   = _th(v_text, fv)
+        val_h   = _th(value, f_val)
         lbl_off = (val_h - lbl_h) // 2
 
-        # label: color:#64748b  font-size:8px  weight:700  uppercase
-        draw.text((DET_X, y + lbl_off), label.upper(),
+        draw.text((DET_X, row_y + lbl_off), label,
                   font=f_lbl, fill=(100, 116, 139))
-        # value
-        draw.text((val_x, y), v_text,
-                  font=fv, fill=(51, 65, 85))
+        draw.text((DET_X + LBL_COL_W, row_y + lbl_off), " : ",
+                  font=f_lbl, fill=(148, 163, 184))
 
-        y += ROW_H + MB_INFO
+        fv, fvs = f_val, F_VAL
+        while _tw(value, fv) > (DET_MAX_X - VAL_X) and fvs > 5 * S:
+            fvs -= 1
+            fv   = load_font(fvs, bold=False)
+        draw.text((VAL_X, row_y), value, font=fv, fill=(30, 41, 59))
 
     # ══════════════════════════════════════════════════════════════
-    #  QR code box
-    #  CSS: right:20px; bottom:24px; width:45px; height:45px
-    #       border:1px solid #cbd5e1; border-radius:4px; padding:3px
+    #  QR code — transparent background, no border, no SCAN label
     # ══════════════════════════════════════════════════════════════
-    QR_PAD = 3 * S    # inner padding
-    QR_BR  = 4 * S    # border-radius
 
-    draw.rounded_rectangle(
-        [QR_X - QR_PAD, QR_Y - QR_PAD,
-         QR_X + QR_W + QR_PAD, QR_Y + QR_H + QR_PAD],
-        radius=QR_BR,
-        fill=(255, 255, 255),
-        outline=(203, 213, 225),
-        width=1 * S
-    )
-
-    # Build QR from verify_url if no qr_image supplied
     if not qr_image:
         verify_url = voter.get('verify_url', '')
         if not verify_url:
@@ -453,30 +425,23 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         qr_image = _make_qr(verify_url, QR_W)
 
     if qr_image:
-        qr_fit = qr_image.convert('RGB').resize((QR_W, QR_H), Image.LANCZOS)
-        card.paste(qr_fit, (QR_X, QR_Y))
+        # Make white pixels transparent so card bg shows through
+        qr_rgba = qr_image.convert('RGBA')
+        pixels  = qr_rgba.load()
+        for py in range(qr_rgba.height):
+            for px_ in range(qr_rgba.width):
+                r, g, b, a = pixels[px_, py]
+                if r > 200 and g > 200 and b > 200:
+                    pixels[px_, py] = (255, 255, 255, 0)   # white → transparent
+                else:
+                    pixels[px_, py] = (20, 20, 20, 255)    # dark → keep
+        card_rgba = card.convert('RGBA')
+        card_rgba.paste(qr_rgba, (QR_X, QR_Y), mask=qr_rgba.split()[3])
+        card = card_rgba.convert('RGB')
+        draw = ImageDraw.Draw(card)
     else:
-        # Fallback checkerboard (qrcode lib missing)
-        qr_ph  = Image.new('RGB', (QR_W, QR_H), (255, 255, 255))
-        qd     = ImageDraw.Draw(qr_ph)
-        step   = QR_W // 7
-        for i in range(7):
-            for j in range(7):
-                if (i + j) % 2 == 0:
-                    qd.rectangle(
-                        [i * step, j * step,
-                         (i + 1) * step - 2, (j + 1) * step - 2],
-                        fill=(180, 180, 180)
-                    )
-        card.paste(qr_ph, (QR_X, QR_Y))
-    # QR label below — ".front-qr-label font-size:5px weight:700 color:#64748b"
-    F_QRL  = 5 * S     # 25
-    f_qrl  = load_bold_font(F_QRL)
-    ql     = "SCAN"
-    ql_w   = _tw(ql, f_qrl)
-    ql_x   = QR_X + (QR_W - ql_w) // 2
-    ql_y   = QR_Y + QR_H + QR_PAD + 3 * S
-    draw.text((ql_x, ql_y), ql, font=f_qrl, fill=(100, 116, 139))
+        # Fallback — plain grey square (qrcode lib missing)
+        card.paste(Image.new('RGB', (QR_W, QR_H), (220, 220, 220)), (QR_X, QR_Y))
 
     # ══════════════════════════════════════════════════════════════
     #  FOOTER
