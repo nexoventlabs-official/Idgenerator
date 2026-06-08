@@ -131,6 +131,85 @@
   }
   </script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" rel="stylesheet">
+  <style>
+    /* ── Cropper Modal ── */
+    .crop-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .crop-modal-box {
+      background: #1a1a2e;
+      border-radius: 18px;
+      width: 100%;
+      max-width: 420px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+    }
+    .crop-modal-header {
+      background: #008069;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .crop-modal-header span { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
+    .crop-modal-body {
+      padding: 0;
+      max-height: 60vh;
+      overflow: hidden;
+      background: #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .crop-modal-body img {
+      display: block;
+      max-width: 100%;
+      max-height: 60vh;
+    }
+    .crop-modal-footer {
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      background: #1a1a2e;
+    }
+    .crop-btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.2s;
+    }
+    .crop-btn:hover { opacity: 0.88; }
+    .crop-btn.cancel { background: #2a3942; color: #ccc; }
+    .crop-btn.confirm { background: #00a884; color: #fff; }
+    .crop-hint {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #8696a0;
+      padding: 6px 16px 0;
+    }
+  </style>
   <style>
     * {
       margin: 0;
@@ -810,7 +889,7 @@
     .chat-flip-inner {
       position: relative;
       width: 100%;
-      padding-top: 66.67%;   /* 2:3 aspect ratio = 1024/1536 */
+      padding-top: 63%;   /* 1070/1700 = ATM/PAN card ratio */
       transform-style: preserve-3d;
       transition: transform 0.75s cubic-bezier(0.4, 0.2, 0.2, 1);
       cursor: pointer;
@@ -1477,13 +1556,41 @@
     <input type="file" id="passportCameraInput" accept="image/png,image/jpeg,image/jpg" capture="user" style="display:none;">
   </div>
 
+  <!-- ── Image Crop Modal ── -->
+  <div class="crop-modal-overlay" id="cropModal" style="display:none;">
+    <div class="crop-modal-box">
+      <div class="crop-modal-header">
+        <div>
+          <i class="bi bi-crop me-2"></i>Crop Your Photo
+          <br><span>Drag &amp; pinch to adjust • Passport size ratio</span>
+        </div>
+      </div>
+      <p class="crop-hint">📐 Crop to fit your ID card photo box (85 × 105)</p>
+      <div class="crop-modal-body">
+        <img id="cropImage" src="" alt="Crop">
+      </div>
+      <div class="crop-modal-footer">
+        <button class="crop-btn cancel" id="cropCancelBtn">
+          <i class="bi bi-x-lg"></i> Cancel
+        </button>
+        <button class="crop-btn confirm" id="cropConfirmBtn">
+          <i class="bi bi-check2"></i> Use This Photo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
   <script>
     (function () {
 
       /* ═══════════════════════════════════════════════════════
          FLOW:
          WELCOME → AWAIT_EPIC → show voter details → CONFIRM
-         → AWAIT_PHOTO → upload passport photo → GENERATING → DONE
+         → AWAIT_PHOTO → crop photo → GENERATING → DONE
+         LocalStorage key: wtl_card_cache  (epic_no, card_url,
+           combined_url, voter_name, photo_url, saved_at)
+      ═══════════════════════════════════════════════════════ */
          ═══════════════════════════════════════════════════════ */
 
       /* ── States ── */
@@ -1504,6 +1611,93 @@
       const chatEl  = document.getElementById('chatMessages');
       const input   = document.getElementById('messageInput');
       const sendBtn = document.getElementById('sendBtn');
+
+      /* ── LocalStorage helpers ── */
+      const LS_KEY = 'wtl_card_cache';
+
+      function lsSave(data) {
+        try { localStorage.setItem(LS_KEY, JSON.stringify({ ...data, saved_at: Date.now() })); }
+        catch(e) {}
+      }
+      function lsLoad() {
+        try {
+          const raw = localStorage.getItem(LS_KEY);
+          if (!raw) return null;
+          const d = JSON.parse(raw);
+          // expire after 7 days
+          if (Date.now() - (d.saved_at || 0) > 7 * 86400 * 1000) {
+            localStorage.removeItem(LS_KEY);
+            return null;
+          }
+          return d;
+        } catch(e) { return null; }
+      }
+      function lsClear() {
+        try { localStorage.removeItem(LS_KEY); } catch(e) {}
+      }
+
+      /* ── Cropper state ── */
+      let _cropper       = null;
+      let _cropResolve   = null;
+
+      function openCropper(file) {
+        return new Promise((resolve) => {
+          _cropResolve = resolve;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const img = document.getElementById('cropImage');
+            img.src   = ev.target.result;
+            document.getElementById('cropModal').style.display = 'flex';
+
+            // destroy old instance
+            if (_cropper) { _cropper.destroy(); _cropper = null; }
+
+            // init Cropper.js — aspect ratio 85:105
+            _cropper = new Cropper(img, {
+              aspectRatio:    85 / 105,
+              viewMode:       1,
+              dragMode:       'move',
+              autoCropArea:   0.85,
+              movable:        true,
+              scalable:       true,
+              zoomable:       true,
+              rotatable:      false,
+              cropBoxMovable: true,
+              cropBoxResizable: true,
+              background:     false,
+              guides:         true,
+              highlight:      true,
+              responsive:     true,
+            });
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      document.getElementById('cropConfirmBtn').addEventListener('click', () => {
+        if (!_cropper || !_cropResolve) return;
+        // Export cropped canvas as Blob
+        _cropper.getCroppedCanvas({
+          width:  850,    // 85 × 10 → good resolution
+          height: 1050,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: 'high',
+        }).toBlob((blob) => {
+          document.getElementById('cropModal').style.display = 'none';
+          _cropper.destroy(); _cropper = null;
+          _cropResolve(blob);
+          _cropResolve = null;
+        }, 'image/jpeg', 0.95);
+      });
+
+      document.getElementById('cropCancelBtn').addEventListener('click', () => {
+        document.getElementById('cropModal').style.display = 'none';
+        if (_cropper) { _cropper.destroy(); _cropper = null; }
+        if (_cropResolve) { _cropResolve(null); _cropResolve = null; }
+        // Reset file inputs
+        document.getElementById('passportPhotoInput').value  = '';
+        document.getElementById('passportCameraInput').value = '';
+      });
 
       /* ── Helpers ── */
       function scrollBottom() {
@@ -1578,6 +1772,18 @@
         input.value = '';
         sendBtn.disabled = false;
 
+        // ── Check LocalStorage for a previously generated card ──
+        const cached = lsLoad();
+        if (cached && cached.card_url && cached.epic_no) {
+          showCachedCard(cached);
+          return;
+        }
+
+        // ── No cache — show welcome banner ──
+        showWelcomeBanner();
+      }
+
+      function showWelcomeBanner() {
         const BANNER = `<strong>Welcome to We The Leaders!</strong><br>
           Your Digital Member ID Card Generator<br><br>
           \u{1F44B} Hello! Click <strong>Start</strong> to generate your free Member ID Card.`;
@@ -1615,6 +1821,88 @@
           );
         });
       }
+
+      /* ── Show cached card from localStorage ── */
+      async function showCachedCard(cached) {
+        state = S.DONE;
+        epic  = cached.epic_no;
+
+        const combinedUrl = cached.combined_url || cached.card_url;
+        const dlCombined  = combinedUrl.indexOf('/upload/') !== -1
+          ? combinedUrl.replace('/upload/', '/upload/fl_attachment:' + epic + '_WTL_Card/')
+          : combinedUrl;
+        const cardPageUrl = '/card/' + epic;
+
+        // Welcome back message
+        const name = cached.voter_name || epic;
+        let h = `\u{1F44B} <strong>Welcome back, ${name}!</strong><br>`;
+        h += `<em style="font-size:0.82rem;color:#667781;">Your previously generated card is shown below.</em><br><br>`;
+
+        // 3D flip card
+        h += '<div class="chat-flip-scene">';
+        h += '  <div class="chat-flip-wrapper">';
+        h += '    <div class="chat-flip-inner" id="chatFlipInner">';
+        h += '      <div class="chat-flip-front">';
+        h += '        <img src="' + cached.card_url + '" alt="ID Card Front">';
+        h += '      </div>';
+        h += '      <div class="chat-flip-back">';
+        h += '        <img src="/static/card_back_new.png" alt="ID Card Back">';
+        h += '      </div>';
+        h += '    </div>';
+        h += '  </div>';
+        h += '  <div style="text-align:center;margin-top:8px;">';
+        h += '    <button onclick="document.getElementById(\'chatFlipInner\').classList.toggle(\'flipped\')" '
+            +     'style="background:rgba(0,0,0,0.12);border:1px solid rgba(0,0,0,0.15);'
+            +     'color:#333;border-radius:20px;padding:6px 18px;font-size:0.82rem;font-weight:600;cursor:pointer;">'
+            +     '\u{1F501} Flip Card</button>';
+        h += '  </div>';
+        h += '</div>';
+
+        // Action buttons
+        h += '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">';
+        h += '  <a href="' + cardPageUrl + '" target="_blank" '
+            +     'style="background:#1565c0;color:#fff;text-decoration:none;border-radius:10px;'
+            +     'padding:8px 16px;font-size:0.85rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;">'
+            +     '<i class="bi bi-fullscreen"></i> Full View</a>';
+        h += '  <a href="' + dlCombined + '" target="_blank" '
+            +     'style="background:#2e7d32;color:#fff;text-decoration:none;border-radius:10px;'
+            +     'padding:8px 16px;font-size:0.85rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;">'
+            +     '<i class="bi bi-download"></i> Download</a>';
+        h += '  <button onclick="clearCacheAndRestart()" '
+            +     'style="background:#f0f2f5;color:#444;border:none;border-radius:10px;'
+            +     'padding:8px 16px;font-size:0.85rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">'
+            +     '<i class="bi bi-arrow-repeat"></i> Generate New Card</button>';
+        h += '</div>';
+        h += '<div style="margin-top:8px;font-size:0.78rem;color:#8a9ab5;">';
+        h += '  <i class="bi bi-shield-check me-1" style="color:#43a047;"></i>';
+        h += '  Card saved on your device &bull; <span id="cacheAgeLabel"></span>';
+        h += '</div>';
+
+        botMsg(h);
+        scrollBottom();
+
+        // Show age
+        const mins = Math.round((Date.now() - (cached.saved_at || Date.now())) / 60000);
+        const ageLabel = document.getElementById('cacheAgeLabel');
+        if (ageLabel) {
+          if (mins < 1)      ageLabel.textContent = 'just now';
+          else if (mins < 60) ageLabel.textContent = `${mins} min ago`;
+          else if (mins < 1440) ageLabel.textContent = `${Math.round(mins/60)} hr ago`;
+          else               ageLabel.textContent = `${Math.round(mins/1440)} day(s) ago`;
+        }
+
+        setPlaceholder('Type anything to generate a new card...');
+        unlockInput();
+      }
+
+      /* ── Clear cache and restart ── */
+      window.clearCacheAndRestart = function() {
+        lsClear();
+        chatEl.innerHTML = '';
+        state = S.WELCOME;
+        epic  = ''; voter = null; photoFile = null;
+        showWelcomeBanner();
+      };
 
       /* ── Main send handler ── */
       async function handleSend() {
@@ -1732,34 +2020,42 @@
         document.getElementById('passportCameraInput').addEventListener('change', handlePhotoSelected);
       }
 
-      /* ── Photo selected handler ── */
-      function handlePhotoSelected(e) {
+      /* ── Photo selected → open cropper ── */
+      async function handlePhotoSelected(e) {
         const file = e.target.files && e.target.files[0];
+        // Reset input so same file can be re-selected
+        e.target.value = '';
         if (!file) return;
 
-        // 10 MB limit
         if (file.size > 10 * 1024 * 1024) {
           botMsg('\u274C File too large. Please upload a photo under 10 MB.');
           return;
         }
 
-        photoFile = file;
+        // Open cropper — returns a Blob or null if cancelled
+        const croppedBlob = await openCropper(file);
+        if (!croppedBlob) return;  // user cancelled
 
-        // Show preview + confirm generate button
-        const reader = new FileReader();
-        reader.onload = function(ev) {
-          const previewArea = document.getElementById('photoPreviewArea');
-          if (previewArea) {
-            previewArea.innerHTML =
-              '<img src="' + ev.target.result + '" style="max-width:120px;max-height:160px;border-radius:8px;border:2px solid #00a884;display:block;margin-bottom:10px;">' +
-              '<button class="btn-reply" id="proceedGenerateBtn" style="background:#2e7d32;color:#fff;">' +
-              '<i class="bi bi-lightning-charge-fill me-1"></i> Generate Card</button>';
+        photoFile = new File([croppedBlob], 'passport_photo.jpg', { type: 'image/jpeg' });
 
-            document.getElementById('proceedGenerateBtn').addEventListener('click', doGenerate);
-          }
-          userMsg('<i class="bi bi-image-fill me-1"></i> Photo selected: <strong>' + file.name + '</strong>');
-        };
-        reader.readAsDataURL(file);
+        // Show cropped preview + generate button
+        const previewUrl = URL.createObjectURL(croppedBlob);
+        const previewArea = document.getElementById('photoPreviewArea');
+        if (previewArea) {
+          previewArea.innerHTML =
+            '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">' +
+              '<img src="' + previewUrl + '" style="width:70px;height:87px;border-radius:8px;border:2px solid #00a884;object-fit:cover;">' +
+              '<div style="font-size:0.82rem;color:#667781;padding-top:4px;">' +
+                '<i class="bi bi-check-circle-fill" style="color:#00a884;"></i> Photo cropped successfully<br>' +
+                '<em>Fits perfectly in your ID card</em>' +
+              '</div>' +
+            '</div>' +
+            '<button class="btn-reply" id="proceedGenerateBtn" style="background:#2e7d32;color:#fff;">' +
+            '<i class="bi bi-lightning-charge-fill me-1"></i> Generate Card</button>';
+
+          document.getElementById('proceedGenerateBtn').addEventListener('click', doGenerate);
+        }
+        userMsg('<i class="bi bi-crop me-1"></i> Photo cropped &amp; ready');
       }
 
       /* ── Generate card ── */
@@ -1816,7 +2112,7 @@
             h += '        <img src="' + res.card_url + '" alt="ID Card Front">';
             h += '      </div>';
             h += '      <div class="chat-flip-back">';
-            h += '        <img src="/static/card_back.jpeg" alt="ID Card Back">';
+            h += '        <img src="/static/card_back_new.png" alt="ID Card Back">';
             h += '      </div>';
             h += '    </div>';
             h += '  </div>';
@@ -1843,8 +2139,23 @@
                 +  '<em>\u2139\uFE0F Download includes both front &amp; back in one image.</em></div>';
             h += '<div style="margin-top:6px;font-size:0.82rem;color:#8a9ab5;">'
                 +  '<em>Type anything to generate a card for another member.</em></div>';
+            h += '<div style="margin-top:6px;font-size:0.78rem;color:#8a9ab5;">'
+                +  '<i class="bi bi-shield-check me-1" style="color:#43a047;"></i>'
+                +  'Card saved on this device — will show if you refresh or reopen.</div>';
 
             await botReply(h, 600);
+
+            // ── Save to localStorage ──────────────────────────
+            const voterName = (voter)
+              ? (((voter.FM_NAME_EN || voter.name || '') + ' ' + (voter.LASTNAME_EN || '')).trim() || voter.name || epic)
+              : epic;
+            lsSave({
+              epic_no:      epic,
+              card_url:     res.card_url,
+              combined_url: res.combined_url || res.card_url,
+              voter_name:   voterName,
+              photo_url:    res.photo_url || '',
+            });
 
           } else {
             state = S.AWAIT_PHOTO;
