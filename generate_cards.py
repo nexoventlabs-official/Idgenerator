@@ -390,11 +390,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
 
     # — Member ID (grey, lighter) —
     draw.text((DET_X, y), member_id, font=f_mid, fill=(100, 116, 139))
-    y += MID_H + int(MB_MID * 0.4)
-
-    # — Thin divider line —
-    draw.line([(DET_X, y), (DET_MAX_X, y)], fill=(226, 232, 240), width=2 * S)
-    y += 2 * S + int(MB_MID * 0.6)
+    y += MID_H + MB_MID
 
     # — Field rows —
     for i, (label, value) in enumerate(FIELDS):
