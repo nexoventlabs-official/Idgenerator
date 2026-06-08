@@ -380,14 +380,11 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     MID_H   = _th(member_id, f_mid)
     N_ROWS  = len(FIELDS)
     block_h = (NAME_H + MB_NAME +
-               MID_H  + MB_MID  +
                N_ROWS * ROW_H + (N_ROWS - 1) * ROW_GAP)
 
     # Centre block vertically — but cap bottom so last row ends above QR top
-    # QR top = QR_Y, so last row bottom must be ≤ QR_Y - gap
     MAX_BLOCK_BOTTOM = QR_Y - 20 * S
-    ideal_y = PHOTO_Y + int(AVAIL_H * 0.32)   # ~32% below photo top
-    # If block bottom would overflow below QR, shift it up
+    ideal_y = PHOTO_Y + int(AVAIL_H * 0.32)
     if ideal_y + block_h > MAX_BLOCK_BOTTOM:
         DET_Y = MAX_BLOCK_BOTTOM - block_h
     else:
@@ -399,11 +396,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     draw.text((DET_X, y), name, font=f_name, fill=(15, 23, 42))
     y += NAME_H + MB_NAME
 
-    # — Member ID (grey, lighter) —
-    draw.text((DET_X, y), member_id, font=f_mid, fill=(100, 116, 139))
-    y += MID_H + MB_MID
-
-    # — Field rows —
+    # — Field rows (no member_id line here — PTC shown in footer) —
     for i, (label, value) in enumerate(FIELDS):
         row_y   = y + i * (ROW_H + ROW_GAP)
         lbl_h   = _th(label, f_lbl)
@@ -451,15 +444,12 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         # Fallback — plain grey square (qrcode lib missing)
         card.paste(Image.new('RGB', (QR_W, QR_H), (220, 220, 220)), (QR_X, QR_Y))
 
-    # ══════════════════════════════════════════════════════════════
-    #  FOOTER
-    #  CSS: .footer { bottom:14px; left:20px; right:20px }
-    #        .footer-left { font-size:7px weight:700 color:#64748b letter-spacing:0.8px uppercase }
-    # ══════════════════════════════════════════════════════════════
-    F_FOOT  = 7 * S    # 35
+    # ── Footer — show PTC code below photo ───────────────────────
+    F_FOOT  = 7 * S    # 35 px
     f_foot  = load_bold_font(F_FOOT)
     foot_y  = H - 14 * S - _th("M", f_foot)
-    draw.text((20 * S, foot_y), "MEMBERSHIP ID CARD",
+    foot_text = member_id if member_id else "MEMBERSHIP ID CARD"
+    draw.text((20 * S, foot_y), foot_text,
               font=f_foot, fill=(100, 116, 139))
 
     # No outer border — CSS border-radius + overflow:hidden handles card rounding
