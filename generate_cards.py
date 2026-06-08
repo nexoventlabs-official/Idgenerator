@@ -8,9 +8,15 @@ Output:    1700 × 1070 px  (5× scale)
 
 Every position maps directly from CSS values × 5.
 """
-import hashlib, logging, os, sys
+import hashlib, io, logging, os, sys
 from PIL import Image, ImageDraw, ImageFont
 import config
+
+try:
+    import qrcode
+    _qrcode_available = True
+except ImportError:
+    _qrcode_available = False
 
 # ── Logging ──────────────────────────────────────────────────────
 def setup_logging():
@@ -110,9 +116,71 @@ def _fit_photo(photo, box_w, box_h):
     return img.crop((left, top, left + box_w, top + box_h))
 
 
+# ── QR code generator ─────────────────────────────────────────────
+def _make_qr(url: str, size: int) -> Image.Image:
+    """Generate a clean QR code image at given pixel size."""
+    if not _qrcode_available or not url:
+        return None
+    try:
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=2,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
+        return img.resize((size, size), Image.LANCZOS)
+    except Exception:
+        return None
+
+
+# ── Load static asset (newfavicon etc.) ──────────────────────────
+def _load_static_rgba(filename: str):
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', filename)
+    if not os.path.isfile(p):
+        return None
+    try:
+        return Image.open(p).convert('RGBA')
+    except Exception:
+        return None
+
+
 # ══════════════════════════════════════════════════════════════════
-#  MAIN GENERATOR
+#  BACK CARD GENERATOR
 # ══════════════════════════════════════════════════════════════════
+
+def generate_back_card():
+    """
+    Render the back side of the membership card.
+    Background: we_the_leaders_back.png (full bleed)
+    Watermark:  newfavicon.png centred at 30% opacity
+    Output:     1700 x 1070 RGB
+    """
+    W, H = CARD_W, CARD_H
+
+    # Background
+    back_path = _asset_path('we_the_leaders_back.png')
+    if os.path.isfile(back_path):
+        bg = Image.open(back_path).convert('RGB').resize((W, H), Image.LANCZOS)
+    else:
+        bg = Image.new('RGB', (W, H), (250, 248, 244))
+
+    # Centre watermark: newfavicon.png
+    favicon = _load_static_rgba('newfavicon.png')
+    if favicon:
+        wm_size = int(min(W, H) * 0.45)          # ~480 px
+        wm = favicon.resize((wm_size, wm_size), Image.LANCZOS)
+        r, g, b, a = wm.split()
+        a = a.point(lambda x: int(x * 0.30))     # 30% opacity
+        wm = Image.merge('RGBA', (r, g, b, a))
+        wx = (W - wm_size) // 2
+        wy = (H - wm_size) // 2
+        bg.paste(wm, (wx, wy), mask=wm.split()[3])
+
+    return bg.convert('RGB')
+
 
 def generate_card(voter, template=None, photo_image=None, qr_image=None):
     """
@@ -366,11 +434,18 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
         width=1 * S
     )
 
+    # Build QR from verify_url if no qr_image supplied
+    if not qr_image:
+        verify_url = voter.get('verify_url', '')
+        if not verify_url:
+            verify_url = f"{getattr(config, 'BASE_URL', 'https://wetheleaders.org')}/verify/{epic_no}"
+        qr_image = _make_qr(verify_url, QR_W)
+
     if qr_image:
         qr_fit = qr_image.convert('RGB').resize((QR_W, QR_H), Image.LANCZOS)
         card.paste(qr_fit, (QR_X, QR_Y))
     else:
-        # Simple checkerboard QR placeholder
+        # Fallback checkerboard (qrcode lib missing)
         qr_ph  = Image.new('RGB', (QR_W, QR_H), (255, 255, 255))
         qd     = ImageDraw.Draw(qr_ph)
         step   = QR_W // 7
@@ -383,7 +458,6 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
                         fill=(180, 180, 180)
                     )
         card.paste(qr_ph, (QR_X, QR_Y))
-
     # QR label below — ".front-qr-label font-size:5px weight:700 color:#64748b"
     F_QRL  = 5 * S     # 25
     f_qrl  = load_bold_font(F_QRL)

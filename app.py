@@ -20,7 +20,8 @@ from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError
 
 import config
-from generate_cards import (setup_logging, generate_card, generate_serial_number,
+from generate_cards import (setup_logging, generate_card, generate_back_card,
+                             generate_serial_number,
                              load_bold_font, get_text_width, load_member_photo)
 from security_fixes import (hash_pin, verify_pin, rate_limit, rate_limiter,
                              validate_mobile, validate_epic, validate_pin,
@@ -874,38 +875,29 @@ def chat_generate_card():
         # ── Create combined front+back download image ─────────────
         combined_url = card_url  # fallback to front only
         try:
-            back_path = os.path.join(config.BASE_DIR, 'static', 'card_back_new.png')
-            if not os.path.exists(back_path):
-                back_path = os.path.join(config.BASE_DIR, 'Id_card_back_side.jpeg')
-            if os.path.exists(back_path):
-                back_img = Image.open(back_path).convert('RGB')
-                front_w, front_h = card_image.size
-                back_w,  back_h  = back_img.size
+            # Generate back card with newfavicon watermark
+            back_img = generate_back_card()
+            front_w, front_h = card_image.size
+            back_resized = back_img.resize((front_w, front_h), Image.LANCZOS)
 
-                # Resize back to same height as front maintaining aspect ratio
-                scale   = front_h / back_h
-                back_rw = int(back_w * scale)
-                back_resized = back_img.resize((back_rw, front_h), Image.LANCZOS)
+            GAP = 30   # px gap between front and back
+            combined_w = front_w + GAP + front_w
+            combined   = Image.new('RGB', (combined_w, front_h), (240, 240, 240))
+            combined.paste(card_image,   (0,             0))
+            combined.paste(back_resized, (front_w + GAP, 0))
 
-                GAP = 30   # px gap between front and back
-                # White background
-                combined_w = front_w + GAP + back_rw
-                combined   = Image.new('RGB', (combined_w, front_h), (255, 255, 255))
-                combined.paste(card_image,   (0,               0))
-                combined.paste(back_resized, (front_w + GAP,   0))
-
-                # Upload combined image
-                comb_buf = io.BytesIO()
-                combined.save(comb_buf, format='JPEG', quality=95)
-                comb_buf.seek(0)
-                comb_up = cloudinary.uploader.upload(
-                    comb_buf.getvalue(),
-                    folder='generated_cards',
-                    public_id=f"{epic_no}_combined",
-                    overwrite=True, resource_type='image'
-                )
-                combined_url = comb_up['secure_url']
-                logger.info("Combined card uploaded for %s", epic_no)
+            # Upload combined image
+            comb_buf = io.BytesIO()
+            combined.save(comb_buf, format='JPEG', quality=95)
+            comb_buf.seek(0)
+            comb_up = cloudinary.uploader.upload(
+                comb_buf.getvalue(),
+                folder='generated_cards',
+                public_id=f"{epic_no}_combined",
+                overwrite=True, resource_type='image'
+            )
+            combined_url = comb_up['secure_url']
+            logger.info("Combined card uploaded for %s", epic_no)
         except Exception as ce:
             logger.warning("Combined card creation failed for %s: %s", epic_no, ce)
 
