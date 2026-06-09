@@ -473,6 +473,11 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
 
     # Render SVG background
     card_rgba = render_svg_bg(W, H, S)
+
+    # Apply 60% black overlay on background to highlight text
+    black_overlay = Image.new('RGBA', card_rgba.size, (0, 0, 0, int(0.60 * 255)))
+    card_rgba = Image.alpha_composite(card_rgba, black_overlay)
+
     draw = ImageDraw.Draw(card_rgba)
 
     # Sanitize voter inputs
