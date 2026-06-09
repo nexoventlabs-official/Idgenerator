@@ -1,6 +1,6 @@
 """
-Card Generation Engine — MAKKAL MEDAI v7.0
-==========================================
+Card Generation Engine — We The Leaders / Makkal Medai
+======================================================
 Pixel-perfect replication of Id cards/index.html at 5× scale.
 
 HTML card:  340 × 214 px
@@ -8,7 +8,13 @@ Output:    1700 × 1070 px  (5× scale)
 
 Every position maps directly from CSS values × 5.
 """
-import hashlib, io, logging, math, os, sys
+import hashlib
+import io
+import logging
+import os
+import sys
+import urllib.request
+import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw, ImageFont
 import config
 
@@ -17,21 +23,6 @@ try:
     _qrcode_available = True
 except ImportError:
     _qrcode_available = False
-
-# ── SVG backend detection ────────────────────────────────────────
-try:
-    import cairosvg as _cairosvg
-    _svg_backend = 'cairo'
-except ImportError:
-    _cairosvg = None
-    try:
-        from svglib.svglib import svg2rlg as _svg2rlg
-        from reportlab.graphics import renderPM as _renderPM
-        _svg_backend = 'svglib'
-    except ImportError:
-        _svg2rlg = None
-        _renderPM = None
-        _svg_backend = 'pil'
 
 # ── Logging ──────────────────────────────────────────────────────
 def setup_logging():
@@ -77,7 +68,43 @@ def _paste_rgba(base, overlay, xy, opacity=1.0):
 
 
 # ── Font helpers ─────────────────────────────────────────────────
-def load_font(size, bold=False):
+def _download_font(url, dest_path):
+    try:
+        logger.info(f"Downloading font from {url} to {dest_path}...")
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            with open(dest_path, 'wb') as f:
+                f.write(response.read())
+        logger.info(f"Successfully downloaded font: {dest_path}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to download font: {e}")
+        return False
+
+def load_font(size, bold=False, font_family='Montserrat'):
+    # Montserrat is the premium professional font family used for everything
+    font_name = 'Montserrat-ExtraBold.ttf' if bold else 'Montserrat-Bold.ttf'
+    font_url = (
+        'https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-ExtraBold.ttf' if bold else
+        'https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-Bold.ttf'
+    )
+
+    local_path = _asset_path(font_name)
+    
+    # Auto-download font if missing
+    if not os.path.isfile(local_path):
+        _download_font(font_url, local_path)
+        
+    if os.path.isfile(local_path):
+        try:
+            return ImageFont.truetype(local_path, size)
+        except Exception as e:
+            logger.warning(f"Error loading truetype font {local_path}: {e}")
+            
+    # Fallback to system fonts or config
     paths = (
         getattr(config, 'FONT_BOLD_PATHS', ['C:/Windows/Fonts/arialbd.ttf'])
         if bold else
@@ -104,6 +131,27 @@ def _th(text, font):
     bb = d.textbbox((0, 0), text, font=font)
     return bb[3] - bb[1]
 
+# ── Spaced Text Drawing Helpers ────────────────────────────────────
+def get_text_width_with_spacing(text, font, spacing_px):
+    if not text:
+        return 0
+    w = sum(_tw(char, font) for char in text)
+    w += spacing_px * (len(text) - 1)
+    return w
+
+def draw_text_with_spacing(draw, xy, text, font, fill, spacing_px, align='left'):
+    x, y = xy
+    if align == 'center':
+        total_w = get_text_width_with_spacing(text, font, spacing_px)
+        x = x - total_w // 2
+    elif align == 'right':
+        total_w = get_text_width_with_spacing(text, font, spacing_px)
+        x = x - total_w
+        
+    for char in text:
+        draw.text((x, y), char, font=font, fill=fill)
+        x += _tw(char, font) + spacing_px
+
 # ── Compat stubs ─────────────────────────────────────────────────
 def get_text_width(text, font):
     return _tw(text, font)
@@ -125,7 +173,7 @@ def _fit_photo(photo, box_w, box_h):
     iw, ih = photo.size
     scale  = max(box_w / iw, box_h / ih)
     nw, nh = int(iw * scale), int(ih * scale)
-    img    = photo.resize((nw, nh), Image.LANCZOS)
+    img    = photo.resize((nw, nh), Image.Resampling.LANCZOS)
     left   = (nw - box_w) // 2
     top    = max(0, int((nh - box_h) * 0.20))
     return img.crop((left, top, left + box_w, top + box_h))
@@ -133,7 +181,7 @@ def _fit_photo(photo, box_w, box_h):
 
 # ── QR code generator ─────────────────────────────────────────────
 def _make_qr(url: str, size: int) -> Image.Image:
-    """Generate a clean QR code image at given pixel size (black on white)."""
+    """Generate a clean QR code image at given pixel size."""
     if not _qrcode_available or not url:
         return None
     try:
@@ -146,9 +194,104 @@ def _make_qr(url: str, size: int) -> Image.Image:
         qr.add_data(url)
         qr.make(fit=True)
         img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
-        return img.resize((size, size), Image.LANCZOS)
+        return img.resize((size, size), Image.Resampling.LANCZOS)
     except Exception:
         return None
+
+
+# ── SVG Background Renderer ───────────────────────────────────────
+def render_svg_bg(W, H, scale):
+    svg_path = _asset_path('diamond_bg.svg')
+    if not os.path.isfile(svg_path):
+        # Fallback: create base red gradient
+        bg = Image.new('RGBA', (W, H), (179, 0, 0, 255))
+        return bg
+
+    try:
+        tree = ET.parse(svg_path)
+        root = tree.getroot()
+        
+        # Build radial gradient at 1x scale and resize to preserve performance
+        w_small, h_small = 340, 214
+        bg_small = Image.new('RGBA', (w_small, h_small))
+        draw_small = ImageDraw.Draw(bg_small)
+        
+        cx_s, cy_s, r_s = int(w_small * 0.60), int(h_small * 0.30), int(w_small * 0.70)
+        max_d = int((w_small**2 + h_small**2)**0.5)
+        for d in range(max_d, -1, -1):
+            t = d / r_s
+            if t > 1.0:
+                t = 1.0
+            if t <= 0.5:
+                factor = t / 0.5
+                color = (
+                    int(255 + factor * (179 - 255)),
+                    int(26 + factor * (0 - 26)),
+                    int(26 + factor * (0 - 26)),
+                    255
+                )
+            else:
+                factor = (t - 0.5) / 0.5
+                color = (
+                    int(179 + factor * (64 - 179)),
+                    int(0 + factor * (0 - 0)),
+                    int(0 + factor * (0 - 0)),
+                    255
+                )
+            draw_small.ellipse([cx_s - d, cy_s - d, cx_s + d, cy_s + d], fill=color)
+        
+        bg = bg_small.resize((W, H), Image.Resampling.LANCZOS)
+        
+        # Parse all polygon tags
+        polys = []
+        for child in root.iter():
+            if child.tag.endswith('polygon'):
+                polys.append(child)
+                
+        for poly in polys:
+            attrib = poly.attrib
+            pts_str = attrib.get('points', '')
+            fill_hex = attrib.get('fill', '#ffffff')
+            opacity = float(attrib.get('opacity', '1.0'))
+            
+            # Parse points
+            pts = []
+            for pt in pts_str.strip().split():
+                coords = pt.split(',')
+                if len(coords) == 2:
+                    pts.append((float(coords[0]) * scale, float(coords[1]) * scale))
+            
+            if not pts:
+                continue
+                
+            fill_hex = fill_hex.lstrip('#')
+            fill_rgb = tuple(int(fill_hex[i:i+2], 16) for i in (0, 2, 4))
+            
+            # Draw using bounding-box crop overlay to optimize speed
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            min_x, max_x = int(min(xs)), int(max(xs))
+            min_y, max_y = int(min(ys)), int(max(ys))
+            
+            min_x, min_y = max(0, min_x - 1), max(0, min_y - 1)
+            max_x, max_y = min(W, max_x + 1), min(H, max_y + 1)
+            box_w = max_x - min_x
+            box_h = max_y - min_y
+            if box_w <= 0 or box_h <= 0:
+                continue
+                
+            crop_overlay = Image.new('RGBA', (box_w, box_h), (0, 0, 0, 0))
+            draw_crop = ImageDraw.Draw(crop_overlay)
+            crop_pts = [(x - min_x, y - min_y) for x, y in pts]
+            
+            alpha = int(opacity * 255)
+            draw_crop.polygon(crop_pts, fill=fill_rgb + (alpha,), outline=fill_rgb + (alpha,))
+            bg.paste(crop_overlay, (min_x, min_y), mask=crop_overlay)
+            
+        return bg
+    except Exception as e:
+        logger.error(f"Error rendering SVG background: {e}")
+        return Image.new('RGBA', (W, H), (179, 0, 0, 255))
 
 
 # ── Load static asset (newfavicon etc.) ──────────────────────────
@@ -162,244 +305,158 @@ def _load_static_rgba(filename: str):
         return None
 
 
-# ── SVG background loader ─────────────────────────────────────────
-def _load_svg_background(svg_path: str, width: int, height: int) -> Image.Image:
-    """
-    Load diamond_bg.svg and render it to a PIL Image at given dimensions.
-    Tries cairosvg → svglib+reportlab → PIL radial gradient fallback.
-    """
-    if _svg_backend == 'cairo' and _cairosvg is not None and os.path.isfile(svg_path):
-        try:
-            png_bytes = _cairosvg.svg2png(
-                url=svg_path,
-                output_width=width,
-                output_height=height,
-            )
-            return Image.open(io.BytesIO(png_bytes)).convert('RGBA')
-        except Exception as e:
-            logger.debug(f"cairosvg failed: {e}")
-
-    if _svg_backend == 'svglib' and _svg2rlg is not None and os.path.isfile(svg_path):
-        try:
-            drawing = _svg2rlg(svg_path)
-            if drawing:
-                png_bytes = _renderPM.drawToString(drawing, fmt='PNG')
-                img = Image.open(io.BytesIO(png_bytes)).convert('RGBA')
-                return img.resize((width, height), Image.LANCZOS)
-        except Exception as e:
-            logger.debug(f"svglib failed: {e}")
-
-    # ── PIL fallback: deep-red radial gradient (centre-right bright) ──
-    logger.debug("SVG fallback: painting PIL radial gradient")
-    img = Image.new('RGBA', (width, height))
-    pixels = img.load()
-    # CSS: radial-gradient(ellipse at 70% 50%, #ff1a1a 0%, #400000 100%)
-    cx = int(width * 0.70)
-    cy = int(height * 0.50)
-    max_dist = math.hypot(max(cx, width - cx), max(cy, height - cy))
-    for y in range(height):
-        for x in range(width):
-            dist = math.hypot(x - cx, y - cy)
-            t = min(dist / max_dist, 1.0)
-            # bright red → dark maroon
-            r = int(0xff + t * (0x40 - 0xff))   # 255 → 64
-            g = int(0x1a + t * (0x00 - 0x1a))   # 26  → 0
-            b = int(0x1a + t * (0x00 - 0x1a))   # 26  → 0
-            pixels[x, y] = (r, g, b, 255)
-
-    # Add low-poly triangle effect via semi-transparent darker overlay triangles
-    draw = ImageDraw.Draw(img, 'RGBA')
-    import random
-    rng = random.Random(42)
-    step = 80
-    for gx in range(0, width + step, step):
-        for gy in range(0, height + step, step):
-            jitter = step // 3
-            pts = [
-                (gx + rng.randint(-jitter, jitter),
-                 gy + rng.randint(-jitter, jitter)),
-                (gx + step + rng.randint(-jitter, jitter),
-                 gy + rng.randint(-jitter, jitter)),
-                (gx + rng.randint(-jitter, jitter),
-                 gy + step + rng.randint(-jitter, jitter)),
-            ]
-            alpha = rng.randint(8, 28)
-            shade = rng.choice([0, 255])
-            draw.polygon(pts, fill=(shade, shade, shade, alpha))
-    return img
-
-
 # ══════════════════════════════════════════════════════════════════
 #  BACK CARD GENERATOR
 # ══════════════════════════════════════════════════════════════════
 
-def generate_back_card(voter=None):
+def generate_back_card(voter=None, qr_image=None):
     """
     Render the back side of the membership card.
-
-    Design matches Id cards/index.html .back:
-      - Cream gradient background (135deg #fdfbf7 → #faf6eb)
-      - leader.png watermark centred at opacity 0.06
-      - Left column: QR code (transparent bg) + "SCAN TO VERIFY" label
-      - Right column: Terms & Conditions (4 items)
-    Output: 1700 × 1070 RGB
+    Background: 135deg linear-gradient (#fdfbf7 to #faf6eb)
+    Watermark:  leader.png centered at 6% opacity, size 600x600 px
+    QR block:   QR code at 400x400 px, positioned at (112, 297) px with 'SCAN TO VERIFY' label
+    Terms block:Terms list aligned right starting at X=605 px, vertically centered.
+    Output:     1700 x 1070 RGB
     """
     S = SCALE
     W, H = CARD_W, CARD_H
 
-    # ── Background: cream gradient 135° ──────────────────────────
-    card = Image.new('RGBA', (W, H))
-    draw = ImageDraw.Draw(card)
-    # 135° gradient: top-left = #fdfbf7, bottom-right = #faf6eb
-    c0 = (0xfd, 0xfb, 0xf7)   # #fdfbf7
-    c1 = (0xfa, 0xf6, 0xeb)   # #faf6eb
-    for y in range(H):
-        for x in range(W):
-            t = (x + y) / (W + H - 2)
-            r = int(c0[0] + t * (c1[0] - c0[0]))
-            g = int(c0[1] + t * (c1[1] - c0[1]))
-            b = int(c0[2] + t * (c1[2] - c0[2]))
-            draw.point((x, y), fill=(r, g, b, 255))
+    # 1. Background linear gradient
+    bg = Image.new('RGBA', (W, H))
+    draw = ImageDraw.Draw(bg)
+    
+    for d in range(W + H):
+        t = d / (W + H)
+        r = int(253 + t * (250 - 253))
+        g = int(251 + t * (246 - 251))
+        b = int(247 + t * (235 - 247))
+        x_start = max(0, d - H)
+        x_end = min(W - 1, d)
+        y_start = d - x_start
+        y_end = d - x_end
+        draw.line([(x_start, y_start), (x_end, y_end)], fill=(r, g, b, 255))
 
-    # ── Leader.png watermark: centred, width 120px×5=600px, opacity 0.06 ──
+    # 2. Centered watermark (leader.png)
     leader = _load_rgba('leader.png')
     if leader:
-        wm_w = 120 * S                                  # 600 px
+        wm_w = 120 * S  # 600 px
         wm_h = int(wm_w * leader.size[1] / leader.size[0])
-        wm   = leader.resize((wm_w, wm_h), Image.LANCZOS)
-        wx   = (W - wm_w) // 2
-        wy   = (H - wm_h) // 2
-        _paste_rgba(card, wm, (wx, wy), opacity=0.06)
+        wm_img = leader.resize((wm_w, wm_h), Image.Resampling.LANCZOS)
+        
+        wx = (W - wm_w) // 2
+        wy = (H - wm_h) // 2
+        _paste_rgba(bg, wm_img, (wx, wy), opacity=0.06)
 
-    card = card.convert('RGB')
-    draw = ImageDraw.Draw(card)
+    # 3. QR code & label (Left section bounds: X=100 to 525)
+    QR_W = 80 * S   # 400 px
+    QR_H = QR_W
+    QR_X = 100 + (85 * S - QR_W) // 2  # 112 px
+    QR_Y = 80 + (910 - 475) // 2       # 297 px
 
-    # ── Layout: padding:16px×5=80px, gap:16px×5=80px ─────────────
-    PAD   = 16 * S   # 80
-    GAP   = 16 * S   # 80
-
-    # Left column width: 85px×5=425px
-    LEFT_W = 85 * S  # 425
-
-    left_x  = PAD
-    right_x = left_x + LEFT_W + GAP
-    right_w = W - right_x - PAD
-
-    # ── LEFT COLUMN: QR code ──────────────────────────────────────
-    # back-qr-box: 80px×5=400px, transparent background
-    QR_SIZE = 80 * S   # 400 px
-    qr_x    = left_x + (LEFT_W - QR_SIZE) // 2
-    qr_y    = PAD + (H - 2 * PAD - QR_SIZE - 35 * S) // 2  # roughly centred
-
-    verify_url = ''
-    if voter:
-        verify_url = voter.get('verify_url', '')
+    if not qr_image:
+        epic_no = voter.get('epic_no', 'ABC1234567') if voter else 'ABC1234567'
+        verify_url = voter.get('verify_url', '') if voter else ''
         if not verify_url:
-            epic_no = str(voter.get('epic_no', '')).strip().upper()
-            verify_url = f"{getattr(config, 'BASE_URL', 'http://localhost:5000')}/verify/{epic_no}"
+            verify_url = f"{getattr(config, 'BASE_URL', 'https://wetheleaders.org')}/verify/{epic_no}"
+        qr_image = _make_qr(verify_url, QR_W)
 
-    qr_img = _make_qr(verify_url, QR_SIZE) if verify_url else None
-
-    if qr_img:
-        # Make white pixels transparent (transparent bg as per CSS)
-        qr_rgba = qr_img.convert('RGBA')
-        pix = qr_rgba.load()
+    if qr_image:
+        # Make white pixels transparent and paste QR code
+        qr_rgba = qr_image.convert('RGBA')
+        pixels = qr_rgba.load()
         for py in range(qr_rgba.height):
-            for px_ in range(qr_rgba.width):
-                rv, gv, bv, av = pix[px_, py]
-                if rv > 200 and gv > 200 and bv > 200:
-                    pix[px_, py] = (255, 255, 255, 0)
+            for px in range(qr_rgba.width):
+                r, g, b, a = pixels[px, py]
+                if r > 200 and g > 200 and b > 200:
+                    pixels[px, py] = (255, 255, 255, 0)
                 else:
-                    pix[px_, py] = (20, 20, 20, 255)
-        card_rgba = card.convert('RGBA')
-        card_rgba.paste(qr_rgba, (qr_x, qr_y), mask=qr_rgba.split()[3])
-        card = card_rgba.convert('RGB')
-        draw = ImageDraw.Draw(card)
-    else:
-        # Placeholder grid
-        draw.rectangle([qr_x, qr_y, qr_x + QR_SIZE, qr_y + QR_SIZE],
-                       fill=(200, 200, 200))
+                    pixels[px, py] = (30, 41, 59, 255)
+        bg.paste(qr_rgba, (QR_X, QR_Y), mask=qr_rgba.split()[3])
 
-    # "SCAN TO VERIFY" label — 7px×5=35px bold dark #1e293b
-    F_SCAN = 7 * S   # 35 px
-    f_scan = load_bold_font(F_SCAN)
-    lbl    = "SCAN TO VERIFY"
-    lbl_w  = _tw(lbl, f_scan)
-    lbl_x  = left_x + (LEFT_W - lbl_w) // 2
-    lbl_y  = qr_y + QR_SIZE + 8 * S     # margin-top: 8px×5=40px (scaled 8)
-    draw.text((lbl_x, lbl_y), lbl, font=f_scan, fill=(0x1e, 0x29, 0x3b))
+    # Draw QR Label: "Scan to Verify" with 4px letter spacing
+    f_qr_lbl = load_font(int(7 * S), bold=True, font_family='Plus Jakarta Sans')
+    qr_lbl = "SCAN TO VERIFY"
+    qr_lbl_w = get_text_width_with_spacing(qr_lbl, f_qr_lbl, int(0.8 * S))
+    qr_lbl_x = 100 + (85 * S - qr_lbl_w) // 2
+    qr_lbl_y = QR_Y + QR_H + 8 * S
+    draw_text_with_spacing(draw, (qr_lbl_x, qr_lbl_y), qr_lbl, font=f_qr_lbl, fill=(30, 41, 59, 255), spacing_px=int(0.8 * S))
 
-    # ── RIGHT COLUMN: Terms & Conditions ─────────────────────────
-    # Title: 10.5px×5=52px bold, color #450a0a, uppercase, letter-spacing 1px
-    # border-bottom 1.5px×5=7px solid rgba(220,38,38,0.25), pb 3px×5=15px, mb 8px×5=40px
-    F_TITLE = int(10.5 * S)  # 52 px
-    f_title = load_bold_font(F_TITLE)
-
-    terms_top = PAD + int(H * 0.05)   # a little below top padding to vertically centre block
-    ty = terms_top
-
-    title_text = "TERMS & CONDITIONS"
-    draw.text((right_x, ty), title_text, font=f_title, fill=(0x45, 0x0a, 0x0a))
-    title_h = _th(title_text, f_title)
-    ty += title_h + 15   # padding-bottom 3px×5=15px
-
-    # border-bottom line: 7px thick, rgba(220,38,38,0.25)
-    bline_color = (220, 38, 38, 64)   # 25% opacity → ~64/255
-    card_rgba = card.convert('RGBA')
-    bdraw = ImageDraw.Draw(card_rgba)
-    bdraw.rectangle([right_x, ty, right_x + right_w, ty + 7],
-                    fill=bline_color)
-    card = card_rgba.convert('RGB')
-    draw = ImageDraw.Draw(card)
-    ty += 7 + 40   # 7px line + margin-bottom 8px×5=40px
-
-    # Terms list: 7.5px×5=37px bold, color #1e293b, line-height 1.5
-    # padding-left 12px×5=60px, margin-bottom 4px×5=20px per item
-    F_TERM   = int(7.5 * S)   # 37 px
-    f_term   = load_bold_font(F_TERM)
-    TERM_LH  = int(F_TERM * 1.5)   # line-height 1.5
-    TERM_MB  = 4 * S               # 20 px margin-bottom
-    TERM_PL  = 12 * S              # 60 px padding-left (for number indent)
-    TERM_W   = right_w - TERM_PL   # wrapping width
-
-    TERMS = [
+    # 4. Terms & Conditions (Right section: X=605 to 1600)
+    RIGHT_X = 100 + 85 * S + 16 * S  # 605 px
+    RIGHT_W = W - 100 - RIGHT_X      # 995 px
+    
+    f_title = load_font(int(10.5 * S), bold=True, font_family='Outfit')
+    f_list = load_font(int(7.5 * S), bold=True, font_family='Plus Jakarta Sans')
+    
+    terms_title = "TERMS & CONDITIONS"
+    title_h = _th(terms_title, f_title)
+    
+    items = [
         "This card is non-transferable and remains the property of the organization.",
         "It must be presented upon request during official events and audits.",
         "If found, please return to the head office or contact info@makkalmedai.org.",
-        "Subject to the rules and regulations of MAKKAL MEDAI.",
+        "Subject to the rules and regulations of MAKKAL MEDAI."
     ]
-
-    def wrap_text(text, font, max_w):
-        """Word-wrap text to fit within max_w pixels."""
-        words  = text.split()
-        lines  = []
-        line   = ''
-        for w in words:
-            test = (line + ' ' + w).strip()
-            if _tw(test, font) <= max_w:
-                line = test
+    
+    # Wrap text and calculate right block heights dynamically
+    list_line_height = int(7.5 * S * 1.5)  # 57 px
+    list_item_margin = 4 * S               # 20 px
+    list_padding_left = 12 * S             # 60 px
+    
+    wrapped_items = []
+    total_list_h = 0
+    
+    for item in items:
+        max_text_w = RIGHT_W - list_padding_left
+        words = item.split(' ')
+        lines = []
+        curr_line = []
+        for word in words:
+            test_line = ' '.join(curr_line + [word])
+            if get_text_width_with_spacing(test_line, f_list, 0) <= max_text_w:
+                curr_line.append(word)
             else:
-                if line:
-                    lines.append(line)
-                line = w
-        if line:
-            lines.append(line)
-        return lines
+                lines.append(' '.join(curr_line))
+                curr_line = [word]
+        if curr_line:
+            lines.append(' '.join(curr_line))
+            
+        item_h = len(lines) * list_line_height
+        wrapped_items.append((lines, item_h))
+        total_list_h += item_h + list_item_margin
+        
+    if wrapped_items:
+        total_list_h -= list_item_margin
+        
+    title_section_h = title_h + 40 + 8 + 15 + 12
+    total_right_h = title_section_h + total_list_h
+    
+    right_y = 80 + (910 - total_right_h) // 2
 
-    for i, term in enumerate(TERMS):
-        num_text = f"{i + 1}."
-        num_w    = _tw(num_text, f_term)
-        # number
-        draw.text((right_x, ty), num_text, font=f_term, fill=(0x1e, 0x29, 0x3b))
-        # wrapped term text
-        lines = wrap_text(term, f_term, TERM_W)
-        for li, line in enumerate(lines):
-            draw.text((right_x + TERM_PL, ty + li * TERM_LH),
-                      line, font=f_term, fill=(0x1e, 0x29, 0x3b))
-        block_h = len(lines) * TERM_LH
-        ty += block_h + TERM_MB
+    # Draw Title with letter spacing
+    draw_text_with_spacing(draw, (RIGHT_X, right_y), terms_title, font=f_title, fill=(69, 10, 10, 255), spacing_px=int(1.0 * S))
+    
+    # Draw underline border-bottom: 1.5px solid rgba(220, 38, 38, 0.25)
+    line_y = right_y + title_h + 15
+    draw.line([(RIGHT_X, line_y), (W - 100, line_y)], fill=(220, 38, 38, 64), width=8)
+    
+    # Draw list items
+    curr_y = right_y + title_section_h
+    for i, (lines, item_h) in enumerate(wrapped_items):
+        # Draw list number
+        num_str = f"{i+1}."
+        draw.text((RIGHT_X, curr_y), num_str, font=f_list, fill=(30, 41, 59, 255))
+        
+        # Draw wrapped lines
+        text_x = RIGHT_X + list_padding_left
+        line_y_offset = curr_y
+        for line in lines:
+            draw.text((text_x, line_y_offset), line, font=f_list, fill=(30, 41, 59, 255))
+            line_y_offset += list_line_height
+            
+        curr_y += item_h + list_item_margin
 
-    return card.convert('RGB')
+    return bg.convert('RGB')
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -408,100 +465,17 @@ def generate_back_card(voter=None):
 
 def generate_card(voter, template=None, photo_image=None, qr_image=None):
     """
-    Render membership ID card front — pixel-perfect match of index.html at 5× scale.
-    template arg is ignored (kept for backward compat).
-
-    Design:
-      - diamond_bg.svg full-bleed background (deep red low-poly)
-      - leader.png watermark (white silhouette, right edge, opacity 0.08)
-      - leader.png badge logo top-left
-      - Header: "MAKKAL MEDAI" + "Membership Card"
-      - Photo box + member details (name, EPIC NO, ASSEMBLY, DISTRICT)
-      - Footer left: PTC code / member ID
-      - QR bottom-right in white rounded box
+    Render membership ID card — pixel-perfect match of index.html at 5× scale.
     """
-    S  = SCALE          # 5
-    W  = CARD_W         # 1700
-    H  = CARD_H         # 1070
+    S  = SCALE
+    W  = CARD_W
+    H  = CARD_H
 
-    # ── Canvas: SVG background ────────────────────────────────────
-    svg_path = _asset_path('diamond_bg.svg')
-    bg_img   = _load_svg_background(svg_path, W, H)
-    card     = bg_img.convert('RGBA')
+    # Render SVG background
+    card_rgba = render_svg_bg(W, H, S)
+    draw = ImageDraw.Draw(card_rgba)
 
-    # ══════════════════════════════════════════════════════════════
-    #  LAYER 1 — leader.png watermark (white silhouette, right edge)
-    #  CSS: right:-45px; bottom:52px; height:130px; opacity:0.08;
-    #       filter:brightness(0) invert(1)
-    # ══════════════════════════════════════════════════════════════
-    leader = _load_rgba('leader.png')
-    if leader:
-        lh = 130 * S                                    # 650 px
-        lw = int(lh * leader.size[0] / leader.size[1])
-        lm = leader.resize((lw, lh), Image.LANCZOS)
-        # brightness(0) invert(1) → white silhouette: force all pixels white
-        r_ch, g_ch, b_ch, a_ch = lm.split()
-        white_r = a_ch.point(lambda v: 255)
-        white_g = a_ch.point(lambda v: 255)
-        white_b = a_ch.point(lambda v: 255)
-        wm = Image.merge('RGBA', (white_r, white_g, white_b, a_ch))
-        lx = W - lw + 45 * S                           # right: -45px
-        ly = H - lh - 52 * S                           # bottom: 52px
-        _paste_rgba(card, wm, (lx, ly), opacity=0.08)
-
-    draw = ImageDraw.Draw(card)
-
-    # ══════════════════════════════════════════════════════════════
-    #  LAYER 2 — leader.png badge logo top-left
-    #  CSS: left:18px; top:15px; height:38px
-    # ══════════════════════════════════════════════════════════════
-    if leader:
-        bh = 38 * S                                     # 190 px
-        bw = int(bh * leader.size[0] / leader.size[1])
-        badge = leader.resize((bw, bh), Image.LANCZOS)
-        _paste_rgba(card, badge, (18 * S, 15 * S))
-
-    draw = ImageDraw.Draw(card)
-
-    # ══════════════════════════════════════════════════════════════
-    #  LAYER 3 — Header: "MAKKAL MEDAI" + "Membership Card"
-    #  CSS: .header { padding:16px 20px 0; justify-content:center }
-    #       .card-title { font-size:20px; font-weight:800; color:#fff; letter-spacing:2px }
-    #       .card-subtitle { font-size:7.5px; color:rgba(255,255,255,0.9); letter-spacing:2px }
-    # ══════════════════════════════════════════════════════════════
-    F_TITLE_HDR = 20 * S    # 100 px
-    F_SUB_HDR   = int(7.5 * S)  # 37 px
-    f_title_hdr = load_bold_font(F_TITLE_HDR)
-    f_sub_hdr   = load_bold_font(F_SUB_HDR)
-
-    title_text = "MAKKAL MEDAI"
-    sub_text   = "Membership Card"
-
-    title_w    = _tw(title_text, f_title_hdr)
-    sub_w      = _tw(sub_text, f_sub_hdr)
-    title_h    = _th(title_text, f_title_hdr)
-    sub_h      = _th(sub_text, f_sub_hdr)
-
-    # centred horizontally; top padding: 16px×5=80px
-    hdr_pad_top = 16 * S
-    title_x = (W - title_w) // 2
-    title_y = hdr_pad_top
-    sub_x   = (W - sub_w) // 2
-    sub_y   = title_y + title_h + 4 * S   # margin-top:4px
-
-    # text-shadow: 0 2px 4px rgba(0,0,0,0.25) → offset (0, 2px×5=10)
-    shadow_off = 2 * S
-    draw.text((title_x, title_y + shadow_off), title_text,
-              font=f_title_hdr, fill=(0, 0, 0, 64))
-    draw.text((title_x, title_y), title_text,
-              font=f_title_hdr, fill=(255, 255, 255))
-
-    draw.text((sub_x, sub_y + shadow_off), sub_text,
-              font=f_sub_hdr, fill=(0, 0, 0, 50))
-    draw.text((sub_x, sub_y), sub_text,
-              font=f_sub_hdr, fill=(255, 255, 255, 230))   # 90% opacity
-
-    # ── Sanitize voter fields ─────────────────────────────────────
+    # Sanitize voter inputs
     def clean(v, n=120):
         s = str(v or '').strip()
         s = ''.join(c for c in s if c.isprintable())
@@ -514,211 +488,127 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     ptc_code = clean(voter.get('ptc_code',''))
     member_id = ptc_code if ptc_code else generate_serial_number(epic_no)
 
-    # ══════════════════════════════════════════════════════════════
-    #  CONTENT AREA
-    #  CSS: .content { padding:10px 20px; gap:18px }
-    #  Header occupies: 16px top + title + 4px + subtitle + ~2px ≈ 32px
-    # ══════════════════════════════════════════════════════════════
-    CONTENT_TOP = (16 + int(20 + 4 + 7.5 + 4)) * S   # ≈ 51.5 * 5 ≈ 258
-    PAD_L       = 20 * S    # 100 px
-    GAP         = 18 * S    # 90 px
+    # Title Casing to match mockups
+    name_display = name.title()
+    assembly_display = assembly.title()
+    district_display = district.title()
 
-    # ── Photo box ─────────────────────────────────────────────────
-    # CSS: width:85px; height:105px; border-radius:8px; border:2.5px solid rgba(255,255,255,0.8)
-    PHOTO_W  = 85 * S    # 425
-    PHOTO_H  = 105 * S   # 525
-    PHOTO_X  = PAD_L
-    FOOTER_T = H - 14 * S  # footer bottom:14px from card bottom
-    AVAIL_H  = FOOTER_T - CONTENT_TOP
-    PHOTO_Y  = CONTENT_TOP + (AVAIL_H - PHOTO_H) // 2
+    # 1. Front Leader Image (colored, bottom-right corner)
+    # CSS: right: 0px; bottom: 0px; height: 115px; opacity: 1.0
+    leader = _load_rgba('leader.png')
+    if leader:
+        lh = 115 * S
+        lw = int(lh * leader.size[0] / leader.size[1])
+        lm = leader.resize((lw, lh), Image.Resampling.LANCZOS)
+        lx = W - lw
+        ly = H - lh
+        _paste_rgba(card_rgba, lm, (lx, ly), opacity=1.0)
 
-    BR  = 8 * S            # border-radius:8px → 40px
-    BW  = int(2.5 * S)     # border:2.5px → 12px
+    # 3. Centered Header
+    # CSS: padding-top: 16px + margin-top: 2px = 18px Y. Outfit bold.
+    # Calibrated font size for true visual alignment ( आउटफिट Bold, size 16 -> 80px )
+    f_title = load_font(16 * S, bold=True, font_family='Outfit')
+    f_sub = load_font(int(6.5 * S), bold=True, font_family='Outfit')
 
-    # Draw white rounded rect behind photo (border)
-    draw.rounded_rectangle(
-        [PHOTO_X - BW, PHOTO_Y - BW,
-         PHOTO_X + PHOTO_W + BW, PHOTO_Y + PHOTO_H + BW],
-        radius=BR + BW,
-        fill=(255, 255, 255, 204),   # rgba(255,255,255,0.8)
-    )
+    title_text = "MAKKAL MEDAI"
+    ascent, descent = f_title.getmetrics()
+    title_h = ascent + descent
+    title_y = 18 * S
+    draw_text_with_spacing(draw, (W // 2, title_y), title_text, font=f_title, fill=(255, 255, 255), spacing_px=int(2.0 * S), align='center')
 
-    # Paste photo
+    sub_text = "MEMBERSHIP CARD"  # Mockup has uppercase Subtitle
+    sub_y = title_y + title_h + 3 * S
+    draw_text_with_spacing(draw, (W // 2, sub_y), sub_text, font=f_sub, fill=(255, 255, 255, 230), spacing_px=int(2.0 * S), align='center')
+
+    # 4. Photo Frame (No border and no drop-shadow)
+    # CSS: X=20px (100), Y=56px (280), width=85px (425), height=105px (525)
+    PHOTO_W = 85 * S
+    PHOTO_H = 105 * S
+    PHOTO_X = 20 * S
+    PHOTO_Y = 56 * S
+    BR = 8 * S
+
+    photo_box = Image.new('RGBA', (PHOTO_W, PHOTO_H), (255, 255, 255, 0))
     if photo_image:
         fitted = _fit_photo(photo_image, PHOTO_W, PHOTO_H)
+        photo_box.paste(fitted.convert('RGBA'), (0, 0))
     else:
-        # Placeholder
-        fitted = Image.new('RGB', (PHOTO_W, PHOTO_H), (241, 245, 249))
-        pd = ImageDraw.Draw(fitted)
+        # Fallback placeholder SVG
+        photo_box_draw = ImageDraw.Draw(photo_box)
         cx = PHOTO_W // 2
         cr = int(PHOTO_W * 0.22)
         cy = int(PHOTO_H * 0.375)
-        pd.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=(203, 213, 225))
-        pd.polygon([
+        photo_box_draw.ellipse([cx - cr, cy - cr, cx + cr, cy + cr], fill=(203, 213, 225, 255))
+        photo_box_draw.polygon([
             (int(PHOTO_W * 0.10), PHOTO_H),
             (int(PHOTO_W * 0.90), PHOTO_H),
             (int(PHOTO_W * 0.78), int(PHOTO_H * 0.60)),
             (int(PHOTO_W * 0.22), int(PHOTO_H * 0.60)),
-        ], fill=(203, 213, 225))
+        ], fill=(203, 213, 225, 255))
 
-    # Clip photo to rounded rect mask
+    # Paste photo inside rounded corner mask
     mask = Image.new('L', (PHOTO_W, PHOTO_H), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [0, 0, PHOTO_W - 1, PHOTO_H - 1], radius=BR, fill=255
-    )
-    card_rgb_temp = card.convert('RGB')
-    card_rgb_temp.paste(fitted, (PHOTO_X, PHOTO_Y), mask=mask)
-    card = card_rgb_temp.convert('RGBA')
-    draw = ImageDraw.Draw(card)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, PHOTO_W - 1, PHOTO_H - 1], radius=BR, fill=255)
+    card_rgba.paste(photo_box, (PHOTO_X, PHOTO_Y), mask=mask)
 
-    # ══════════════════════════════════════════════════════════════
-    #  QR CODE — bottom-right, white rounded box
-    #  CSS: right:20px; bottom:24px; width:45px; height:45px
-    #       background:#fff; border:1px solid #cbd5e1; border-radius:4px; padding:3px
-    # ══════════════════════════════════════════════════════════════
-    QR_INNER   = 45 * S   # 225 px (QR image area including padding)
-    QR_BORDER  = 1 * S    # 5 px
-    QR_PAD     = 3 * S    # 15 px
-    QR_OUTER   = QR_INNER + QR_BORDER * 2   # total outer box
-    QR_BOX_R   = 4 * S    # border-radius:4px → 20px
+    # 5. Details Section (Right of photo: gap 18px (90 px) -> X=615)
+    # Calibrated details sizes (Outfit Bold 15 -> 75px, Plus Jakarta Sans Bold 9 -> 45px)
+    DET_X = PHOTO_X + PHOTO_W + 18 * S
+    DET_MAX_X = W - 20 * S
+    DET_W = DET_MAX_X - DET_X
 
-    QR_X = W - 20 * S - QR_OUTER   # right: 20px from edge
-    QR_Y = H - 24 * S - QR_OUTER   # bottom: 24px from edge
+    f_member = load_font(int(15 * S), bold=True, font_family='Outfit')
+    f_val = load_font(int(9 * S), bold=True, font_family='Plus Jakarta Sans')
+    f_lbl = load_font(int(7 * S), bold=True, font_family='Outfit')
 
-    # Draw white box with border
-    draw.rounded_rectangle(
-        [QR_X, QR_Y, QR_X + QR_OUTER, QR_Y + QR_OUTER],
-        radius=QR_BOX_R,
-        fill=(255, 255, 255),
-        outline=(0xcb, 0xd5, 0xe1),
-        width=QR_BORDER,
-    )
+    # Auto-shrink member name to fit bounds
+    while get_text_width_with_spacing(name_display, f_member, int(0.2 * S)) > DET_W and f_member.size > 8 * S:
+        f_member = load_font(f_member.size - 2, bold=True, font_family='Outfit')
 
-    # Build QR if not provided
-    if not qr_image:
-        verify_url = voter.get('verify_url', '')
-        if not verify_url:
-            verify_url = f"{getattr(config, 'BASE_URL', 'http://localhost:5000')}/verify/{epic_no}"
-        qr_image = _make_qr(verify_url, QR_INNER - QR_PAD * 2)
+    ascent, descent = f_member.getmetrics()
+    name_h = ascent + descent
+    row_h = f_val.getmetrics()[0] + f_val.getmetrics()[1]
+    
+    # Vertically align top of name to start near the top inside photo box
+    det_y = PHOTO_Y + 4 * S
 
-    if qr_image:
-        # Keep white background for QR (new design has white QR box)
-        qr_sized = qr_image.convert('RGB').resize(
-            (QR_INNER - QR_PAD * 2, QR_INNER - QR_PAD * 2), Image.LANCZOS
-        )
-        qr_paste_x = QR_X + QR_BORDER + QR_PAD
-        qr_paste_y = QR_Y + QR_BORDER + QR_PAD
-        card_temp = card.convert('RGB')
-        card_temp.paste(qr_sized, (qr_paste_x, qr_paste_y))
-        card = card_temp.convert('RGBA')
-        draw = ImageDraw.Draw(card)
-    else:
-        draw.rectangle(
-            [QR_X + QR_BORDER + QR_PAD, QR_Y + QR_BORDER + QR_PAD,
-             QR_X + QR_OUTER - QR_BORDER - QR_PAD,
-             QR_Y + QR_OUTER - QR_BORDER - QR_PAD],
-            fill=(220, 220, 220)
-        )
-
-    # ══════════════════════════════════════════════════════════════
-    #  DETAILS BLOCK (right of photo)
-    #  .member { font-size:19.5px; font-weight:800; color:#fff }
-    #  .info span { width:80px; font-size:7.5px; color:rgba(255,255,255,0.8) }
-    #  .info div { font-size:10.5px; font-weight:700; color:#fff }
-    # ══════════════════════════════════════════════════════════════
-    DET_X     = PHOTO_X + PHOTO_W + GAP
-    DET_MAX_X = QR_X - 15 * S
-    DET_W     = DET_MAX_X - DET_X
-
-    F_NAME  = int(19.5 * S)    # 97 px
-    F_LBL   = int(7.5 * S)     # 37 px
-    F_VAL   = int(10.5 * S)    # 52 px
-
-    f_name = load_bold_font(F_NAME)
-    f_lbl  = load_bold_font(F_LBL)
-    f_val  = load_bold_font(F_VAL)
-
-    # Shrink name to fit
-    fn_size = F_NAME
-    while _tw(name, f_name) > DET_W and fn_size > 10 * S:
-        fn_size -= S
-        f_name   = load_bold_font(fn_size)
-
-    # Label column width: CSS span width:80px×5=400px
-    LBL_COL_W = 80 * S   # 400 px  (fixed, as per CSS)
-    COLON_GAP = _tw(" : ", f_lbl)
-
-    FIELDS = [
-        ("EPIC NO",  epic_no),
-        ("ASSEMBLY", assembly),
-        ("DISTRICT", district),
+    # Draw name
+    draw_text_with_spacing(draw, (DET_X, det_y), name_display, font=f_member, fill=(255, 255, 255, 255), spacing_px=int(0.2 * S))
+    
+    # Draw list fields (Spelled EXACTLY like mockup with "EPIC NO")
+    fields = [
+        ("EPIC NO", epic_no),
+        ("ASSEMBLY", assembly_display),
+        ("DISTRICT", district_display)
     ]
+    
+    span_width = 80 * S
+    colon_w = _tw(": ", f_val)
+    
+    y = det_y + name_h + 12 * S
+    for label, val in fields:
+        # Draw labels (Outfit bold with 1px letter spacing, white 80% opacity)
+        draw_text_with_spacing(draw, (DET_X, y), label, font=f_lbl, fill=(255, 255, 255, 204), spacing_px=int(1.0 * S))
+        
+        # Draw colons
+        draw.text((DET_X + span_width, y), ": ", font=f_val, fill=(255, 255, 255, 255))
+        
+        # Draw values (Plus Jakarta Sans Bold)
+        val_x = DET_X + span_width + colon_w
+        fv = f_val
+        while get_text_width_with_spacing(val, fv, 0) > (DET_MAX_X - val_x) and fv.size > 6 * S:
+            fv = load_font(fv.size - 2, bold=True, font_family='Plus Jakarta Sans')
+        draw.text((val_x, y), val, font=fv, fill=(255, 255, 255, 255))
+        
+        y += row_h + 4 * S
 
-    ROW_H   = _th("Mg", f_val)
-    ROW_GAP = 4 * S   # margin-bottom:4px×5=20px
-    MB_NAME = 6 * S   # margin-bottom:6px×5=30px
+    # 6. Footer Member ID (Left aligned: X=20px (100), bottom margin: 14px (70))
+    # Calibrated size (Plus Jakarta Sans Bold 10 -> 50px) with 0.8px letter spacing
+    f_foot = load_font(10 * S, bold=True, font_family='Plus Jakarta Sans')
+    foot_text = member_id
+    foot_h = f_foot.getmetrics()[0] + f_foot.getmetrics()[1]
+    foot_x = 20 * S
+    foot_y = H - 14 * S - foot_h
+    draw_text_with_spacing(draw, (foot_x, foot_y), foot_text, font=f_foot, fill=(255, 255, 255, 255), spacing_px=int(0.8 * S))
 
-    NAME_H  = _th(name, f_name)
-    N_ROWS  = len(FIELDS)
-    block_h = NAME_H + MB_NAME + N_ROWS * ROW_H + (N_ROWS - 1) * ROW_GAP
-
-    # Vertical placement with QR overflow guard (as spec'd)
-    MAX_BLOCK_BOTTOM = QR_Y - 20 * S
-    ideal_y = PHOTO_Y + int(AVAIL_H * 0.62)
-    if ideal_y + block_h > MAX_BLOCK_BOTTOM:
-        DET_Y = MAX_BLOCK_BOTTOM - block_h
-    else:
-        DET_Y = ideal_y
-
-    y = DET_Y
-
-    # — Name — (WHITE, text-shadow)
-    shadow = 2 * S
-    draw.text((DET_X, y + shadow), name, font=f_name, fill=(0, 0, 0, 50))
-    draw.text((DET_X, y), name, font=f_name, fill=(255, 255, 255))
-    y += NAME_H + MB_NAME
-
-    # — Field rows —
-    for i, (label, value) in enumerate(FIELDS):
-        row_y  = y + i * (ROW_H + ROW_GAP)
-        lbl_h  = _th(label, f_lbl)
-        val_h  = _th(value, f_val)
-        lbl_off = (val_h - lbl_h) // 2
-
-        # Label: rgba(255,255,255,0.8) = 204 alpha
-        draw.text((DET_X, row_y + lbl_off), label,
-                  font=f_lbl, fill=(255, 255, 255, 204))
-
-        # Colon
-        colon_x = DET_X + LBL_COL_W
-        draw.text((colon_x, row_y + lbl_off), ":",
-                  font=f_lbl, fill=(255, 255, 255, 204))
-
-        # Value: WHITE bold
-        val_x = colon_x + _tw(":", f_lbl) + 4 * S
-        fv, fvs = f_val, F_VAL
-        max_val_w = DET_MAX_X - val_x
-        while _tw(value, fv) > max_val_w and fvs > 5 * S:
-            fvs -= 1
-            fv   = load_bold_font(fvs)
-        draw.text((val_x, row_y + shadow), value, font=fv, fill=(0, 0, 0, 40))
-        draw.text((val_x, row_y), value, font=fv, fill=(255, 255, 255))
-
-    # ══════════════════════════════════════════════════════════════
-    #  FOOTER
-    #  CSS: .footer { position:absolute; bottom:14px; left:20px }
-    #       .footer-left { font-size:11px; font-weight:800; color:#fff; letter-spacing:0.8px }
-    # ══════════════════════════════════════════════════════════════
-    F_FOOT = 11 * S   # 55 px
-    f_foot = load_bold_font(F_FOOT)
-
-    foot_text = member_id.upper() if member_id else "MEMBERSHIP ID CARD"
-    foot_h    = _th(foot_text, f_foot)
-    foot_y    = H - 14 * S - foot_h
-
-    draw.text((20 * S, foot_y + shadow), foot_text,
-              font=f_foot, fill=(0, 0, 0, 50))
-    draw.text((20 * S, foot_y), foot_text,
-              font=f_foot, fill=(255, 255, 255))
-
-    return card.convert('RGB')
+    return card_rgba.convert('RGB')

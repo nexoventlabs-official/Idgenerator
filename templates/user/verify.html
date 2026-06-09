@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -13,89 +13,88 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0a0a0f;
-      --surface: #12121a;
-      --surface-2: #1a1a26;
-      --surface-3: #222232;
-      --border: rgba(255,255,255,0.06);
-      --border-active: rgba(255,255,255,0.12);
-      --text: #f0f0f5;
-      --text-2: #a0a0b8;
-      --text-3: #65657a;
-      --green: #22c55e;
-      --green-glow: rgba(34,197,94,0.12);
-      --green-border: rgba(34,197,94,0.2);
-      --blue: #3b82f6;
-      --blue-glow: rgba(59,130,246,0.1);
-      --purple: #a855f7;
-      --amber: #f59e0b;
-      --radius: 16px;
+      /* Red & White theme with Cream background Color Tokens */
+      --color-canopy-green: #cc0000;   /* Primary Brand Red */
+      --color-coral-pulse: #e53935;    /* Vivid CTA Red */
+      --color-indigo-bloom: #460095;
+      --color-leaf-bright: #1dbf73;
+      --color-deep-teal: #003642;
+      --color-orchid-tint: #f3b3fe;
+      --color-sky-signal: #00b4dc;
+      --color-aubergine: #47264c;
+      --color-ink-black: #000000;
+      --color-paper-white: #ffffff;
+      --color-ash: #a6a6a6;
+      --color-slate: #7a7a7a;
+      --color-graphite: #3d3d3d;
+      --color-charcoal: #333333;
+      --color-frost-gray: #e0e0e0;
+      --color-cloud-gray: #f2f2f2;
+      --color-lavender-mist: #faf7e8;  /* Cream Canvas background */
+      --color-mint-wash: #ffebee;      /* Soft Red bubble wash */
+      --color-sky-wash: #fff8e1;       /* Light Warm Yellow / Cream wash */
+      --color-sage-wash: #faf7e8;      /* Cream hover wash */
+      --color-lilac-wash: #faf7e8;
+      --color-peach-wash: #ffebee;     /* Soft Red wash */
+      --color-cream: #faf7e8;          /* Cream background */
+      --color-sand: #f5f0eb;
+
+      /* Typography */
+      --font-dm-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+      /* Spacing */
+      --radius-tags: 9999px;
+      --radius-cards: 24px;
+      --radius-icons: 8px;
+      --radius-buttons: 40px;
+      --radius-cards-sm: 16px;
+
+      /* Elevation */
+      --shadow-subtle: rgba(0, 0, 0, 0.05) 0px 1px 1px 0px;
     }
 
     body {
-      background: var(--bg);
+      background: var(--color-lavender-mist);
       min-height: 100vh;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      color: var(--text);
+      font-family: var(--font-dm-sans);
+      font-feature-settings: "ss03";
+      color: var(--color-ink-black);
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
     }
 
     /* ── Ambient Background ── */
     .ambient {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+      display: none;
     }
-    .ambient .orb {
-      position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.15;
-    }
-    .ambient .orb-1 {
-      width: 500px; height: 500px; background: var(--green); top: -180px; left: -100px;
-      animation: float-1 18s ease-in-out infinite;
-    }
-    .ambient .orb-2 {
-      width: 400px; height: 400px; background: var(--blue); bottom: -150px; right: -80px;
-      animation: float-2 22s ease-in-out infinite;
-    }
-    .ambient .orb-3 {
-      width: 300px; height: 300px; background: var(--purple); top: 40%; left: 50%;
-      transform: translateX(-50%); opacity: 0.06;
-      animation: float-3 15s ease-in-out infinite;
-    }
-    @keyframes float-1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(40px,30px)} }
-    @keyframes float-2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-30px,-40px)} }
-    @keyframes float-3 { 0%,100%{transform:translateX(-50%) scale(1)} 50%{transform:translateX(-50%) scale(1.3)} }
 
     /* ── Top Bar ── */
     .top-bar {
       position: relative; z-index: 10;
       display: flex; align-items: center; justify-content: space-between;
       padding: 16px 24px;
-      background: rgba(10,10,15,0.7);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
+      background: var(--color-canopy-green);
+      border-bottom: none;
     }
     .top-bar .brand {
       display: flex; align-items: center; gap: 10px;
-      font-weight: 700; font-size: 0.95rem; color: var(--text);
+      font-weight: 700; font-size: 0.95rem; color: var(--color-paper-white);
       text-decoration: none;
     }
     .top-bar .brand img {
       width: 34px; height: 34px; border-radius: 50%; object-fit: cover;
-      border: 2px solid var(--green-border);
-    }
-    .top-bar .brand-name img {
-      height: 26px; width: auto; opacity: 0.9;
+      border: 1px solid var(--color-mint-wash);
     }
     .top-bar .scan-tag {
       display: inline-flex; align-items: center; gap: 5px;
-      font-size: 0.7rem; font-weight: 600; color: var(--text-3);
-      background: var(--surface-2); padding: 5px 12px; border-radius: 20px;
-      border: 1px solid var(--border);
+      font-size: 0.75rem; font-weight: 600; color: var(--color-canopy-green);
+      background: var(--color-mint-wash); padding: 5px 12px; border-radius: var(--radius-tags);
+      border: 1px solid var(--color-leaf-bright);
       letter-spacing: 0.5px; text-transform: uppercase;
     }
 
@@ -115,10 +114,10 @@
     }
     .status-chip .chip {
       display: inline-flex; align-items: center; gap: 7px;
-      background: var(--green-glow); color: var(--green);
-      border: 1px solid var(--green-border);
-      padding: 8px 20px; border-radius: 24px;
-      font-size: 0.8rem; font-weight: 700;
+      background: var(--color-mint-wash); color: var(--color-canopy-green);
+      border: 1px solid var(--color-leaf-bright);
+      padding: 8px 20px; border-radius: var(--radius-tags);
+      font-size: 0.82rem; font-weight: 600;
       letter-spacing: 0.3px;
     }
     .status-chip .chip i { font-size: 1rem; }
@@ -129,9 +128,9 @@
 
     /* ── Profile Hero ── */
     .profile-hero {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: var(--color-paper-white);
+      border: 1px solid var(--color-frost-gray);
+      border-radius: var(--radius-cards);
       padding: 2rem 1.5rem 1.5rem;
       text-align: center;
       position: relative;
@@ -140,51 +139,51 @@
       animation: cardUp 0.5s ease-out 0.1s both;
     }
     .profile-hero::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 80px;
-      background: linear-gradient(180deg, var(--green-glow) 0%, transparent 100%);
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 8px;
+      background: var(--color-canopy-green);
       pointer-events: none;
     }
 
     .avatar-ring {
       width: 100px; height: 100px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--green), var(--blue));
+      background: var(--color-canopy-green);
       padding: 3px; margin: 0 auto 14px; position: relative; z-index: 1;
-      box-shadow: 0 0 30px var(--green-glow), 0 0 60px rgba(34,197,94,0.06);
     }
     .avatar-ring img {
       width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-      background: var(--surface); border: 3px solid var(--surface);
+      background: var(--color-paper-white); border: 2px solid var(--color-paper-white);
     }
     .avatar-ring .placeholder {
       width: 100%; height: 100%; border-radius: 50%;
-      background: var(--surface-2); border: 3px solid var(--surface);
+      background: var(--color-cloud-gray); border: 2px solid var(--color-paper-white);
       display: flex; align-items: center; justify-content: center;
-      color: var(--text-3); font-size: 2.5rem;
+      color: var(--color-slate); font-size: 2.5rem;
     }
 
     .profile-hero .name {
-      font-size: 1.4rem; font-weight: 800; color: var(--text);
-      margin-bottom: 2px; letter-spacing: -0.3px; position: relative; z-index: 1;
+      font-size: 1.4rem; font-weight: 700; color: var(--color-canopy-green);
+      margin-bottom: 2px; letter-spacing: -0.019em; position: relative; z-index: 1;
     }
     .profile-hero .epic-tag {
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 0.82rem; color: var(--text-3); letter-spacing: 2px;
-      margin-bottom: 6px; position: relative; z-index: 1;
+      font-family: var(--font-dm-sans);
+      font-size: 0.85rem; color: var(--color-slate); letter-spacing: 1px;
+      margin-bottom: 8px; position: relative; z-index: 1;
+      font-weight: 600;
     }
     .profile-hero .ptc-tag {
       display: inline-flex; align-items: center; gap: 5px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 0.78rem; font-weight: 700; color: var(--green);
-      background: var(--green-glow); border: 1px solid var(--green-border);
-      padding: 4px 14px; border-radius: 8px;
-      letter-spacing: 1px; position: relative; z-index: 1;
+      font-family: var(--font-dm-sans);
+      font-size: 0.8rem; font-weight: 600; color: var(--color-canopy-green);
+      background: var(--color-mint-wash); border: 1px solid var(--color-leaf-bright);
+      padding: 4px 14px; border-radius: var(--radius-tags);
+      position: relative; z-index: 1;
     }
 
     /* ── Info Grid ── */
     .info-block {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: var(--color-paper-white);
+      border: 1px solid var(--color-frost-gray);
+      border-radius: var(--radius-cards);
       overflow: hidden;
       margin-bottom: 16px;
       animation: cardUp 0.5s ease-out 0.2s both;
@@ -192,72 +191,74 @@
     .info-block .block-header {
       display: flex; align-items: center; gap: 8px;
       padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--color-frost-gray);
+      background: var(--color-cloud-gray);
     }
     .info-block .block-header .icon-wrap {
-      width: 28px; height: 28px; border-radius: 8px;
+      width: 28px; height: 28px; border-radius: var(--radius-icons);
       display: flex; align-items: center; justify-content: center;
       font-size: 0.85rem;
     }
     .info-block .block-header .icon-wrap.blue {
-      background: var(--blue-glow); color: var(--blue);
+      background: var(--color-mint-wash); color: var(--color-canopy-green);
     }
     .info-block .block-header .icon-wrap.purple {
-      background: rgba(168,85,247,0.1); color: var(--purple);
+      background: var(--color-sky-wash); color: var(--color-deep-teal);
     }
     .info-block .block-header .icon-wrap.amber {
-      background: rgba(245,158,11,0.1); color: var(--amber);
+      background: var(--color-peach-wash); color: var(--color-coral-pulse);
     }
     .info-block .block-header span {
-      font-size: 0.75rem; font-weight: 700; color: var(--text-2);
+      font-size: 0.78rem; font-weight: 700; color: var(--color-canopy-green);
       text-transform: uppercase; letter-spacing: 0.8px;
     }
     .info-block .row-item {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 11px 16px;
-      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-frost-gray);
       transition: background 0.15s;
     }
     .info-block .row-item:last-child { border-bottom: none; }
-    .info-block .row-item:hover { background: var(--surface-2); }
+    .info-block .row-item:hover { background: var(--color-cloud-gray); }
     .info-block .row-label {
-      font-size: 0.75rem; font-weight: 600; color: var(--text-3);
+      font-size: 0.78rem; font-weight: 600; color: var(--color-slate);
       text-transform: uppercase; letter-spacing: 0.5px;
     }
     .info-block .row-value {
-      font-size: 0.88rem; font-weight: 600; color: var(--text);
+      font-size: 0.92rem; font-weight: 500; color: var(--color-graphite);
       text-align: right; max-width: 60%; word-break: break-word;
     }
     .info-block .row-value.mono {
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: var(--font-dm-sans);
       letter-spacing: 0.5px;
+      font-weight: 600;
     }
-    .info-block .row-value.green { color: var(--green); }
+    .info-block .row-value.green { color: var(--color-canopy-green); font-weight: 600; }
 
     /* ── Card Preview ── */
     .card-preview-block {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: var(--color-paper-white);
+      border: 1px solid var(--color-frost-gray);
+      border-radius: var(--radius-cards);
       overflow: hidden;
       margin-bottom: 16px;
       animation: cardUp 0.5s ease-out 0.3s both;
     }
     .card-preview-block .preview-inner {
       padding: 16px;
-      background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+      background: var(--color-cloud-gray);
     }
     .card-preview-block img {
-      width: 100%; border-radius: 10px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+      width: 100%; border-radius: var(--radius-cards-sm);
       transition: transform 0.3s ease;
+      border: 1px solid var(--color-frost-gray);
     }
     .card-preview-block img:hover { transform: scale(1.015); }
     .card-preview-block .gen-meta {
       display: flex; align-items: center; justify-content: center; gap: 12px;
       padding: 10px 16px;
-      border-top: 1px solid var(--border);
-      font-size: 0.72rem; color: var(--text-3); font-weight: 500;
+      border-top: 1px solid var(--color-frost-gray);
+      font-size: 0.75rem; color: var(--color-slate); font-weight: 500;
     }
     .card-preview-block .gen-meta i { font-size: 0.8rem; }
 
@@ -266,35 +267,34 @@
       padding: 2rem 1rem; text-align: center;
     }
     .no-card-state i {
-      font-size: 2.5rem; color: var(--text-3); opacity: 0.4; margin-bottom: 8px;
+      font-size: 2.5rem; color: var(--color-ash); opacity: 0.6; margin-bottom: 8px;
     }
     .no-card-state p {
-      color: var(--text-3); font-size: 0.85rem; font-weight: 500; margin: 0;
+      color: var(--color-slate); font-size: 0.9rem; font-weight: 500; margin: 0;
     }
 
     /* ── Download Button ── */
     .btn-dl {
       display: flex; align-items: center; justify-content: center; gap: 8px;
-      width: 100%; padding: 14px; border: none; border-radius: 12px;
-      font-size: 0.92rem; font-weight: 700; cursor: pointer;
+      width: 100%; padding: 14px; border: none; border-radius: var(--radius-buttons);
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
       color: #fff; text-decoration: none;
-      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-      box-shadow: 0 4px 20px rgba(34,197,94,0.25);
-      transition: transform 0.2s, box-shadow 0.2s;
+      background: var(--color-coral-pulse);
+      transition: transform 0.2s;
       margin-bottom: 16px;
       animation: cardUp 0.5s ease-out 0.35s both;
     }
     .btn-dl:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(34,197,94,0.35);
       color: #fff;
+      opacity: 0.9;
     }
     .btn-dl:active { transform: translateY(0); }
 
     /* ── Footer ── */
     .verify-footer {
       text-align: center; padding: 12px 16px;
-      font-size: 0.7rem; color: var(--text-3); font-weight: 500;
+      font-size: 0.8rem; color: var(--color-slate); font-weight: 500;
       letter-spacing: 0.3px;
       animation: cardUp 0.5s ease-out 0.4s both;
     }
@@ -325,9 +325,9 @@
 
   <!-- Top Bar -->
   <div class="top-bar">
-    <a href="{{ url_for('user_home') }}" class="brand">
-      <img src="/static/newfavicon.png" alt="Logo">
-      <span class="brand-name"><img src="{{ url_for('static', filename='new-name-logo.png') }}" alt="We The Leaders"></span>
+    <a href="{{ url_for('user_home') }}" class="brand" style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
+      <img src="/static/newfavicon.png" alt="Logo" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--color-mint-wash);">
+      <span class="brand-name" style="font-family: var(--font-dm-sans); font-weight: 700; font-size: 1.25rem; letter-spacing: -0.019em; color: var(--color-paper-white);">MAKKAL MEDAI</span>
     </a>
     <span class="scan-tag">
       <i class="bi bi-qr-code"></i> QR Verified
@@ -581,10 +581,10 @@
 
     <!-- Footer -->
     <div class="verify-footer">
-      <i class="bi bi-shield-check"></i>
+      <i class="bi bi-shield-check" style="color:var(--color-leaf-bright);"></i>
       Verified via QR Code Scan
       <span class="dot">·</span>
-      We The Leaders
+      Makkal Medai
       <span class="dot">·</span>
       LEAD THE CHANGE
     </div>

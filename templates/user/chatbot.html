@@ -130,45 +130,101 @@
     ]
   }
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" rel="stylesheet">
   <style>
+    :root {
+      /* Red & White theme with Cream background Color Tokens */
+      --color-canopy-green: #cc0000;   /* Primary Brand Red */
+      --color-coral-pulse: #e53935;    /* Vivid CTA Red */
+      --color-indigo-bloom: #460095;
+      --color-leaf-bright: #1dbf73;
+      --color-deep-teal: #003642;
+      --color-orchid-tint: #f3b3fe;
+      --color-sky-signal: #00b4dc;
+      --color-aubergine: #47264c;
+      --color-ink-black: #000000;
+      --color-paper-white: #ffffff;
+      --color-ash: #a6a6a6;
+      --color-slate: #7a7a7a;
+      --color-graphite: #3d3d3d;
+      --color-charcoal: #333333;
+      --color-frost-gray: #e0e0e0;
+      --color-cloud-gray: #f2f2f2;
+      --color-lavender-mist: #faf7e8;  /* Cream Canvas background */
+      --color-mint-wash: #ffebee;      /* Soft Red bubble wash */
+      --color-sky-wash: #fff8e1;       /* Light Warm Yellow / Cream wash */
+      --color-sage-wash: #faf7e8;      /* Cream hover wash */
+      --color-lilac-wash: #faf7e8;
+      --color-peach-wash: #ffebee;     /* Soft Red wash */
+      --color-cream: #faf7e8;          /* Cream background */
+      --color-sand: #f5f0eb;
+
+      /* Typography */
+      --font-dm-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+      /* Spacing */
+      --spacing-4: 4px;
+      --spacing-8: 8px;
+      --spacing-12: 12px;
+      --spacing-16: 16px;
+      --spacing-20: 20px;
+      --spacing-24: 24px;
+      --spacing-32: 32px;
+      --spacing-40: 40px;
+      --spacing-48: 48px;
+
+      /* Border Radii */
+      --radius-tags: 9999px;
+      --radius-cards: 24px;
+      --radius-icons: 8px;
+      --radius-buttons: 40px;
+      --radius-cards-sm: 16px;
+
+      /* Elevation */
+      --shadow-subtle: rgba(0, 0, 0, 0.05) 0px 1px 1px 0px;
+    }
+
     /* ── Cropper Modal ── */
     .crop-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.82);
+      background: rgba(0, 0, 0, 0.85); /* Dark overlay */
       z-index: 9999;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 16px;
+      backdrop-filter: blur(8px);
     }
     .crop-modal-box {
-      background: #1a1a2e;
-      border-radius: 18px;
+      background: var(--color-paper-white);
+      border-radius: var(--radius-cards);
       width: 100%;
       max-width: 420px;
       overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
       display: flex;
       flex-direction: column;
+      border: 1px solid var(--color-frost-gray);
     }
     .crop-modal-header {
-      background: #008069;
-      padding: 14px 20px;
+      background: var(--color-canopy-green);
+      padding: 16px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      color: #fff;
-      font-weight: 700;
-      font-size: 1rem;
+      color: var(--color-paper-white);
+      font-weight: 600;
+      font-size: 1.1rem;
     }
     .crop-modal-header span { font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
     .crop-modal-body {
       padding: 0;
-      max-height: 60vh;
+      max-height: 50vh;
       overflow: hidden;
       background: #111;
       display: flex;
@@ -178,36 +234,50 @@
     .crop-modal-body img {
       display: block;
       max-width: 100%;
-      max-height: 60vh;
+      max-height: 50vh;
     }
     .crop-modal-footer {
-      padding: 14px 16px;
+      padding: 16px;
       display: flex;
-      gap: 10px;
-      background: #1a1a2e;
+      gap: 12px;
+      background: var(--color-paper-white);
+      border-top: 1px solid var(--color-frost-gray);
     }
     .crop-btn {
       flex: 1;
-      padding: 12px;
+      padding: 12px 20px;
       border: none;
-      border-radius: 12px;
+      border-radius: var(--radius-buttons);
       font-size: 0.95rem;
-      font-weight: 700;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
     }
-    .crop-btn:hover { opacity: 0.88; }
-    .crop-btn.cancel { background: #2a3942; color: #ccc; }
-    .crop-btn.confirm { background: #00a884; color: #fff; }
+    .crop-btn.cancel {
+      background: transparent;
+      border: 1px solid var(--color-graphite);
+      color: var(--color-graphite);
+    }
+    .crop-btn.cancel:hover {
+      background: var(--color-cloud-gray);
+    }
+    .crop-btn.confirm {
+      background: var(--color-coral-pulse);
+      color: var(--color-paper-white);
+    }
+    .crop-btn.confirm:hover {
+      opacity: 0.9;
+    }
     .crop-hint {
       text-align: center;
       font-size: 0.75rem;
-      color: #8696a0;
-      padding: 6px 16px 0;
+      color: var(--color-slate);
+      padding: 8px 16px 4px;
+      background: var(--color-paper-white);
     }
   </style>
   <style>
@@ -224,9 +294,10 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background: #efeae2;
-      /* WhatsApp Web background */
+      font-family: var(--font-dm-sans);
+      font-feature-settings: "ss03";
+      background: var(--color-lavender-mist);
+      color: var(--color-ink-black);
     }
 
     /* ── Chat App Container ── */
@@ -238,7 +309,7 @@
       flex-direction: column;
       position: relative;
       overflow: hidden;
-      background: #efeae2;
+      background: var(--color-lavender-mist);
     }
 
     /* ── Chat Wallpaper ── */
@@ -248,38 +319,34 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: #efeae2;
-      background-image: url('/static/bg.png');
-      opacity: 0.6;
+      background-color: var(--color-lavender-mist);
+      opacity: 0.15;
       z-index: 0;
     }
 
     /* ── Header ── */
     .chat-header {
-      background: #008069;
-      color: #ffffff;
-      padding: max(12px, env(safe-area-inset-top)) 20px 12px 20px;
+      background: var(--color-canopy-green);
+      color: var(--color-paper-white);
+      padding: max(16px, env(safe-area-inset-top)) 24px 16px 24px;
       display: flex;
       align-items: center;
       gap: 14px;
       z-index: 10;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       flex-shrink: 0;
-      border-bottom: none;
     }
 
     .chat-header .avatar {
-      width: 46px;
-      height: 46px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      background: #f0f2f5;
+      background: var(--color-paper-white);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.5rem;
       flex-shrink: 0;
-      border: 1px solid #e0e0e0;
       overflow: hidden;
+      border: 1px solid var(--color-mint-wash);
     }
 
     .chat-header .avatar img {
@@ -293,31 +360,38 @@
     }
 
     .chat-header .info h4 {
-      font-size: 1.1rem;
+      font-family: var(--font-dm-sans);
+      font-size: 1.25rem;
       font-weight: 700;
       margin: 0;
-      color: #fff;
+      color: var(--color-paper-white);
+      letter-spacing: -0.019em;
     }
 
     .chat-header .info .status {
-      font-size: 0.82rem;
+      font-size: 0.85rem;
       font-weight: 500;
-      color: #00a884;
+      color: var(--color-leaf-bright);
       margin-top: 2px;
     }
 
     .chat-header .actions {
       display: flex;
       gap: 16px;
-      color: #fff;
+      color: var(--color-paper-white);
       font-size: 1.3rem;
+    }
+
+    /* Hide the toggler list icon in the navbar */
+    #sidebarToggle {
+      display: none !important;
     }
 
     /* ── Messages Area ── */
     .chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 20px 10%;
+      padding: 24px 12%;
       z-index: 1;
       position: relative;
       display: flex;
@@ -327,19 +401,19 @@
     /* ── Date chip ── */
     .date-chip {
       align-self: center;
-      background: rgba(0, 0, 0, 0.15);
-      color: #ffffff;
+      background: var(--color-sage-wash);
+      color: var(--color-canopy-green);
       font-size: 0.75rem;
-      font-weight: 500;
-      padding: 4px 12px;
-      border-radius: 12px;
-      margin: 12px 0;
-      letter-spacing: 0.3px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius-tags);
+      margin: 16px 0;
+      border: 1px solid var(--color-frost-gray);
     }
 
     /* ── Message Bubbles ── */
     .message {
-      margin-bottom: 8px;
+      margin-bottom: 12px;
       display: flex;
       align-items: flex-end;
       gap: 10px;
@@ -348,30 +422,29 @@
     }
 
     .bot-avatar-img {
-      width: 38px;
-      height: 38px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       object-fit: cover;
       flex-shrink: 0;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      border: 1px solid var(--color-frost-gray);
     }
 
     .user-avatar-svg {
-      width: 38px;
-      height: 38px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       flex-shrink: 0;
-      background: #00a884;
-      color: #fff;
+      background: var(--color-canopy-green);
+      color: var(--color-paper-white);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.2rem;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      font-size: 1.1rem;
     }
 
     body.dark-mode .user-avatar-svg {
-      background: #005c4b;
+      background: var(--color-canopy-green);
     }
 
     .message.bot {
@@ -383,49 +456,49 @@
     }
 
     .message .bubble {
-      max-width: 600px;
-      padding: 10px 14px;
-      border-radius: 14px;
-      font-size: 0.95rem;
-      line-height: 1.5;
+      max-width: 580px;
+      padding: 12px 16px;
+      border-radius: var(--radius-cards-sm);
+      font-size: 0.98rem;
+      line-height: 1.45;
       position: relative;
       word-wrap: break-word;
-      color: #000;
-
-      /* Glassy Polished Style */
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.6);
+      font-weight: 400;
     }
 
     .message.bot .bubble {
-      background: rgba(255, 255, 255, 0.65);
+      background: var(--color-paper-white);
+      color: var(--color-graphite);
       border-bottom-left-radius: 4px;
+      border: 1px solid var(--color-frost-gray);
     }
 
     .message.user .bubble {
-      background: rgba(217, 253, 211, 0.7);
+      background: var(--color-mint-wash);
+      color: var(--color-canopy-green);
       border-bottom-right-radius: 4px;
-      border-color: rgba(255, 255, 255, 0.4);
+      border: 1px solid var(--color-leaf-bright);
+      font-weight: 500;
     }
 
     .bubble .time {
-      font-size: 0.68rem;
-      color: #999;
+      font-size: 0.7rem;
+      color: var(--color-slate);
       float: right;
-      margin: 8px 0 -4px 12px;
+      margin: 10px 0 -4px 14px;
     }
 
     .message.user .bubble .time {
-      color: #888;
+      color: var(--color-canopy-green);
+      opacity: 0.7;
     }
 
     /* ── Banner Message ── */
     .banner-message .bubble {
       padding: 0;
       overflow: hidden;
-      max-width: 600px;
+      max-width: 580px;
+      border-radius: var(--radius-cards);
     }
 
     .banner-message .bubble img {
@@ -436,32 +509,38 @@
     }
 
     .banner-message .bubble .banner-text {
-      padding: 12px 14px;
-      font-size: 0.95rem;
+      padding: 16px 20px;
+      font-size: 1rem;
       line-height: 1.5;
     }
 
     .banner-action {
       display: flex;
-      padding: 0 14px 14px 14px;
+      padding: 0 20px 20px 20px;
     }
 
     .btn-reply {
-      background: #f0f4f9;
-      color: #00a884;
-      border: 1px solid rgba(0, 168, 132, 0.3);
-      border-radius: 12px;
-      padding: 10px 0;
+      background: var(--color-coral-pulse);
+      color: var(--color-paper-white);
+      border: none;
+      border-radius: var(--radius-buttons);
+      padding: 12px 24px;
+      font-family: var(--font-dm-sans);
       font-weight: 600;
       font-size: 0.95rem;
       cursor: pointer;
       width: 100%;
       text-align: center;
       transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      text-decoration: none;
     }
 
     .btn-reply:hover:not([disabled]) {
-      background: #e6eef6;
+      opacity: 0.9;
     }
 
     .btn-reply[disabled] {
@@ -483,7 +562,7 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #b0b4b8;
+      background: var(--color-ash);
       animation: typing 1.4s infinite;
     }
 
@@ -496,14 +575,10 @@
     }
 
     @keyframes typing {
-
-      0%,
-      60%,
-      100% {
+      0%, 60%, 100% {
         opacity: 0.4;
         transform: translateY(0);
       }
-
       30% {
         opacity: 1;
         transform: translateY(-4px);
@@ -515,7 +590,6 @@
         opacity: 0;
         transform: translateY(8px);
       }
-
       to {
         opacity: 1;
         transform: translateY(0);
@@ -524,35 +598,35 @@
 
     /* ── Voter Details Card ── */
     .voter-details-card {
-      background: #f7f9fa;
-      border-radius: 8px;
-      border: 1px solid #eef0f2;
-      padding: 12px 14px;
-      margin-top: 10px;
+      background: var(--color-sage-wash);
+      border-radius: var(--radius-cards-sm);
+      border: 1px solid var(--color-leaf-bright);
+      padding: 16px;
+      margin-top: 12px;
     }
 
     .voter-details-card .detail-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 6px 0;
-      font-size: 0.85rem;
-      border-bottom: 1px solid #e1e5e8;
+      padding: 8px 0;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--color-frost-gray);
     }
 
     .voter-details-card .detail-row:last-child {
       border-bottom: none;
-      border-bottom-width: 0;
       padding-bottom: 0;
     }
 
     .voter-details-card .detail-label {
-      color: #7f8b94;
+      color: var(--color-slate);
+      font-weight: 500;
     }
 
     .voter-details-card .detail-value {
       font-weight: 600;
-      color: #222;
+      color: var(--color-canopy-green);
       text-align: right;
       max-width: 65%;
     }
@@ -567,9 +641,9 @@
 
     .action-btn {
       border: none;
-      padding: 10px 24px;
-      border-radius: 20px;
-      font-size: 0.9rem;
+      padding: 12px 24px;
+      border-radius: var(--radius-buttons);
+      font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
@@ -579,64 +653,62 @@
     }
 
     .action-btn.confirm {
-      background: #00a884;
-      color: #fff;
-      box-shadow: 0 2px 6px rgba(0, 168, 132, 0.25);
+      background: var(--color-coral-pulse);
+      color: var(--color-paper-white);
     }
 
     .action-btn.confirm:hover {
-      background: #008069;
-      box-shadow: 0 4px 10px rgba(0, 168, 132, 0.35);
+      opacity: 0.9;
     }
 
     .action-btn.cancel {
-      background: #f0f2f5;
-      color: #444;
+      background: transparent;
+      border: 1px solid var(--color-graphite);
+      color: var(--color-graphite);
     }
 
     .action-btn.cancel:hover {
-      background: #e0e3e6;
+      background: var(--color-cloud-gray);
     }
 
     /* ── Upload Area ── */
     .upload-area {
-      margin-top: 10px;
-      border: 2px dashed #00a884;
-      border-radius: 12px;
-      padding: 20px;
+      margin-top: 12px;
+      border: 2px dashed var(--color-canopy-green);
+      border-radius: var(--radius-cards-sm);
+      padding: 24px;
       text-align: center;
       cursor: pointer;
       transition: all 0.2s;
-      background: rgba(0, 168, 132, 0.03);
+      background: var(--color-sage-wash);
     }
 
     .upload-area:hover {
-      background: rgba(0, 168, 132, 0.08);
+      background: var(--color-mint-wash);
     }
 
     .upload-area i {
       font-size: 2.2rem;
-      color: #00a884;
+      color: var(--color-canopy-green);
     }
 
     .upload-area p {
       margin: 8px 0 0;
-      font-size: 0.85rem;
-      color: #666;
+      font-size: 0.9rem;
+      color: var(--color-graphite);
     }
 
     /* ── Card Preview & Actions ── */
     .card-preview {
       position: relative;
       max-width: 320px;
-      margin-top: 10px;
-      border-radius: 8px;
+      margin-top: 12px;
+      border-radius: var(--radius-cards-sm);
     }
 
     .card-preview img {
       width: 100%;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      border-radius: var(--radius-cards-sm);
       display: block;
     }
 
@@ -654,28 +726,24 @@
       width: 38px;
       height: 38px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.85);
-      color: #00a884;
+      background: var(--color-paper-white);
+      color: var(--color-coral-pulse);
       display: flex;
       align-items: center;
       justify-content: center;
       text-decoration: none;
       font-size: 1.1rem;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
       transition: all 0.2s;
     }
 
     .icon-btn:hover {
-      background: #fff;
       transform: scale(1.08);
-      color: #008069;
+      color: var(--color-canopy-green);
     }
 
     body.dark-mode .icon-btn {
-      background: rgba(32, 44, 51, 0.85);
-      color: #00a884;
+      background: var(--color-paper-white);
+      color: var(--color-coral-pulse);
     }
 
     .vertical-actions {
@@ -689,22 +757,22 @@
 
     /* ── Input Area ── */
     .chat-input-area {
-      background: #ffffff;
-      padding: 12px 10% max(12px, env(safe-area-inset-bottom));
+      background: var(--color-paper-white);
+      padding: 16px 12% max(16px, env(safe-area-inset-bottom));
       display: flex;
       align-items: center;
       gap: 12px;
       z-index: 10;
       flex-shrink: 0;
-      box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.03);
+      border-top: 1px solid var(--color-frost-gray);
     }
 
     .chat-input-area .attach-btn {
       width: 48px;
       height: 48px;
       border: none;
-      background: #f0f2f5;
-      color: #777;
+      background: var(--color-cloud-gray);
+      color: var(--color-slate);
       font-size: 1.4rem;
       cursor: pointer;
       border-radius: 50%;
@@ -715,8 +783,7 @@
     }
 
     .chat-input-area .attach-btn:hover {
-      background: #e0e3e6;
-      color: #00a884;
+      color: #ff1a1a;
     }
 
     .chat-input-area .attach-btn.visible {
@@ -736,24 +803,28 @@
       background: #ffffff;
       border-radius: 24px;
       padding: 14px 20px;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 600;
       font-size: 1rem;
       outline: none;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
 
     .input-wrapper input:focus {
-      border-color: #00a884;
+      border-color: #ff1a1a;
+      box-shadow: 0 0 12px rgba(255, 26, 26, 0.25);
     }
 
     .input-wrapper input::placeholder {
       color: #999;
+      font-weight: 700;
     }
 
     .chat-input-area .send-btn {
       width: 48px;
       height: 48px;
       border: none;
-      background: #00a884;
+      background: linear-gradient(135deg, #ff1a1a, #b30000);
       color: #fff;
       border-radius: 50%;
       display: flex;
@@ -761,14 +832,15 @@
       justify-content: center;
       font-size: 1.25rem;
       cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
+      transition: all 0.2s;
       flex-shrink: 0;
-      box-shadow: 0 2px 6px rgba(0, 168, 132, 0.3);
+      box-shadow: 0 4px 12px rgba(255, 26, 26, 0.3);
     }
 
     .chat-input-area .send-btn:hover {
-      background: #008069;
+      background: linear-gradient(135deg, #ff3333, #e60000);
       transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(255, 26, 26, 0.45);
     }
 
     .chat-input-area .send-btn:active {
@@ -776,7 +848,7 @@
     }
 
     .chat-input-area .send-btn:disabled {
-      background: #b0c9df;
+      background: #e0b0b0;
       cursor: not-allowed;
       box-shadow: none;
       transform: none;
@@ -1038,19 +1110,19 @@
     body.dark-mode .sidebar-theme-btn:hover { background: #333; }
 
     body.dark-mode input:checked+.slider {
-      background-color: #00a884;
+      background-color: #ff1a1a;
     }
 
     /* ── Dark Mode ── */
     body.dark-mode,
     body.dark-mode .chat-app,
     body.dark-mode .chat-wallpaper {
-      background: #0b141a !important;
+      background: #1c0505 !important; /* Deep red wash */
     }
 
     body.dark-mode .chat-header {
-      background: #202c33 !important;
-      border-bottom: none !important;
+      background: var(--color-canopy-green) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
       color: #fff !important;
     }
 
@@ -1063,20 +1135,20 @@
     }
 
     body.dark-mode .message.bot .bubble {
-      background: rgba(32, 44, 51, 0.7) !important;
-      border-color: rgba(255, 255, 255, 0.08) !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
       color: #e9edef !important;
     }
 
     body.dark-mode .message.user .bubble {
-      background: rgba(0, 92, 75, 0.7) !important;
-      border-color: rgba(255, 255, 255, 0.08) !important;
-      color: #e9edef !important;
+      background: var(--color-mint-wash) !important;
+      border-color: var(--color-coral-pulse) !important;
+      color: var(--color-canopy-green) !important;
     }
 
     body.dark-mode .chat-input-area {
-      background: #202c33 !important;
-      border-top: none !important;
+      background: #2b0b0b !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
 
     body.dark-mode .input-wrapper {
@@ -1084,131 +1156,75 @@
     }
 
     body.dark-mode .input-wrapper input {
-      background: #2a3942 !important;
-      border-color: #2a3942 !important;
+      background: #3a0f0f !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #fff !important;
     }
 
     body.dark-mode input#messageInput {
       color: #fff !important;
-      background: transparent;
     }
 
     body.dark-mode .voter-details-card {
-      background: #202c33 !important;
-      border-color: #2a3942 !important;
-      color: #aebac1 !important;
-    }
-
-    body.dark-mode .voter-details-card .detail-row {
-      border-bottom-color: #444 !important;
-    }
-
-    body.dark-mode .voter-details-card .detail-value {
+      background: #3a0f0f !important;
+      border-color: var(--color-coral-pulse) !important;
       color: #e9edef !important;
     }
 
+    body.dark-mode .voter-details-card .detail-row {
+      border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+    }
+
+    body.dark-mode .voter-details-card .detail-value {
+      color: #fff !important;
+    }
+
     body.dark-mode .date-chip {
-      background: rgba(255, 255, 255, 0.15) !important;
+      background: rgba(255, 255, 255, 0.1) !important;
+      border-color: rgba(255, 255, 255, 0.2) !important;
       color: #fff !important;
     }
 
     body.dark-mode .btn-reply {
-      background: #262626 !important;
-      border-color: #444 !important;
-      color: #00a884 !important;
-    }
-
-    body.dark-mode .btn-reply:hover:not([disabled]) {
-      background: #333 !important;
+      background: var(--color-coral-pulse) !important;
+      color: #fff !important;
     }
 
     body.dark-mode .bubble .time {
-      color: #aaa !important;
+      color: #ccc !important;
     }
 
     body.dark-mode .banner-message .bubble {
-      background: transparent !important;
+      background: rgba(255, 255, 255, 0.08) !important;
     }
 
-    /* Referral link box, code blocks inside bubbles */
-    body.dark-mode .bubble div[style*="background:#f0f4f9"] {
-      background: #1a2730 !important;
-      border: 1px solid #2a3942;
-    }
-    body.dark-mode .bubble code {
-      color: #00a884 !important;
-    }
-
-    /* PIN display box (green bg) */
-    body.dark-mode .bubble div[style*="background:#e8f5e9"] {
-      background: #1a2e1f !important;
-    }
-    body.dark-mode .bubble div[style*="background:#e8f5e9"] span {
-      color: #4caf50 !important;
-    }
-
-    /* Booth icon circle (pink bg) */
-    body.dark-mode .bubble div[style*="background:#fce4ec"] {
-      background: #3a1f27 !important;
-    }
-
-    /* Subtle hint text inside bubbles (#667781) */
-    body.dark-mode .bubble em[style*="color:#667781"] {
-      color: #8696a0 !important;
-    }
-
-    /* Cancel / secondary action buttons */
     body.dark-mode .action-btn.cancel {
-      background: #2a3942 !important;
-      color: #e9edef !important;
+      background: transparent !important;
+      color: #fff !important;
+      border: 1px solid #fff;
     }
     body.dark-mode .action-btn.cancel:hover {
-      background: #36454f !important;
+      background: rgba(255,255,255,0.1) !important;
     }
 
-    /* Upload area */
     body.dark-mode .upload-area {
-      border-color: #00a884;
-      background: rgba(0, 168, 132, 0.05);
+      border-color: var(--color-coral-pulse);
+      background: rgba(229, 57, 53, 0.1);
     }
     body.dark-mode .upload-area p {
-      color: #8696a0;
-    }
-
-    /* Send button */
-    body.dark-mode .send-btn {
-      background: #00a884 !important;
-    }
-
-    /* Scroll bar inside chat */
-    body.dark-mode .chat-messages::-webkit-scrollbar-thumb {
-      background: #374045;
-    }
-
-    /* Card preview shadow */
-    body.dark-mode .card-preview img {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    }
-
-    /* Strong tags inside bot bubbles */
-    body.dark-mode .message.bot .bubble strong {
       color: #e9edef;
-    }
-
-    /* Typing dots */
-    body.dark-mode .typing-dots span {
-      background: #8696a0;
     }
 
     /* ── Sidebar Overlay ── */
     .sidebar-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0, 0, 0, 0.6); /* Dark wash overlay */
       z-index: 99;
       opacity: 0;
       visibility: hidden;
       transition: opacity 0.3s, visibility 0.3s;
+      backdrop-filter: blur(4px);
     }
     .sidebar-overlay.open {
       opacity: 1;
@@ -1221,20 +1237,20 @@
       top: 0; right: -280px;
       width: 280px;
       height: 100%;
-      background: #fff;
+      background: var(--color-paper-white);
       z-index: 100;
-      box-shadow: -4px 0 20px rgba(0,0,0,0.15);
       transition: right 0.3s ease;
       display: flex;
       flex-direction: column;
+      border-left: 1px solid var(--color-frost-gray);
     }
     .sidebar-panel.open {
       right: 0;
     }
     .sidebar-header {
-      background: #008069;
-      color: #fff;
-      padding: 20px 16px 16px;
+      background: var(--color-canopy-green);
+      color: var(--color-paper-white);
+      padding: 20px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1242,14 +1258,14 @@
     }
     .sidebar-header h5 {
       margin: 0;
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       font-weight: 700;
       cursor: pointer;
     }
     .sidebar-close {
       background: none;
       border: none;
-      color: #fff;
+      color: var(--color-paper-white);
       font-size: 1.4rem;
       cursor: pointer;
       padding: 4px;
@@ -1262,15 +1278,15 @@
     .sidebar-user-info {
       text-align: center;
       padding-bottom: 16px;
-      border-bottom: 1px solid #e8e8e8;
+      border-bottom: 1px solid var(--color-frost-gray);
       margin-bottom: 16px;
     }
     .sidebar-user-info .user-icon {
       width: 64px;
       height: 64px;
       border-radius: 50%;
-      background: #00a884;
-      color: #fff;
+      background: var(--color-canopy-green);
+      color: var(--color-paper-white);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1282,36 +1298,37 @@
       height: 64px;
       border-radius: 50%;
       object-fit: cover;
-      border: 2px solid #00a884;
+      border: 2px solid var(--color-canopy-green);
     }
     .sidebar-user-info .user-name {
       font-weight: 700;
-      font-size: 1rem;
-      color: #111;
+      font-size: 1.05rem;
+      color: var(--color-ink-black);
       margin-bottom: 2px;
     }
     .sidebar-user-info .user-mobile {
       font-size: 0.85rem;
-      color: #667;
+      color: var(--color-slate);
     }
     .sidebar-menu-item {
       display: flex;
       align-items: center;
       gap: 12px;
       padding: 14px 12px;
-      border-radius: 10px;
+      border-radius: var(--radius-cards-sm);
       cursor: pointer;
       transition: background 0.2s;
       font-size: 0.95rem;
       font-weight: 600;
-      color: #333;
+      color: var(--color-graphite);
       border: none;
       background: none;
       width: 100%;
       text-align: left;
     }
     .sidebar-menu-item:hover {
-      background: #f0f2f5;
+      background: var(--color-mint-wash);
+      color: var(--color-canopy-green);
     }
     .sidebar-menu-item i {
       font-size: 1.2rem;
@@ -1319,27 +1336,28 @@
       text-align: center;
     }
     .sidebar-menu-item.exit-btn {
-      color: #e53935;
+      color: var(--color-coral-pulse);
     }
     .sidebar-menu-item.exit-btn:hover {
-      background: #fdecea;
+      background: var(--color-peach-wash);
+      color: var(--color-coral-pulse);
     }
     .sidebar-menu-item.register-btn {
-      color: #008069;
+      color: var(--color-leaf-bright);
     }
     .sidebar-menu-item.register-btn:hover {
-      background: #e8f5e9;
+      background: var(--color-sage-wash);
     }
     .sidebar-divider {
       height: 1px;
-      background: #e0e0e0;
+      background: var(--color-frost-gray);
       margin: 8px 0;
     }
     .sidebar-section-label {
-      font-size: 0.7rem;
+      font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: #999;
+      color: var(--color-slate);
       font-weight: 700;
       padding: 8px 12px 4px;
     }
@@ -1359,14 +1377,14 @@
       padding: 10px 12px;
       background: none;
       border: none;
-      color: #008069;
-      font-weight: 600;
+      color: var(--color-canopy-green);
+      font-weight: 700;
       font-size: 0.9rem;
       cursor: pointer;
       width: 100%;
       text-align: left;
     }
-    .profile-back-btn:hover { background: #f0f2f5; }
+    .profile-back-btn:hover { background: var(--color-cloud-gray); }
     .profile-photo-section {
       text-align: center;
       padding: 16px 12px 8px;
@@ -1376,14 +1394,14 @@
       height: 80px;
       border-radius: 50%;
       object-fit: cover;
-      border: 3px solid #008069;
+      border: 3px solid var(--color-canopy-green);
     }
     .profile-photo-placeholder {
       width: 80px;
       height: 80px;
       border-radius: 50%;
-      background: #e8f5e9;
-      color: #008069;
+      background: var(--color-mint-wash);
+      color: var(--color-canopy-green);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1397,7 +1415,7 @@
       justify-content: space-between;
       align-items: flex-start;
       padding: 8px 0;
-      border-bottom: 1px solid #f0f2f5;
+      border-bottom: 1px solid var(--color-frost-gray);
       gap: 8px;
     }
     .profile-detail-row:last-child { border-bottom: none; }
@@ -1405,14 +1423,14 @@
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #888;
-      font-weight: 600;
+      color: var(--color-slate);
+      font-weight: 700;
       flex-shrink: 0;
     }
     .profile-detail-value {
       font-size: 0.88rem;
-      font-weight: 500;
-      color: #333;
+      font-weight: 600;
+      color: var(--color-graphite);
       text-align: right;
       word-break: break-word;
     }
@@ -1428,10 +1446,10 @@
 
     /* Dark mode sidebar */
     body.dark-mode .sidebar-panel {
-      background: #111b21;
+      background: #120202;
     }
     body.dark-mode .sidebar-header {
-      background: #202c33;
+      background: linear-gradient(135deg, #2a0000, #120202);
     }
     body.dark-mode .sidebar-body {
       color: #e9edef;
@@ -1440,7 +1458,7 @@
       border-bottom-color: #2a3942;
     }
     body.dark-mode .sidebar-user-info .user-icon {
-      background: #005c4b;
+      background: #b30000;
     }
     body.dark-mode .sidebar-user-info .user-name {
       color: #e9edef;
@@ -1452,7 +1470,7 @@
       color: #e9edef;
     }
     body.dark-mode .sidebar-menu-item:hover {
-      background: #202c33;
+      background: #1c0505;
     }
     body.dark-mode .sidebar-menu-item.exit-btn {
       color: #ef5350;
@@ -1461,15 +1479,15 @@
       background: #2c1810;
     }
     body.dark-mode .sidebar-menu-item.register-btn {
-      color: #00a884;
+      color: #ff1a1a;
     }
     body.dark-mode .sidebar-menu-item.register-btn:hover {
-      background: #0b2a1f;
+      background: rgba(255, 26, 26, 0.12);
     }
     body.dark-mode .sidebar-divider { background: #2a3942; }
     body.dark-mode .sidebar-section-label { color: #8696a0; }
-    body.dark-mode .profile-back-btn { color: #00a884; }
-    body.dark-mode .profile-back-btn:hover { background: #202c33; }
+    body.dark-mode .profile-back-btn { color: #ff1a1a; }
+    body.dark-mode .profile-back-btn:hover { background: #1c0505; }
     body.dark-mode .profile-detail-row { border-bottom-color: #2a3942; }
     body.dark-mode .profile-detail-label { color: #8696a0; }
     body.dark-mode .profile-detail-value { color: #e9edef; }
@@ -1487,11 +1505,11 @@
           src="/static/newfavicon.png"
           alt="Logo"></div>
       <div class="info" style="display: flex; align-items: center;">
-        <img src="{{ url_for('static', filename='new-name-logo.png') }}" alt="We The Leaders"
-          style="height: 62px; width: auto;">
+        <span style="font-family: var(--font-dm-sans); font-weight: 700; font-size: 1.35rem; letter-spacing: -0.019em; color: var(--color-paper-white);">MAKKAL MEDAI</span>
       </div>
-      <div class="actions" style="display: flex; align-items: center; gap: 12px;">
-        <i class="bi bi-list" id="sidebarToggle" style="cursor: pointer; font-size: 1.5rem;" title="Menu"></i>
+      <div class="actions" style="display: flex; align-items: center; gap: 16px;">
+        <i class="bi bi-box-arrow-right" id="navLogoutBtn" style="cursor: pointer; font-size: 1.45rem; display: none; color: var(--color-paper-white);" title="Logout"></i>
+        <i class="bi bi-list" id="sidebarToggle" style="cursor: pointer; font-size: 1.5rem; display: none !important;" title="Menu"></i>
       </div>
     </div>
 
@@ -1552,8 +1570,8 @@
 
     <input type="file" id="photoInput" accept="image/png,image/jpeg,image/jpg,image/bmp">
     <input type="file" id="cameraInput" accept="image/png,image/jpeg,image/jpg" capture="environment">
-    <input type="file" id="passportPhotoInput" accept="image/png,image/jpeg,image/jpg,image/bmp" style="display:none;">
-    <input type="file" id="passportCameraInput" accept="image/png,image/jpeg,image/jpg" capture="user" style="display:none;">
+    <input type="file" id="passportPhotoInput" accept="image/*" style="display:none;">
+    <input type="file" id="passportCameraInput" accept="image/*" capture="user" style="display:none;">
   </div>
 
   <!-- ── Image Crop Modal ── -->
@@ -1618,6 +1636,17 @@
       let epic      = '';
       let voter     = null;
       let photoFile = null;
+
+      function updateLogoutIcon() {
+        const btn = document.getElementById('navLogoutBtn');
+        if (btn) {
+          if (state === S.DONE) {
+            btn.style.setProperty('display', 'inline-block', 'important');
+          } else {
+            btn.style.setProperty('display', 'none', 'important');
+          }
+        }
+      }
 
       /* ── DOM refs ── */
       const chatEl  = document.getElementById('chatMessages');
@@ -1784,6 +1813,16 @@
         input.value = '';
         sendBtn.disabled = false;
 
+        if (!window._inputsBound) {
+          const photoInput = document.getElementById('passportPhotoInput');
+          const cameraInput = document.getElementById('passportCameraInput');
+          if (photoInput) photoInput.addEventListener('change', handlePhotoSelected);
+          if (cameraInput) cameraInput.addEventListener('change', handlePhotoSelected);
+          window._inputsBound = true;
+        }
+
+        updateLogoutIcon();
+
         // ── Check LocalStorage for a previously generated card ──
         const cached = lsLoad();
         if (cached && cached.card_url && cached.epic_no) {
@@ -1796,7 +1835,7 @@
       }
 
       function showWelcomeBanner() {
-        const BANNER = `<strong>Welcome to We The Leaders!</strong><br>
+        const BANNER_TEXT = `<strong>Welcome to We The Leaders!</strong><br>
           Your Digital Member ID Card Generator<br><br>
           \u{1F44B} Hello! Click <strong>Start</strong> to generate your free Member ID Card.`;
 
@@ -1805,13 +1844,16 @@
         row.innerHTML = `
           <img src="/static/newfavicon.png" class="bot-avatar-img" alt="Bot">
           <div class="bubble">
-            ${BANNER}
-            <div style="margin-top:12px;">
-              <button class="btn-reply" id="startBtn">
-                <i class="bi bi-play-circle-fill me-1"></i> Start
-              </button>
+            <img src="/static/start_banner.png" alt="We The Leaders Banner">
+            <div class="banner-text">
+              ${BANNER_TEXT}
+              <div style="margin-top:12px;">
+                <button class="btn-reply" id="startBtn">
+                  <i class="bi bi-play-circle-fill me-1"></i> Start
+                </button>
+              </div>
+              <span class="time">${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>
             </div>
-            <span class="time">${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>
           </div>`;
         chatEl.appendChild(row);
         scrollBottom();
@@ -1905,6 +1947,7 @@
 
         setPlaceholder('Type anything to generate a new card...');
         unlockInput();
+        updateLogoutIcon();
       }
 
       /* ── Clear cache and restart ── */
@@ -1913,6 +1956,7 @@
         chatEl.innerHTML = '';
         state = S.WELCOME;
         epic  = ''; voter = null; photoFile = null;
+        updateLogoutIcon();
         showWelcomeBanner();
       };
 
@@ -1966,8 +2010,8 @@
             h += '</div><br>';
             h += 'Is this your details? Click <strong>Confirm</strong> to generate your ID Card.';
             h += '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">';
-            h += '<button class="btn-reply confirm-yes-btn" style="background:#00a884;color:#fff;"><i class="bi bi-check-circle-fill me-1"></i> Confirm & Generate</button>';
-            h += '<button class="btn-reply confirm-no-btn" style="background:#f0f0f0;color:#333;"><i class="bi bi-arrow-counterclockwise me-1"></i> Try Again</button>';
+            h += '<button class="btn-reply confirm-yes-btn" style="background:var(--color-coral-pulse);color:#fff;"><i class="bi bi-check-circle-fill me-1"></i> Confirm & Generate</button>';
+            h += '<button class="btn-reply confirm-no-btn" style="background:transparent;border:1px solid var(--color-graphite);color:var(--color-graphite);"><i class="bi bi-arrow-counterclockwise me-1"></i> Try Again</button>';
             h += '</div>';
 
             state = S.CONFIRM;
@@ -2017,20 +2061,16 @@
 
         // Show photo upload prompt
         let h = '\u{1F4F7} <strong>Upload your Passport Photo</strong><br><br>';
-        h += '<em style="color:#667781;font-size:0.9rem;">Please upload a clear passport-size photo (face clearly visible).</em><br><br>';
+        h += '<em style="color:var(--color-graphite);font-size:0.9rem;">Please upload or take a clear passport-size photo (face clearly visible).</em><br><br>';
         h += '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">';
-        h += '<label for="passportPhotoInput" class="btn-reply" style="background:#00a884;color:#fff;cursor:pointer;">';
+        h += '<label for="passportPhotoInput" class="btn-reply" style="background:var(--color-coral-pulse);color:#fff;cursor:pointer;">';
         h += '<i class="bi bi-image me-1"></i> Upload Photo</label>';
-        h += '<label for="passportCameraInput" class="btn-reply" style="background:#1565c0;color:#fff;cursor:pointer;">';
+        h += '<label for="passportCameraInput" class="btn-reply" style="background:var(--color-canopy-green);color:#fff;cursor:pointer;">';
         h += '<i class="bi bi-camera-fill me-1"></i> Take Photo</label>';
         h += '</div>';
-        h += '<div id="photoPreviewArea" style="margin-top:10px;"></div>';
+        h += '<div class="photo-preview-area" style="margin-top:10px;"></div>';
 
         await botReply(h, 600);
-
-        // Bind file inputs
-        document.getElementById('passportPhotoInput').addEventListener('change', handlePhotoSelected);
-        document.getElementById('passportCameraInput').addEventListener('change', handlePhotoSelected);
       }
 
       /* ── Photo selected → open cropper ── */
@@ -2051,22 +2091,26 @@
 
         photoFile = new File([croppedBlob], 'passport_photo.jpg', { type: 'image/jpeg' });
 
-        // Show cropped preview + generate button
+        // Show cropped preview + generate button in the active preview area
         const previewUrl = URL.createObjectURL(croppedBlob);
-        const previewArea = document.getElementById('photoPreviewArea');
+        const previewAreas = document.querySelectorAll('.photo-preview-area');
+        const previewArea = previewAreas[previewAreas.length - 1];
         if (previewArea) {
           previewArea.innerHTML =
             '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">' +
-              '<img src="' + previewUrl + '" style="width:70px;height:87px;border-radius:8px;border:2px solid #00a884;object-fit:cover;">' +
-              '<div style="font-size:0.82rem;color:#667781;padding-top:4px;">' +
-                '<i class="bi bi-check-circle-fill" style="color:#00a884;"></i> Photo cropped successfully<br>' +
+              '<img src="' + previewUrl + '" style="width:70px;height:87px;border-radius:8px;border:2px solid var(--color-leaf-bright);object-fit:cover;">' +
+              '<div style="font-size:0.82rem;color:var(--color-graphite);padding-top:4px;">' +
+                '<i class="bi bi-check-circle-fill" style="color:var(--color-leaf-bright);"></i> Photo cropped successfully<br>' +
                 '<em>Fits perfectly in your ID card</em>' +
               '</div>' +
             '</div>' +
-            '<button class="btn-reply" id="proceedGenerateBtn" style="background:#2e7d32;color:#fff;">' +
+            '<button class="btn-reply proceed-generate-btn" style="background:var(--color-coral-pulse);color:#fff;">' +
             '<i class="bi bi-lightning-charge-fill me-1"></i> Generate Card</button>';
 
-          document.getElementById('proceedGenerateBtn').addEventListener('click', doGenerate);
+          const btn = previewArea.querySelector('.proceed-generate-btn');
+          if (btn) {
+            btn.addEventListener('click', doGenerate);
+          }
         }
         userMsg('<i class="bi bi-crop me-1"></i> Photo cropped &amp; ready');
       }
@@ -2078,9 +2122,13 @@
           return;
         }
 
-        // Disable generate button
-        const btn = document.getElementById('proceedGenerateBtn');
-        if (btn) btn.disabled = true;
+        // Disable only the active generate button
+        const btns = document.querySelectorAll('.proceed-generate-btn');
+        const btn = btns[btns.length - 1];
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Generating...';
+        }
         document.querySelectorAll('.confirm-yes-btn, .confirm-no-btn')
           .forEach(b => { b.disabled = true; });
 
@@ -2140,20 +2188,20 @@
             // ── Action buttons ───────────────────────────────────
             h += '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">';
             h += '  <a href="' + cardPageUrl + '" target="_blank" '
-                +     'style="background:#1565c0;color:#fff;text-decoration:none;border-radius:10px;'
+                +     'style="background:var(--color-indigo-bloom);color:#fff;text-decoration:none;border-radius:10px;'
                 +     'padding:8px 16px;font-size:0.85rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;">'
                 +     '<i class="bi bi-fullscreen"></i> Full View</a>';
             h += '  <a href="' + dlCombined + '" target="_blank" '
-                +     'style="background:#2e7d32;color:#fff;text-decoration:none;border-radius:10px;'
+                +     'style="background:var(--color-coral-pulse);color:#fff;text-decoration:none;border-radius:10px;'
                 +     'padding:8px 16px;font-size:0.85rem;font-weight:700;display:inline-flex;align-items:center;gap:6px;">'
                 +     '<i class="bi bi-download"></i> Download (Front + Back)</a>';
             h += '</div>';
-            h += '<div style="margin-top:8px;font-size:0.82rem;color:#8a9ab5;">'
+            h += '<div style="margin-top:8px;font-size:0.82rem;color:var(--color-slate);">'
                 +  '<em>\u2139\uFE0F Download includes both front &amp; back in one image.</em></div>';
-            h += '<div style="margin-top:6px;font-size:0.82rem;color:#8a9ab5;">'
+            h += '<div style="margin-top:6px;font-size:0.82rem;color:var(--color-slate);">'
                 +  '<em>Type anything to generate a card for another member.</em></div>';
-            h += '<div style="margin-top:6px;font-size:0.78rem;color:#8a9ab5;">'
-                +  '<i class="bi bi-shield-check me-1" style="color:#43a047;"></i>'
+            h += '<div style="margin-top:6px;font-size:0.78rem;color:var(--color-slate);">'
+                +  '<i class="bi bi-shield-check me-1" style="color:var(--color-leaf-bright);"></i>'
                 +  'Card saved on this device — will show if you refresh or reopen.</div>';
 
             await botReply(h, 600);
@@ -2170,28 +2218,63 @@
               voter_name:   voterName,
               photo_url:    res.photo_url || '',
             });
+            updateLogoutIcon();
 
           } else {
             state = S.AWAIT_PHOTO;
             photoFile = null;
-            if (btn) btn.disabled = false;
-            unlockInput();
-            const errType = res.error_type || '';
-            let errMsg = '\u274C ' + (res.message || 'Card generation failed. Please try again.');
-            if (errType === 'face_detection_failed') {
-              errMsg += '<br><br><em style="font-size:0.85rem;color:#667781;">Please upload a clear passport-size photo with your face visible.</em>';
-              errMsg += '<div style="margin-top:8px;"><label for="passportPhotoInput" class="btn-reply" style="background:#e65100;color:#fff;cursor:pointer;"><i class="bi bi-arrow-repeat me-1"></i> Try Another Photo</label></div>';
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i> Generate Card';
             }
-            await botReply(errMsg, 600);
+            unlockInput();
+
+            const errType = res.error_type || '';
+            const errMsg = res.message || 'Card generation failed. Please try again.';
+            let h = '';
+
+            if (errType === 'face_detection_failed') {
+              h += '\u274C <strong>No Face Detected!</strong><br><br>';
+              h += '<em style="color:var(--color-graphite);font-size:0.9rem;">' + errMsg + '</em><br><br>';
+              h += 'Please upload or take a clear passport-size photo with your face clearly visible.<br><br>';
+            } else {
+              h += '\u274C <strong>Generation Failed!</strong><br><br>';
+              h += '<em style="color:var(--color-graphite);font-size:0.9rem;">' + errMsg + '</em><br><br>';
+              h += 'Please try uploading your photo again.<br><br>';
+            }
+
+            h += '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">';
+            h += '<label for="passportPhotoInput" class="btn-reply" style="background:var(--color-coral-pulse);color:#fff;cursor:pointer;">';
+            h += '<i class="bi bi-image me-1"></i> Upload Photo</label>';
+            h += '<label for="passportCameraInput" class="btn-reply" style="background:var(--color-canopy-green);color:#fff;cursor:pointer;">';
+            h += '<i class="bi bi-camera-fill me-1"></i> Take Photo</label>';
+            h += '</div>';
+            h += '<div class="photo-preview-area" style="margin-top:10px;"></div>';
+
+            await botReply(h, 600);
           }
 
         } catch (e) {
           hideTyping();
           state = S.AWAIT_PHOTO;
           photoFile = null;
-          if (btn) btn.disabled = false;
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i> Generate Card';
+          }
           unlockInput();
-          await botReply('\u274C Something went wrong. Please try again.', 500);
+
+          let h = '\u274C <strong>Something went wrong!</strong><br><br>';
+          h += 'Please try uploading your photo again.<br><br>';
+          h += '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">';
+          h += '<label for="passportPhotoInput" class="btn-reply" style="background:var(--color-coral-pulse);color:#fff;cursor:pointer;">';
+          h += '<i class="bi bi-image me-1"></i> Upload Photo</label>';
+          h += '<label for="passportCameraInput" class="btn-reply" style="background:var(--color-canopy-green);color:#fff;cursor:pointer;">';
+          h += '<i class="bi bi-camera-fill me-1"></i> Take Photo</label>';
+          h += '</div>';
+          h += '<div class="photo-preview-area" style="margin-top:10px;"></div>';
+
+          await botReply(h, 500);
         }
       }
 
@@ -2230,6 +2313,16 @@
         if (e.key === 'Enter' && !sendBtn.disabled) handleSend();
       });
       sendBtn.addEventListener('click', handleSend);
+
+      /* ── Logout Button ── */
+      const logoutBtn = document.getElementById('navLogoutBtn');
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+          if (confirm('Are you sure you want to log out? This will clear the card cache from this device.')) {
+            clearCacheAndRestart();
+          }
+        });
+      }
 
       /* ── Sidebar toggle ── */
       document.getElementById('sidebarToggle').addEventListener('click', () => {

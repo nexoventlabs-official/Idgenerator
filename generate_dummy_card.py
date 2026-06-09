@@ -48,7 +48,23 @@ def make_placeholder_photo(w, h):
 template      = None
 sample_photo  = make_placeholder_photo(425, 525)   # proportional to PHOTO box
 
-card = generate_card(VOTER, template, sample_photo)
-card.save(OUTPUT, quality=95)
-print(f"Saved: {OUTPUT}  ({CARD_W}x{CARD_H})")
-print("Open dummy_card_output.jpeg to preview.")
+# Generate front card
+front_card = generate_card(VOTER, template, sample_photo)
+front_card.save("dummy_card_front.jpeg", quality=95)
+print(f"Saved: dummy_card_front.jpeg ({CARD_W}x{CARD_H})")
+
+# Generate back card
+from generate_cards import generate_back_card
+back_card = generate_back_card(VOTER)
+back_card_resized = back_card.resize((CARD_W, CARD_H), Image.Resampling.LANCZOS)
+back_card_resized.save("dummy_card_back.jpeg", quality=95)
+print(f"Saved: dummy_card_back.jpeg ({CARD_W}x{CARD_H})")
+
+# Generate combined card
+GAP = 30
+combined_w = CARD_W + GAP + CARD_W
+combined = Image.new('RGB', (combined_w, CARD_H), (240, 240, 240))
+combined.paste(front_card, (0, 0))
+combined.paste(back_card_resized, (CARD_W + GAP, 0))
+combined.save("dummy_card_combined.jpeg", quality=95)
+print(f"Saved: dummy_card_combined.jpeg ({combined_w}x{CARD_H})")

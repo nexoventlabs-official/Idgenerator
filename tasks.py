@@ -13,7 +13,7 @@ from pymongo import MongoClient
 import config
 import cloudinary
 import cloudinary.uploader
-from generate_cards import generate_card, generate_serial_number, setup_logging
+from generate_cards import generate_card, generate_back_card, generate_serial_number, setup_logging
 from security_fixes import hash_pin
 
 logger = setup_logging()
@@ -127,10 +127,10 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
         voter['ptc_code']   = ptc_code
         voter['verify_url'] = f"{config.BASE_URL}/verify/{epic_no}"
 
-        template   = Image.open(config.TEMPLATE_PATH)
+        template   = None
         card_image = generate_card(voter, template, photo_image)
 
-        self.update_state(state='PROCESSING', meta={'status': 'Uploading card'})
+        self.update_state(state='PROCESSING', meta={'status': 'Uploading front card'})
 
         buf = io.BytesIO()
         card_image.save(buf, format='JPEG', quality=95)
@@ -139,6 +139,48 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
             overwrite=True, resource_type='image'
         )
         card_url = up2['secure_url']
+
+        # Generate, upload back and combined card for async path parity
+        back_url = ''
+        combined_url = card_url
+        try:
+            self.update_state(state='PROCESSING', meta={'status': 'Generating back card'})
+            back_img = generate_back_card(voter)
+            front_w, front_h = card_image.size
+            back_resized = back_img.resize((front_w, front_h), Image.Resampling.LANCZOS)
+
+            self.update_state(state='PROCESSING', meta={'status': 'Uploading back card'})
+            back_buf = io.BytesIO()
+            back_resized.save(back_buf, format='JPEG', quality=95)
+            back_up = cloudinary.uploader.upload(
+                back_buf.getvalue(),
+                folder='generated_cards',
+                public_id=f"{epic_no}_back",
+                overwrite=True,
+                resource_type='image'
+            )
+            back_url = back_up['secure_url']
+
+            self.update_state(state='PROCESSING', meta={'status': 'Creating combined card'})
+            GAP = 30
+            combined_w = front_w + GAP + front_w
+            combined = Image.new('RGB', (combined_w, front_h), (240, 240, 240))
+            combined.paste(card_image, (0, 0))
+            combined.paste(back_resized, (front_w + GAP, 0))
+
+            self.update_state(state='PROCESSING', meta={'status': 'Uploading combined card'})
+            comb_buf = io.BytesIO()
+            combined.save(comb_buf, format='JPEG', quality=95)
+            comb_up = cloudinary.uploader.upload(
+                comb_buf.getvalue(),
+                folder='generated_cards',
+                public_id=f"{epic_no}_combined",
+                overwrite=True,
+                resource_type='image'
+            )
+            combined_url = comb_up['secure_url']
+        except Exception as ce:
+            logger.warning(f"Async back/combined card generation failed for {epic_no}: {ce}")
 
         self.update_state(state='PROCESSING', meta={'status': 'Saving to database'})
 
@@ -155,6 +197,8 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
                 "ptc_code":       ptc_code,
                 "photo_url":      photo_url,
                 "card_url":       card_url,
+                "back_url":       back_url,
+                "combined_url":   combined_url,
                 "generated_at":   now,
                 "secret_pin":     hashed,
                 "referred_by_ptc": referred_by_ptc or None,
@@ -178,7 +222,8 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
         # Upsert generation_stats
         db.generation_stats.update_one(
             {"epic_no": epic_no},
-            {"$set": {"card_url": card_url, "photo_url": photo_url,
+            {"$set": {"card_url": card_url, "back_url": back_url,
+                      "combined_url": combined_url, "photo_url": photo_url,
                       "last_generated": now, "auth_mobile": mobile},
              "$inc": {"count": 1},
              "$setOnInsert": {"epic_no": epic_no}},
@@ -186,12 +231,14 @@ def generate_card_async(self, epic_no, mobile, photo_base64=None, ptc_code='',
         )
 
         return {
-            'success':    True,
-            'card_url':   card_url,
-            'photo_url':  photo_url,
-            'epic_no':    epic_no,
-            'voter_name': voter.get('name', ''),
-            'message':    'Card generated successfully',
+            'success':      True,
+            'card_url':     card_url,
+            'back_url':     back_url,
+            'combined_url': combined_url,
+            'photo_url':    photo_url,
+            'epic_no':      epic_no,
+            'voter_name':   voter.get('name', ''),
+            'message':      'Card generated successfully',
         }
 
     except Exception as e:

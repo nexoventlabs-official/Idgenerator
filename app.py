@@ -876,8 +876,8 @@ def chat_generate_card():
         combined_url = card_url  # fallback to front only
         back_url     = ''
         try:
-            # Generate back card with QR and newfavicon watermark
-            back_img = generate_back_card(voter)
+            # Generate back card with newfavicon watermark
+            back_img = generate_back_card()
             front_w, front_h = card_image.size
             back_resized = back_img.resize((front_w, front_h), Image.LANCZOS)
 
