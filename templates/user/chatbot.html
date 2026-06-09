@@ -1583,7 +1583,7 @@
           <br><span>Drag &amp; pinch to adjust • Passport size ratio</span>
         </div>
       </div>
-      <p class="crop-hint">📐 Crop to fit your ID card photo box (85 × 105)</p>
+      <p class="crop-hint">📐 Crop to fit your ID card photo box (72 × 90)</p>
       <div class="crop-modal-body">
         <img id="cropImage" src="" alt="Crop">
       </div>
@@ -1606,7 +1606,7 @@
         this.destroy = function(){};
         this.getCroppedCanvas = function(o) {
           var c = document.createElement('canvas');
-          c.width = o.width || 850; c.height = o.height || 1050;
+          c.width = o.width || 720; c.height = o.height || 900;
           var ctx = c.getContext('2d');
           ctx.drawImage(img, 0, 0, c.width, c.height);
           return c;
@@ -1693,9 +1693,9 @@
             // destroy old instance
             if (_cropper) { _cropper.destroy(); _cropper = null; }
 
-            // init Cropper.js — aspect ratio 85:105
+            // init Cropper.js — aspect ratio 72:90
             _cropper = new Cropper(img, {
-              aspectRatio:    85 / 105,
+              aspectRatio:    72 / 90,
               viewMode:       1,
               dragMode:       'move',
               autoCropArea:   0.85,
@@ -1719,8 +1719,8 @@
         if (!_cropper || !_cropResolve) return;
         // Export cropped canvas as Blob
         _cropper.getCroppedCanvas({
-          width:  850,    // 85 × 10 → good resolution
-          height: 1050,
+          width:  720,    // 72 × 10 → good resolution
+          height: 900,
           imageSmoothingEnabled: true,
           imageSmoothingQuality: 'high',
         }).toBlob((blob) => {

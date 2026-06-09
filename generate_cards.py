@@ -521,9 +521,9 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     draw_text_with_spacing(draw, (W // 2, sub_y), sub_text, font=f_sub, fill=(255, 255, 255, 230), spacing_px=int(2.0 * S), align='center')
 
     # 4. Photo Frame (No border and no drop-shadow)
-    # CSS: X=20px (100), Y=56px (280), width=85px (425), height=105px (525)
-    PHOTO_W = 85 * S
-    PHOTO_H = 105 * S
+    # CSS: X=20px (100), Y=56px (280), width=72px (360), height=90px (450)
+    PHOTO_W = 72 * S
+    PHOTO_H = 90 * S
     PHOTO_X = 20 * S
     PHOTO_Y = 56 * S
     BR = 8 * S
@@ -551,7 +551,7 @@ def generate_card(voter, template=None, photo_image=None, qr_image=None):
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, PHOTO_W - 1, PHOTO_H - 1], radius=BR, fill=255)
     card_rgba.paste(photo_box, (PHOTO_X, PHOTO_Y), mask=mask)
 
-    # 5. Details Section (Right of photo: gap 18px (90 px) -> X=615)
+    # 5. Details Section (Right of photo: gap 18px (90 px) -> X=630)
     # Calibrated details sizes (Outfit Bold 15 -> 75px, Plus Jakarta Sans Bold 9 -> 45px)
     DET_X = PHOTO_X + PHOTO_W + 18 * S
     DET_MAX_X = W - 20 * S
