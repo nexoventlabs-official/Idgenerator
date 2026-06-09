@@ -1052,11 +1052,22 @@ def user_download_card(epic_no):
 @app.route('/verify/<epic_no>')
 def verify_voter(epic_no):
     epic_no = epic_no.strip().upper()
-    voter   = find_voter_by_epic(epic_no)
-    if not voter:
-        flash('Voter ID not found.', 'danger')
-        return redirect(url_for('user_home'))
     db      = _get_db()
+
+    # Primary lookup: voters collection
+    voter = find_voter_by_epic(epic_no)
+
+    # Fallback: generated_voters collection (card was generated but voter may not be in main DB)
+    if not voter:
+        logger.warning("verify_voter: epic_no=%s not found in voters, trying generated_voters", epic_no)
+        gen_fallback = db.generated_voters.find_one({"EPIC_NO": epic_no})
+        if gen_fallback:
+            voter = _gen_doc_to_dict(gen_fallback)
+
+    if not voter:
+        logger.warning("verify_voter: epic_no=%s not found in any collection", epic_no)
+        return render_template('user/verify.html', voter=None, epic_no=epic_no)
+
     stat    = db.generation_stats.find_one({"epic_no": epic_no}) or {}
     gen_doc = db.generated_voters.find_one({"EPIC_NO": epic_no}) or {}
     vol_req = db.volunteer_requests.find_one({"epic_no": epic_no},
@@ -1069,7 +1080,7 @@ def verify_voter(epic_no):
     voter['card_url']       = stat.get('card_url', gen_doc.get('card_url', ''))
     mobile = stat.get('auth_mobile', '')
     voter['auth_mobile_masked'] = f"****{mobile[-4:]}" if mobile and len(mobile) >= 4 else ''
-    voter['ptc_code']            = gen_doc.get('ptc_code', '')
+    voter['ptc_code']            = gen_doc.get('ptc_code', voter.get('ptc_code', ''))
     voter['volunteer_status']    = vol_req.get('status', '')
     voter['booth_agent_status']  = ba_req.get('status', '')
     return render_template('user/verify.html', voter=voter)
