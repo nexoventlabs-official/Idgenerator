@@ -10,7 +10,7 @@
       "destination": "https://idgenerator-vlgi.onrender.com/admin/api/:path*"
     },
     {
-      "source": "/((?!api/|admin/api/).*)",
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]
