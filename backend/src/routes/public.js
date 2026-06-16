@@ -5,6 +5,7 @@ const express = require('express');
 const router  = express.Router();
 const config  = require('../config');
 const { getDb, getVoterDb, findVoterByEpic } = require('../db');
+const { publicVerifyLimiter } = require('../middleware/rateLimiter');
 
 // ── Health check ─────────────────────────────────────────────────
 router.get('/health', (req, res) => {
@@ -87,8 +88,8 @@ async function verifyVoterHandler(req, res) {
   }
 }
 
-router.get('/verify/:epicNo',     verifyVoterHandler);
-router.get('/api/verify/:epicNo', verifyVoterHandler);
+router.get('/verify/:epicNo',     publicVerifyLimiter, verifyVoterHandler);
+router.get('/api/verify/:epicNo', publicVerifyLimiter, verifyVoterHandler);
 
 // ── Get card data ─────────────────────────────────────────────────
 router.get('/api/card/:epicNo', async (req, res) => {
@@ -104,6 +105,13 @@ router.get('/api/card/:epicNo', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Card not found.' });
     }
 
+    const voterDoc = await findVoterByEpic(epicNo);
+    const voter = voterDoc || genDoc;
+
+    const name = voter
+      ? (voter.VOTER_NAME || `${voter.FM_NAME_EN || ''} ${voter.LASTNAME_EN || ''}`.trim() || '')
+      : '';
+
     return res.json({
       success:      true,
       card_url:     cardUrl,
@@ -112,6 +120,11 @@ router.get('/api/card/:epicNo', async (req, res) => {
       photo_url:    stat.photo_url    || genDoc.photo_url    || '',
       ptc_code:     genDoc.ptc_code   || '',
       gen_count:    stat.count        || 0,
+      name,
+      epic_no:      epicNo,
+      assembly_name: voter?.ASSEMBLY_NAME || '',
+      district:      voter?.DISTRICT      || voter?.DISTRICT_NAME || '',
+      part_no:       String(voter?.PART_NO || ''),
     });
   } catch (err) {
     console.error('card error:', err);
@@ -143,7 +156,14 @@ router.get('/refer/:ptcCode/:referralId', async (req, res) => {
     const name = doc.VOTER_NAME ||
                  `${doc.FM_NAME_EN || ''} ${doc.LASTNAME_EN || ''}`.trim() ||
                  'A We The Leaders Member';
-    const referrerName = name;
+    // HTML-escape the name before embedding in OG meta tags
+    const escapeHtml = (s) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const referrerName = escapeHtml(name);
     const redirectUrl  = `${config.baseUrl}/?ref=${ptcCode}&rid=${referralId}`;
     const bannerUrl    = `${config.baseUrl}/static/banner.jpg`;
 

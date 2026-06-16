@@ -1,7 +1,10 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '',
+  // Support VITE_API_URL env var for pointing at staging/production API.
+  // Falls back to same-origin (empty string) when not set — works when
+  // frontend and backend are co-served.
+  baseURL: import.meta.env.VITE_API_URL || '',
   withCredentials: true,
   timeout: 30000,
 })
@@ -82,6 +85,10 @@ export const admin = {
 
   logout: () =>
     api.post('/admin/api/logout'),
+
+  // Lightweight session check — use instead of getStats() for auth probe
+  getSession: () =>
+    api.get('/admin/api/session'),
 
   getStats: () =>
     api.get('/admin/api/stats'),

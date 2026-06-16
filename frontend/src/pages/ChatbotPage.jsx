@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
-import { chat } from '../api'
+import { chat, publicApi } from '../api'
+import { CardPreviewIframe } from '../components/CardPreviewIframe'
 import '../styles/chatbot.css'
 
 // ── Constants ──────────────────────────────────────────────
@@ -32,8 +34,8 @@ const getCache = () => {
   } catch { return null }
 }
 
-const saveCache = (card, profile, mobile) =>
-  localStorage.setItem(CACHE_KEY, JSON.stringify({ card, profile, mobile, timestamp: Date.now() }))
+const saveCache = (card, profile) =>
+  localStorage.setItem(CACHE_KEY, JSON.stringify({ card, profile, timestamp: Date.now() }))
 
 const clearCache = () => localStorage.removeItem(CACHE_KEY)
 
@@ -51,6 +53,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const fmtTime = (d) =>
   d ? new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
 
+const getActiveStep = (chatState) => {
+  switch (chatState) {
+    case 'WELCOME':
+    case 'AWAIT_MOBILE':
+      return 1
+    case 'AWAIT_EPIC':
+    case 'CONFIRM':
+      return 2
+    case 'AWAIT_PHOTO':
+    case 'GENERATING':
+      return 3
+    case 'DONE':
+      return 4
+    default:
+      return 1
+  }
+}
+
 // ── Crop Modal ──────────────────────────────────────────────
 function CropModal({ src, onCrop, onCancel }) {
   const imgRef = useRef(null)
@@ -62,7 +82,7 @@ function CropModal({ src, onCrop, onCancel }) {
 
     const initCropper = () => {
       cropperRef.current = new Cropper(img, {
-        aspectRatio: 75 / 95,
+        aspectRatio: 268 / 384,
         viewMode: 1,
         dragMode: 'move',
         autoCropArea: 0.9,
@@ -87,7 +107,7 @@ function CropModal({ src, onCrop, onCancel }) {
 
   const handleCrop = () => {
     if (!cropperRef.current) return
-    cropperRef.current.getCroppedCanvas({ width: 375, height: 475, imageSmoothingQuality: 'high' })
+    cropperRef.current.getCroppedCanvas({ width: 536, height: 768, imageSmoothingQuality: 'high' })
       .toBlob((blob) => onCrop(blob), 'image/jpeg', 0.93)
   }
 
@@ -102,7 +122,7 @@ function CropModal({ src, onCrop, onCancel }) {
           <img ref={imgRef} src={src} alt="Crop preview" style={{ display: 'block', maxWidth: '100%' }} />
         </div>
         <div className="crop-modal-footer">
-          <span className="crop-hint"><i className="bi bi-info-circle" /> Drag to adjust. Aspect ratio 4:5.</span>
+          <span className="crop-hint"><i className="bi bi-info-circle" /> Drag to adjust. Aspect ratio 2.68:3.84.</span>
           <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
           <button className="btn btn-sm btn-danger" onClick={handleCrop}>
             <i className="bi bi-check-lg" /> Use Photo
@@ -130,7 +150,7 @@ function WelcomeBannerMsg({ onStart }) {
   )
 }
 
-function VoterCardMsg({ voter }) {
+function VoterCardMsg({ voter, isLatest, chatState, onConfirm, onRetry, disabled }) {
   const v = voter || {}
   const rows = [
     { label: 'Name',         value: v.name || v.Name || v.voter_name },
@@ -142,6 +162,8 @@ function VoterCardMsg({ voter }) {
     { label: 'Part No',       value: v.part_no || v.PartNo },
     { label: 'Serial No',     value: v.serial_no || v.SlNo },
   ].filter((r) => r.value)
+
+  const showButtons = isLatest && chatState === 'CONFIRM'
 
   return (
     <div className="voter-details-card">
@@ -156,42 +178,65 @@ function VoterCardMsg({ voter }) {
           </div>
         ))}
       </div>
+      {showButtons && (
+        <div className="interactive-buttons">
+          <button className="interactive-btn" onClick={onConfirm} disabled={disabled}>
+            <i className="bi bi-check-circle-fill" /> Confirm Details
+          </button>
+          <button className="interactive-btn" onClick={onRetry} disabled={disabled} style={{ color: '#d32f2f' }}>
+            <i className="bi bi-arrow-counterclockwise" /> Re-enter ID
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
-function GeneratedCardMsg({ card, isFlipped, onFlip }) {
+function GeneratedCardMsg({ card }) {
   const c = card || {}
-  const downloadUrl = getDownloadUrl(c.combined_url || c.card_url, c.epic_no)
+  const previewRef = useRef(null)
+  const [fullCardData, setFullCardData] = useState(null)
+
+  useEffect(() => {
+    if (c.name && c.assembly_name && c.part_no) {
+      setFullCardData(c)
+    } else if (c.epic_no) {
+      publicApi.getCardData(c.epic_no)
+        .then((data) => {
+          setFullCardData(data)
+        })
+        .catch((err) => {
+          console.error('Failed to fetch card details for preview:', err)
+          setFullCardData(c)
+        })
+    }
+  }, [c])
+
+  const handleDownload = (e) => {
+    e.preventDefault()
+    if (previewRef.current) {
+      previewRef.current.download()
+    }
+  }
 
   return (
     <div className="generated-card-wrap">
-      <div className="card-3d-container" onClick={onFlip} title="Tap to flip">
-        <div className={`card-3d-inner ${isFlipped ? 'flipped' : ''}`}>
-          <div className="card-3d-face card-3d-front">
-            {c.card_url
-              ? <img src={c.card_url} alt="Card front" />
-              : <div style={{ background: '#1f2c34', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0', fontSize: 12 }}>Front</div>
-            }
+      <div className="card-preview-container" style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+        {fullCardData ? (
+          <CardPreviewIframe ref={previewRef} cardData={fullCardData} width={340} />
+        ) : (
+          <div style={{ background: '#1f2c34', width: 340, height: 215, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0', fontSize: 12, borderRadius: 12, border: '1px solid var(--color-graphite)' }}>
+            Loading preview...
           </div>
-          <div className="card-3d-face card-3d-back">
-            {c.back_url || c.card_url
-              ? <img src={c.back_url || c.card_url} alt="Card back" />
-              : <div style={{ background: '#1f2c34', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0', fontSize: 12 }}>Back</div>
-            }
-          </div>
-        </div>
+        )}
       </div>
-      <p className="card-flip-hint"><i className="bi bi-arrow-repeat" /> Tap card to flip</p>
       <div className="card-actions">
         <a href={`/card/${c.epic_no}`} target="_blank" rel="noreferrer" className="btn-card-action">
           <i className="bi bi-eye" /> Full View
         </a>
-        {downloadUrl && (
-          <a href={downloadUrl} target="_blank" rel="noreferrer" className="btn-card-action btn-download">
-            <i className="bi bi-download" /> Download
-          </a>
-        )}
+        <button onClick={handleDownload} className="btn-card-action btn-download">
+          <i className="bi bi-download" /> Download
+        </button>
       </div>
     </div>
   )
@@ -199,6 +244,7 @@ function GeneratedCardMsg({ card, isFlipped, onFlip }) {
 
 // ── Main ChatbotPage ────────────────────────────────────────
 export default function ChatbotPage() {
+  const navigate = useNavigate()
   const [chatState, setChatState]   = useState(S.WELCOME)
   const [messages, setMessages]     = useState([])
   const [inputValue, setInputValue] = useState('')
@@ -209,6 +255,7 @@ export default function ChatbotPage() {
   const [cropOpen, setCropOpen]     = useState(false)
 
   // Persistent refs (avoid stale closures)
+  const initializedRef = useRef(false)
   const mobileRef   = useRef('')
   const epicRef     = useRef('')
   const cardRef     = useRef(null)
@@ -246,12 +293,15 @@ export default function ChatbotPage() {
 
   // ── Initialise ────────────────────────────────────────────
   useEffect(() => {
+    if (initializedRef.current) return
+    initializedRef.current = true
+
     const cache = getCache()
     if (cache?.card) {
       cardRef.current    = cache.card
       profileRef.current = cache.profile || {}
       epicRef.current    = cache.card.epic_no || ''
-      mobileRef.current  = cache.mobile || ''
+      // Note: mobile is NOT stored in localStorage for PII protection
       addMsg('bot', 'text', { text: '👋 Welcome back to *We The Leaders!*' })
       setTimeout(() => {
         addMsg('bot', 'generated_card', { card: cache.card })
@@ -360,9 +410,14 @@ export default function ChatbotPage() {
         combined_url: res.combined_url,
         epic_no:      res.epic_no || epicRef.current,
         ptc_code:     res.ptc_code,
+        name:         voterRef.current?.name || voterRef.current?.VOTER_NAME || res.voter_name,
+        assembly_name:voterRef.current?.assembly_name || voterRef.current?.assembly || voterRef.current?.ASSEMBLY_NAME,
+        district:     voterRef.current?.district || voterRef.current?.DISTRICT || voterRef.current?.DISTRICT_NAME,
+        part_no:      voterRef.current?.part_no || voterRef.current?.PartNo || voterRef.current?.PART_NO,
+        photo_url:    res.photo_url || voterRef.current?.photo_url
       }
       cardRef.current = card
-      saveCache(card, profileRef.current || {}, mobileRef.current)
+      saveCache(card, profileRef.current || {})
 
       await botSay('🎉 Your card is ready!', 200)
       addMsg('bot', 'generated_card', { card })
@@ -535,18 +590,33 @@ export default function ChatbotPage() {
   // ── Render message content ────────────────────────────────
   const renderMsgContent = (msg) => {
     switch (msg.type) {
-      case 'text':
-        return (
-          <span dangerouslySetInnerHTML={{
-            __html: (msg.text || '').replace(/\*(.*?)\*/g, '<strong>$1</strong>')
-          }} />
-        )
+      case 'text': {
+        // HTML-escape text before applying bold markdown to prevent XSS
+        const escapeHtml = (s) => String(s || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+        const safeHtml = escapeHtml(msg.text || '').replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+        return <span dangerouslySetInnerHTML={{ __html: safeHtml }} />
+      }
       case 'welcome_banner':
         return <WelcomeBannerMsg onStart={handleStart} />
-      case 'voter_card':
-        return <VoterCardMsg voter={msg.voter} />
+      case 'voter_card': {
+        const isLatest = messages[messages.length - 1]?.id === msg.id
+        return (
+          <VoterCardMsg
+            voter={msg.voter}
+            isLatest={isLatest}
+            chatState={chatState}
+            onConfirm={handleConfirm}
+            onRetry={handleRetry}
+            disabled={isTyping}
+          />
+        )
+      }
       case 'generated_card':
-        return <GeneratedCardMsg card={msg.card} isFlipped={isFlipped} onFlip={() => setIsFlipped((f) => !f)} />
+        return <GeneratedCardMsg card={msg.card} />
       case 'profile_card':
         return (
           <div className="profile-card">
@@ -625,7 +695,267 @@ export default function ChatbotPage() {
   const isDone   = chatState === S.DONE
 
   return (
-    <div className="chatbot-app">
+    <div className="chatbot-app wtl-theme">
+      {/* ── Main Layout ── */}
+      <div className="main-content-layout single-layout">
+        
+        {/* Left Menu Panel (WhatsApp style) */}
+        <div className="left-menu-panel">
+          <div className="left-menu-header">
+            <div className="left-menu-profile">
+              <img src="/newfavicon.png" alt="WTL" onError={(e) => { e.target.style.display = 'none' }} />
+              <div className="left-menu-profile-info">
+                <div className="left-menu-brand">WE THE LEADERS</div>
+                <div className="left-menu-status">
+                  <span className="status-dot-green" /> Console online
+                </div>
+              </div>
+            </div>
+            <div className="left-menu-header-actions">
+              <button
+                className="chat-header-btn"
+                onClick={() => {
+                  if (window.confirm('Logout and start over?')) handleLogout()
+                }}
+                title="Logout"
+                style={{ fontSize: 16 }}
+              >
+                <i className="bi bi-box-arrow-right" />
+              </button>
+            </div>
+          </div>
+
+
+
+          <div className="left-chat-list">
+            <div className="left-chat-item active">
+              <div className="left-chat-avatar bot-avatar">
+                <i className="bi bi-robot" />
+              </div>
+              <div className="left-chat-details">
+                <div className="left-chat-name-row">
+                  <span className="left-chat-name">WTL Onboarding Bot</span>
+                  <span className="left-chat-time">{fmtTime(new Date())}</span>
+                </div>
+                <div className="left-chat-msg">
+                  {!isDone ? 'Register to generate your Member Card' : 'Registration completed successfully!'}
+                </div>
+              </div>
+            </div>
+
+            {[
+              { icon: 'person-circle',       label: 'My Profile',       action: 'profile',     desc: 'View registration details' },
+              { icon: 'credit-card-2-front', label: 'My Card',          action: 'my_card',      desc: 'View and download ID card' },
+              { icon: 'building',            label: 'Booth Info',        action: 'booth_info',   desc: 'Get your booth details' },
+              { icon: 'link-45deg',          label: 'Referral Link',     action: 'referral',     desc: 'Share and invite others' },
+              { icon: 'people-fill',         label: 'My Members',        action: 'my_members',   desc: 'Voters registered via your link' },
+              { icon: 'hand-thumbs-up-fill', label: 'Be a Volunteer',    action: 'volunteer',    desc: 'Apply to be a WTL Volunteer' },
+              { icon: 'building-fill-check', label: 'Be a Booth Agent',  action: 'booth_agent',  desc: 'Apply to be a Booth Agent' },
+            ].map((item) => {
+              const locked = !isDone
+              return (
+                <div
+                  key={item.action}
+                  className={`left-chat-item option-item ${locked ? 'locked' : ''}`}
+                  onClick={() => !locked && handleSidebarAction(item.action)}
+                  title={locked ? 'Complete registration to unlock' : item.desc}
+                >
+                  <div className="left-chat-avatar option-avatar">
+                    <i className={`bi bi-${item.icon}`} />
+                  </div>
+                  <div className="left-chat-details">
+                    <div className="left-chat-name-row">
+                      <span className="left-chat-name">{item.label}</span>
+                      {locked && <i className="bi bi-lock-fill lock-icon" />}
+                    </div>
+                    <div className="left-chat-msg">{item.desc}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Right Chatbot Panel */}
+        <div className="right-chat-panel">
+          <div className="chatbot-container">
+
+
+            {/* Header */}
+            <header className="chat-header">
+              <div
+                className="chat-header-avatar"
+                onClick={() => isDone && setSidebarOpen(true)}
+              >
+                <img src="/newfavicon.png" alt="WTL" onError={(e) => { e.target.style.display = 'none' }} />
+              </div>
+              <div className="chat-header-info">
+                <div className="chat-header-name">WE THE LEADERS</div>
+                <div className="chat-header-status">
+                  {chatState === S.GENERATING ? (
+                    <><span className="status-dot-pulsing" /> Generating membership card...</>
+                  ) : isDone ? (
+                    <><span className="status-dot-green" /> Console online</>
+                  ) : (
+                    <><span className="status-dot-green" /> Registration in progress</>
+                  )}
+                </div>
+              </div>
+              <div className="chat-header-actions">
+                {isDone && (
+                  <button
+                    className="chat-header-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Menu"
+                  >
+                    <i className="bi bi-list" />
+                  </button>
+                )}
+                <button
+                  className="chat-header-btn"
+                  onClick={() => {
+                    if (window.confirm('Logout and start over?')) handleLogout()
+                  }}
+                  title="Logout"
+                >
+                  <i className="bi bi-box-arrow-right" />
+                </button>
+              </div>
+            </header>
+
+            {/* Messages */}
+            <main className="chat-messages">
+              {messages.map((msg) => {
+                const isLatest = messages[messages.length - 1]?.id === msg.id
+                const isPhotoRequest = isLatest && chatState === S.AWAIT_PHOTO && msg.from === 'bot' && msg.type === 'text'
+
+                if (isPhotoRequest) {
+                  const safeHtml = String(msg.text || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+                  return (
+                    <div key={msg.id} className="msg-row bot">
+                      <div className="msg-bubble msg-bubble-interactive">
+                        <div className="interactive-body">
+                          <span dangerouslySetInnerHTML={{ __html: safeHtml }} />
+                          <div className="msg-time" style={{ marginTop: 8 }}>
+                            {fmtTime(msg.ts)}
+                          </div>
+                        </div>
+                        <div className="interactive-buttons">
+                          <button className="interactive-btn" onClick={() => fileInputRef.current?.click()}>
+                            <i className="bi bi-cloud-upload-fill" /> Upload Image
+                          </button>
+                          <button className="interactive-btn" onClick={() => cameraInputRef.current?.click()}>
+                            <i className="bi bi-camera-fill" /> Take Photo
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`msg-row ${msg.from}`}
+                  >
+                    <div className={`msg-bubble ${['voter_card','generated_card','booth_info','referral_link','members_list','profile_card'].includes(msg.type) ? 'wide' : ''}`}>
+                      {renderMsgContent(msg)}
+                      <div className="msg-time">
+                        {fmtTime(msg.ts)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {isTyping && (
+                <div className="msg-row bot">
+                  <div className="typing-bubble">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} style={{ height: 8 }} />
+            </main>
+
+            {/* Input area */}
+            <footer className="chat-input-area">
+              {chatState === S.CONFIRM ? (
+                null
+              ) : chatState === S.AWAIT_PHOTO ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
+                  />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
+                  />
+                </>
+              ) : chatState === S.GENERATING ? (
+                <div className="generating-bar">
+                  <div className="spinner-border spinner-border-sm text-success" role="status" />
+                  <span>Generating your card, please wait...</span>
+                </div>
+              ) : isDone && !inputCfg ? (
+                <div className="chat-form done-bar">
+                  <div className="chat-input-wrapper">
+                    <span className="done-status">
+                      <i className="bi bi-shield-fill-check text-success" />
+                      Card Generated Successfully
+                    </span>
+                  </div>
+                  <button className="chat-send-btn menu-btn" onClick={() => setSidebarOpen(true)} title="Menu">
+                    <i className="bi bi-grid-3x3-gap-fill" />
+                  </button>
+                </div>
+              ) : inputCfg ? (
+                <form className="chat-form" onSubmit={handleSubmit}>
+                  <div className="chat-input-wrapper">
+                    <input
+                      className="chat-input"
+                      value={inputValue}
+                      onChange={handleInputChange}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } }}
+                      placeholder={inputCfg.placeholder}
+                      type={inputCfg.type}
+                      maxLength={inputCfg.maxLength}
+                      inputMode={inputCfg.inputMode}
+                      autoComplete="off"
+                      disabled={isTyping}
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="chat-send-btn"
+                    disabled={!inputValue.trim() || isTyping}
+                  >
+                    <i className="bi bi-send-fill" />
+                  </button>
+                </form>
+              ) : null}
+            </footer>
+          </div>
+        </div>
+      </div>
+
       {/* ── Sidebar ── */}
       {sidebarOpen && (
         <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)}>
@@ -666,174 +996,6 @@ export default function ChatbotPage() {
           </div>
         </div>
       )}
-
-      {/* ── Main container ── */}
-      <div className="chatbot-container">
-        {/* Header */}
-        <header className="chat-header">
-          <div
-            className="chat-header-avatar"
-            onClick={() => isDone && setSidebarOpen(true)}
-          >
-            <img src="/newfavicon.png" alt="WTL" onError={(e) => { e.target.style.display = 'none' }} />
-          </div>
-          <div className="chat-header-info">
-            <div className="chat-header-name">WE THE LEADERS</div>
-            <div className="chat-header-status">
-              {chatState === S.GENERATING ? (
-                <><span className="status-dot-pulsing" /> Generating card…</>
-              ) : isDone ? (
-                <><span className="status-dot-green" /> Lead the Change</>
-              ) : (
-                'Lead the Change'
-              )}
-            </div>
-          </div>
-          <div className="chat-header-actions">
-            {isDone && (
-              <button
-                className="chat-header-btn"
-                onClick={() => setSidebarOpen(true)}
-                title="Menu"
-              >
-                <i className="bi bi-list" />
-              </button>
-            )}
-            <button
-              className="chat-header-btn"
-              onClick={() => {
-                if (window.confirm('Logout and start over?')) handleLogout()
-              }}
-              title="Logout"
-            >
-              <i className="bi bi-box-arrow-right" />
-            </button>
-          </div>
-        </header>
-
-        {/* Messages */}
-        <main className="chat-messages">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`msg-row ${msg.from}`}
-            >
-              {msg.from === 'bot' && (
-                <div className="msg-avatar">
-                  <img src="/newfavicon.png" alt="WTL" onError={(e) => { e.target.style.display = 'none' }} />
-                </div>
-              )}
-              <div className={`msg-bubble ${['voter_card','generated_card','booth_info','referral_link','members_list','profile_card'].includes(msg.type) ? 'wide' : ''}`}>
-                {renderMsgContent(msg)}
-                <div className="msg-time">
-                  {fmtTime(msg.ts)}
-                  {msg.from === 'user' && <i className="bi bi-check2-all" />}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {isTyping && (
-            <div className="msg-row bot">
-              <div className="msg-avatar">
-                <img src="/newfavicon.png" alt="WTL" onError={(e) => { e.target.style.display = 'none' }} />
-              </div>
-              <div className="typing-bubble">
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} style={{ height: 8 }} />
-        </main>
-
-        {/* Input area */}
-        <footer className="chat-input-area">
-          {chatState === S.CONFIRM ? (
-            <div className="quick-reply-bar">
-              <button className="quick-reply-btn confirm" onClick={handleConfirm} disabled={isTyping}>
-                <i className="bi bi-check-circle-fill" /> Confirm
-              </button>
-              <button className="quick-reply-btn retry" onClick={handleRetry} disabled={isTyping}>
-                <i className="bi bi-arrow-counterclockwise" /> Try Again
-              </button>
-            </div>
-          ) : chatState === S.AWAIT_PHOTO ? (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={(e) => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
-              />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="user"
-                style={{ display: 'none' }}
-                onChange={(e) => { handleFileSelect(e.target.files?.[0]); e.target.value = '' }}
-              />
-              <div className="quick-reply-bar">
-                <button className="quick-reply-btn upload" onClick={() => fileInputRef.current?.click()}>
-                  <i className="bi bi-cloud-upload-fill" /> Upload Photo
-                </button>
-                <button className="quick-reply-btn camera" onClick={() => cameraInputRef.current?.click()}>
-                  <i className="bi bi-camera-fill" /> Take Photo
-                </button>
-              </div>
-            </>
-          ) : chatState === S.GENERATING ? (
-            <div className="generating-bar">
-              <div className="spinner-border spinner-border-sm text-danger" role="status" />
-              <span>Generating your card…</span>
-            </div>
-          ) : isDone && !inputCfg ? (
-            <div className="chat-form done-bar">
-              <div className="chat-input-wrapper">
-                <span className="done-status">
-                  <i className="bi bi-shield-fill-check text-success" />
-                  Card Generated Successfully
-                </span>
-              </div>
-              <button className="chat-send-btn menu-btn" onClick={() => setSidebarOpen(true)} title="Menu">
-                <i className="bi bi-grid-3x3-gap-fill" />
-              </button>
-            </div>
-          ) : inputCfg ? (
-            <form className="chat-form" onSubmit={handleSubmit}>
-              <button type="button" className="chat-attach-btn" tabIndex={-1}>
-                <i className="bi bi-paperclip" />
-              </button>
-              <div className="chat-input-wrapper">
-                <input
-                  className="chat-input"
-                  value={inputValue}
-                  onChange={handleInputChange}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } }}
-                  placeholder={inputCfg.placeholder}
-                  type={inputCfg.type}
-                  maxLength={inputCfg.maxLength}
-                  inputMode={inputCfg.inputMode}
-                  autoComplete="off"
-                  disabled={isTyping}
-                  autoFocus
-                />
-              </div>
-              <button
-                type="submit"
-                className="chat-send-btn"
-                disabled={!inputValue.trim() || isTyping}
-              >
-                <i className="bi bi-send-fill" />
-              </button>
-            </form>
-          ) : null}
-        </footer>
-      </div>
 
       {/* Crop Modal */}
       {cropOpen && cropSrc && (

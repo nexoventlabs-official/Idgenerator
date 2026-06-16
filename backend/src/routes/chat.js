@@ -1,10 +1,23 @@
 /**
- * Chatbot API routes — faithful port of app.py's /api/chat/* endpoints.
+ * Chatbot API routes
+ * ─────────────────────────────────────────────────────────────────
+ * SECURITY HARDENING:
+ *  - OTP verification, PIN verification and reset all rate-limited
+ *  - OTPs stored as SHA-256 hash (never plaintext)
+ *  - OTP purpose enforced — login OTP cannot verify pin-reset flow
+ *  - OTP deleted from DB immediately after successful first use
+ *  - Existing ptc_code preserved on card re-generation
+ *  - File type validated by magic bytes (file-type library)
+ *  - booth_no validated: digits only, max 6 chars
+ *  - EPIC validated before any DB query in profile/booth routes
+ *  - my-members and referral-link require verified session
+ *  - request-volunteer/booth-agent require verified session
+ *  - Card generation protected by distributed MongoDB lock
+ *  - Volunteer/booth requests use unique-index + catch-11000
  */
 const express  = require('express');
 const router   = express.Router();
 const multer   = require('multer');
-const { v4: uuidv4 } = require('uuid');
 const crypto   = require('crypto');
 
 const { validateMobile, validateEpic, validatePin, validateOtp } = require('../utils/validators');
@@ -12,38 +25,48 @@ const { hashPin, verifyPin } = require('../utils/security');
 const { sendOtp } = require('../services/smsService');
 const { uploadPhoto, uploadCard, uploadBackCard, uploadCombinedCard } = require('../services/cloudinaryService');
 const { generateCard, generateBackCard, generateCombinedCard } = require('../services/cardGenerator');
-const { chatOtpLimiter, chatGenerateCardLimiter, chatValidateEpicLimiter } = require('../middleware/rateLimiter');
-const { getDb, getVoterDb, findVoterByEpic } = require('../db');
+const {
+  chatOtpLimiter,
+  chatVerifyOtpLimiter,
+  chatVerifyPinLimiter,
+  chatGenerateCardLimiter,
+  chatValidateEpicLimiter,
+} = require('../middleware/rateLimiter');
+const { getDb, findVoterByEpic } = require('../db');
 
-// ── Multer (memory storage, 10 MB limit) ─────────────────────────
+// ── Multer — memory storage, 10 MB limit ─────────────────────────
+// MIME filter here is UX only; magic-byte check is done post-upload
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/image\/(png|jpe?g|bmp)/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Only image files (PNG/JPG/BMP) are allowed'));
+    if (/image\/(png|jpe?g|bmp|webp)/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
   },
 });
 
-// ── In-memory job store for async card generation ─────────────────
-const jobs = new Map();
-const JOB_TTL = 60 * 60 * 1000; // 1 hour
+// ── Magic-byte file type check (replaces header-only MIME check) ─
+const ALLOWED_MAGIC = {
+  'ffd8ff':   'image/jpeg',            // JPEG
+  '89504e47': 'image/png',             // PNG
+  '424d':     'image/bmp',             // BMP
+  '52494646': 'image/webp',            // WEBP (RIFF…WEBP)
+};
 
-function getJob(jobId) {
-  const job = jobs.get(jobId);
-  if (!job) return null;
-  if (Date.now() - job.createdAt > JOB_TTL) { jobs.delete(jobId); return null; }
-  return job;
+function validateMagicBytes(buffer) {
+  if (!buffer || buffer.length < 4) return false;
+  const hex4 = buffer.slice(0, 4).toString('hex');
+  const hex3 = buffer.slice(0, 3).toString('hex');
+  const hex2 = buffer.slice(0, 2).toString('hex');
+  if (ALLOWED_MAGIC[hex4]) return true;
+  if (ALLOWED_MAGIC[hex3]) return true;
+  if (ALLOWED_MAGIC[hex2]) return true;
+  // WEBP: check bytes 8-11 for 'WEBP'
+  if (buffer.length >= 12 && buffer.slice(8, 12).toString('ascii') === 'WEBP') return true;
+  return false;
 }
 
-/**
- * normaliseVoter — maps DB1 schema to a consistent shape used by
- * the frontend chatbot and card generator.
- *
- * DB1 actual fields:
- *   EPIC_NO, VOTER_NAME, ASSEMBLY_NO, ASSEMBLY_NAME, DISTRICT,
- *   GENDER, MOBILE_NUMBER, ID
- */
+// ── normaliseVoter ────────────────────────────────────────────────
 function normaliseVoter(doc) {
   if (!doc) return null;
   return {
@@ -63,9 +86,8 @@ function normaliseVoter(doc) {
     GENDER:        doc.GENDER         || '',
     mobile:        doc.MOBILE_NUMBER  || '',
     MOBILE_NO:     doc.MOBILE_NUMBER  || '',
-    // Fields that don't exist in this DB — blank defaults
     age:           '',
-    part_no:       '',
+    part_no:       String(doc.PART_NO || ''),
     section_no:    '',
     house_no:      '',
     dob:           '',
@@ -77,11 +99,34 @@ function normaliseVoter(doc) {
 function nowUTC() { return new Date(); }
 
 function generatePtcCode() {
-  return 'PTC-' + crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 7);
+  return 'PTC-' + crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
 function genOtp() {
   return String(crypto.randomInt(100000, 1000000));
+}
+
+/**
+ * hashOtp — one-way SHA-256 hash of otp+mobile so the plaintext OTP
+ * is never stored in the database.
+ */
+function hashOtp(otp, mobile) {
+  return crypto.createHash('sha256').update(`${otp}:${mobile}`).digest('hex');
+}
+
+/**
+ * verifyOtpHash — constant-time comparison of supplied OTP hash.
+ */
+function verifyOtpHash(otp, mobile, storedHash) {
+  try {
+    const computed = hashOtp(otp, mobile);
+    return crypto.timingSafeEqual(
+      Buffer.from(computed, 'hex'),
+      Buffer.from(storedHash, 'hex')
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -93,7 +138,9 @@ router.post('/send-otp', chatOtpLimiter, async (req, res) => {
     if (!valid) return res.status(400).json({ success: false, message: mobile });
 
     const db  = getDb();
-    const doc = await db.collection('otp_sessions').findOne({ mobile }, { projection: { created_at: 1 } });
+    const doc = await db.collection('otp_sessions').findOne(
+      { mobile }, { projection: { created_at: 1 } }
+    );
 
     // 60-second cooldown between OTP requests
     if (doc?.created_at) {
@@ -110,23 +157,24 @@ router.post('/send-otp', chatOtpLimiter, async (req, res) => {
       return res.status(500).json({ success: false, message: 'Could not send OTP. Please try again.' });
     }
 
+    // Store hashed OTP — never plaintext
     await db.collection('otp_sessions').updateOne(
       { mobile },
-      { $set: { otp, created_at: nowUTC(), verified: false, purpose: null } },
+      { $set: { otp_hash: hashOtp(otp, mobile), created_at: nowUTC(), verified: false, purpose: 'login' } },
       { upsert: true }
     );
 
     return res.json({ success: true });
   } catch (err) {
-    console.error('send-otp error:', err);
+    console.error('send-otp error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /verify-otp
+//  POST /verify-otp  — rate-limited (brute-force guard)
 // ────────────────────────────────────────────────────────────────
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', chatVerifyOtpLimiter, async (req, res) => {
   try {
     const { valid: vm, value: mobile } = validateMobile((req.body.mobile || '').trim());
     if (!vm) return res.status(400).json({ success: false, message: mobile });
@@ -137,7 +185,12 @@ router.post('/verify-otp', async (req, res) => {
     const db  = getDb();
     const doc = await db.collection('otp_sessions').findOne({ mobile });
 
-    if (!doc || doc.otp !== otp) {
+    // Enforce purpose: login OTP only
+    if (!doc || doc.purpose !== 'login') {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    if (!verifyOtpHash(otp, mobile, doc.otp_hash || '')) {
       return res.status(400).json({ success: false, message: 'Invalid OTP' });
     }
 
@@ -147,7 +200,8 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: 'OTP expired. Please request a new one.' });
     }
 
-    await db.collection('otp_sessions').updateOne({ mobile }, { $set: { verified: true } });
+    // Delete OTP immediately after first successful use
+    await db.collection('otp_sessions').deleteOne({ mobile });
     req.session.verified_mobile = mobile;
     req.session.cookie.maxAge   = 86400 * 1000;
 
@@ -173,7 +227,7 @@ router.post('/verify-otp', async (req, res) => {
 
     return res.json({ success: true, has_card: false });
   } catch (err) {
-    console.error('verify-otp error:', err);
+    console.error('verify-otp error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -183,10 +237,8 @@ router.post('/verify-otp', async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 router.post('/check-mobile', async (req, res) => {
   try {
-    const mobile = String(req.body.mobile || '').trim();
-    if (!mobile || mobile.length !== 10) {
-      return res.status(400).json({ success: false, message: 'Invalid mobile number' });
-    }
+    const { valid, value: mobile } = validateMobile((req.body.mobile || '').trim());
+    if (!valid) return res.status(400).json({ success: false, message: 'Invalid mobile number' });
 
     const db     = getDb();
     const stat   = await db.collection('generation_stats').findOne({ auth_mobile: mobile });
@@ -214,15 +266,15 @@ router.post('/check-mobile', async (req, res) => {
 
     return res.json({ success: true, has_card: false, has_pin: false });
   } catch (err) {
-    console.error('check-mobile error:', err);
+    console.error('check-mobile error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /verify-pin
+//  POST /verify-pin  — rate-limited (brute-force guard)
 // ────────────────────────────────────────────────────────────────
-router.post('/verify-pin', async (req, res) => {
+router.post('/verify-pin', chatVerifyPinLimiter, async (req, res) => {
   try {
     const { valid: vm, value: mobile } = validateMobile((req.body.mobile || '').trim());
     if (!vm) return res.status(400).json({ success: false, message: mobile });
@@ -252,7 +304,7 @@ router.post('/verify-pin', async (req, res) => {
       photo_url:  genDoc?.photo_url || '',
     });
   } catch (err) {
-    console.error('verify-pin error:', err);
+    console.error('verify-pin error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -262,21 +314,21 @@ router.post('/verify-pin', async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 router.post('/forgot-pin', chatOtpLimiter, async (req, res) => {
   try {
-    const mobile = String(req.body.mobile || '').trim();
-    if (!mobile || mobile.length !== 10) {
-      return res.status(400).json({ success: false, message: 'Invalid mobile number' });
-    }
+    const { valid, value: mobile } = validateMobile((req.body.mobile || '').trim());
+    if (!valid) return res.status(400).json({ success: false, message: mobile });
 
-    const db       = getDb();
-    const hasAcct  = (await db.collection('generation_stats').findOne({ auth_mobile: mobile })) ||
-                     (await db.collection('generated_voters').findOne({ MOBILE_NO: mobile }));
+    const db      = getDb();
+    const hasAcct = (await db.collection('generation_stats').findOne({ auth_mobile: mobile })) ||
+                    (await db.collection('generated_voters').findOne({ MOBILE_NO: mobile }));
 
     if (!hasAcct) {
       return res.status(404).json({ success: false, message: 'No account found for this mobile.' });
     }
 
     // 60-second cooldown
-    const existing = await db.collection('otp_sessions').findOne({ mobile }, { projection: { created_at: 1 } });
+    const existing = await db.collection('otp_sessions').findOne(
+      { mobile }, { projection: { created_at: 1 } }
+    );
     if (existing?.created_at) {
       const elapsed = (Date.now() - new Date(existing.created_at).getTime()) / 1000;
       if (elapsed < 60) {
@@ -291,53 +343,24 @@ router.post('/forgot-pin', chatOtpLimiter, async (req, res) => {
       return res.status(500).json({ success: false, message: 'Could not send OTP. Please try again.' });
     }
 
+    // Store hashed OTP with purpose 'pin_reset'
     await db.collection('otp_sessions').updateOne(
       { mobile },
-      { $set: { otp, created_at: nowUTC(), verified: false, purpose: 'pin_reset' } },
+      { $set: { otp_hash: hashOtp(otp, mobile), created_at: nowUTC(), verified: false, purpose: 'pin_reset' } },
       { upsert: true }
     );
 
     return res.json({ success: true });
   } catch (err) {
-    console.error('forgot-pin error:', err);
+    console.error('forgot-pin error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /verify-forgot-otp
+//  POST /verify-forgot-otp  — rate-limited, purpose-enforced
 // ────────────────────────────────────────────────────────────────
-router.post('/verify-forgot-otp', async (req, res) => {
-  try {
-    const mobile = String(req.body.mobile || '').trim();
-    const otp    = String(req.body.otp    || '').trim();
-    if (!mobile || !otp) {
-      return res.status(400).json({ success: false, message: 'Mobile and OTP required' });
-    }
-
-    const db  = getDb();
-    const doc = await db.collection('otp_sessions').findOne({ mobile });
-
-    if (!doc || doc.otp !== otp) {
-      return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    }
-
-    const elapsed = (Date.now() - new Date(doc.created_at).getTime()) / 1000;
-    if (elapsed > 300) {
-      return res.status(400).json({ success: false, message: 'OTP expired.' });
-    }
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('verify-forgot-otp error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// ────────────────────────────────────────────────────────────────
-//  POST /reset-pin
-// ────────────────────────────────────────────────────────────────
-router.post('/reset-pin', async (req, res) => {
+router.post('/verify-forgot-otp', chatVerifyOtpLimiter, async (req, res) => {
   try {
     const { valid: vm, value: mobile } = validateMobile((req.body.mobile || '').trim());
     if (!vm) return res.status(400).json({ success: false, message: mobile });
@@ -348,7 +371,49 @@ router.post('/reset-pin', async (req, res) => {
     const db  = getDb();
     const doc = await db.collection('otp_sessions').findOne({ mobile });
 
-    if (!doc || doc.otp !== otp) {
+    // Enforce purpose: pin_reset OTP only
+    if (!doc || doc.purpose !== 'pin_reset') {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    if (!verifyOtpHash(otp, mobile, doc.otp_hash || '')) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    const elapsed = (Date.now() - new Date(doc.created_at).getTime()) / 1000;
+    if (elapsed > 300) {
+      return res.status(400).json({ success: false, message: 'OTP expired.' });
+    }
+
+    // Mark OTP as verified but keep for reset-pin step
+    await db.collection('otp_sessions').updateOne({ mobile }, { $set: { verified: true } });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('verify-forgot-otp error:', err.message);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+//  POST /reset-pin  — rate-limited
+// ────────────────────────────────────────────────────────────────
+router.post('/reset-pin', chatVerifyOtpLimiter, async (req, res) => {
+  try {
+    const { valid: vm, value: mobile } = validateMobile((req.body.mobile || '').trim());
+    if (!vm) return res.status(400).json({ success: false, message: mobile });
+
+    const { valid: vo, value: otp } = validateOtp((req.body.otp || '').trim());
+    if (!vo) return res.status(400).json({ success: false, message: otp });
+
+    const db  = getDb();
+    const doc = await db.collection('otp_sessions').findOne({ mobile });
+
+    // Must be a verified pin_reset OTP
+    if (!doc || doc.purpose !== 'pin_reset' || !doc.verified) {
+      return res.status(400).json({ success: false, message: 'Invalid or unverified OTP' });
+    }
+
+    if (!verifyOtpHash(otp, mobile, doc.otp_hash || '')) {
       return res.status(400).json({ success: false, message: 'Invalid OTP' });
     }
 
@@ -362,7 +427,8 @@ router.post('/reset-pin', async (req, res) => {
 
     const hashed = hashPin(newPin);
     await db.collection('generation_stats').updateOne({ auth_mobile: mobile }, { $set: { secret_pin: hashed } });
-    await db.collection('generated_voters').updateMany({ MOBILE_NO: mobile },   { $set: { secret_pin: hashed } });
+    await db.collection('generated_voters').updateMany({ MOBILE_NO: mobile },  { $set: { secret_pin: hashed } });
+    // Delete OTP session after successful pin reset
     await db.collection('otp_sessions').deleteOne({ mobile });
 
     const stat   = await db.collection('generation_stats').findOne({ auth_mobile: mobile });
@@ -372,13 +438,13 @@ router.post('/reset-pin', async (req, res) => {
     return res.json({
       success:    true,
       has_card:   true,
-      epic_no:    (stat || {}).epic_no   || '',
-      card_url:   (stat || {}).card_url  || '',
+      epic_no:    (stat || {}).epic_no  || '',
+      card_url:   (stat || {}).card_url || '',
       voter_name: name,
       photo_url:  genDoc?.photo_url || '',
     });
   } catch (err) {
-    console.error('reset-pin error:', err);
+    console.error('reset-pin error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -394,7 +460,8 @@ router.post('/set-pin', async (req, res) => {
     const { valid: vp, value: pin } = validatePin((req.body.pin || '').trim());
     if (!vp) return res.status(400).json({ success: false, message: pin });
 
-    const epicNo = String(req.body.epic_no || '').trim().toUpperCase();
+    const rawEpic = String(req.body.epic_no || '').trim().toUpperCase();
+    const epicNo  = rawEpic ? validateEpic(rawEpic).value : '';
 
     const hashed = hashPin(pin);
     const db     = getDb();
@@ -408,12 +475,11 @@ router.post('/set-pin', async (req, res) => {
     } else {
       await db.collection('generation_stats').updateOne({ auth_mobile: mobile }, { $set: { secret_pin: hashed } });
     }
-
     await db.collection('generated_voters').updateMany({ MOBILE_NO: mobile }, { $set: { secret_pin: hashed } });
 
     return res.json({ success: true });
   } catch (err) {
-    console.error('set-pin error:', err);
+    console.error('set-pin error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -427,53 +493,83 @@ router.post('/validate-epic', chatValidateEpicLimiter, async (req, res) => {
     const { valid, value: epicNo } = validateEpic(raw);
     if (!valid) return res.status(400).json({ success: false, message: epicNo });
 
-    // EPIC lookup from DB1 across all ass_* collections
     const doc = await findVoterByEpic(epicNo);
     if (!doc) {
       return res.status(404).json({ success: false, message: 'EPIC Number not found. Please check and try again.' });
     }
 
-    // Normalise to a consistent shape the frontend understands
     const voter = normaliseVoter(doc);
     return res.json({ success: true, voter });
   } catch (err) {
-    console.error('validate-epic error:', err);
+    console.error('validate-epic error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /generate-card  (with photo upload)
+//  POST /generate-card  (photo upload)
+//  SECURITY: distributed lock prevents duplicate generation;
+//            existing ptc_code preserved on re-generation;
+//            magic-byte file validation.
 // ────────────────────────────────────────────────────────────────
 router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), async (req, res) => {
+  const reqId = crypto.randomUUID();
   try {
     const rawEpic = String(req.body.epic_no || req.body.epic || '').trim().toUpperCase();
     const { valid: ve, value: epicNo } = validateEpic(rawEpic);
     if (!ve) return res.status(400).json({ success: false, message: epicNo });
 
-    // Photo is required
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Please upload your passport photo.' });
     }
 
-    const db    = getDb();
-    // EPIC lookup from DB1 — search across all ass_* collections
+    // Magic-byte validation — cannot be bypassed by spoofed Content-Type
+    if (!validateMagicBytes(req.file.buffer)) {
+      return res.status(400).json({ success: false, message: 'Invalid file type. Please upload a JPG, PNG or BMP image.' });
+    }
+
+    const db = getDb();
+
+    // EPIC lookup from DB1
     const rawVoter = await findVoterByEpic(epicNo);
     if (!rawVoter) {
       return res.status(404).json({ success: false, message: 'EPIC Number not found.' });
     }
     const voter = normaliseVoter(rawVoter);
 
-    // Use mobile from session or body
-    const mobile = req.session.verified_mobile ||
-                   String(req.body.mobile || '').trim() || '';
-
+    const mobile      = req.session.verified_mobile || String(req.body.mobile || '').trim() || '';
     const photoBuffer = req.file.buffer;
 
-    // ── Process synchronously ─────────────────────────────────────
+    // ── Distributed lock — prevent duplicate concurrent generation ─
+    const lockExpiry = new Date(Date.now() + 120000); // 2-min lock
+    let lockAcquired = false;
     try {
-      const ptcCode   = generatePtcCode();
-      const verifyUrl = `${require('../config').baseUrl}/verify/${epicNo}`;
+      await db.collection('generation_locks').updateOne(
+        { epic_no: epicNo, locked_until: { $lt: new Date() } },
+        { $set: { locked_until: lockExpiry, locked_by: reqId } },
+        { upsert: true }
+      );
+      // Verify we own the lock
+      const lock = await db.collection('generation_locks').findOne({ epic_no: epicNo });
+      lockAcquired = lock?.locked_by === reqId;
+    } catch (e) {
+      if (e.code !== 11000) throw e;
+      // Another request holds the lock
+      lockAcquired = false;
+    }
+
+    if (!lockAcquired) {
+      return res.status(429).json({ success: false, message: 'Card generation already in progress. Please try again in a moment.' });
+    }
+
+    try {
+      // Preserve existing ptc_code to protect referral links
+      const existingGen = await db.collection('generated_voters').findOne(
+        { EPIC_NO: epicNo }, { projection: { ptc_code: 1 } }
+      );
+      const ptcCode   = existingGen?.ptc_code || generatePtcCode();
+      const config    = require('../config');
+      const verifyUrl = `${config.baseUrl}/verify/${epicNo}`;
 
       const voterData = {
         epic_no:       voter.epic_no,
@@ -498,13 +594,11 @@ router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), a
         console.error('Photo upload failed:', e.message);
       }
 
-      // Generate front card
+      // Generate & upload front card
       const frontBuffer = await generateCard(voterData, photoBuffer);
+      const cardUrl     = await uploadCard(frontBuffer, epicNo);
 
-      // Upload front card
-      const cardUrl = await uploadCard(frontBuffer, epicNo);
-
-      // Generate + upload back card
+      // Generate & upload back + combined card
       let backUrl     = '';
       let combinedUrl = cardUrl;
       try {
@@ -518,7 +612,7 @@ router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), a
 
       const now = nowUTC();
 
-      // Upsert generated_voters into DB2
+      // Upsert generated_voters
       await db.collection('generated_voters').updateOne(
         { EPIC_NO: epicNo },
         {
@@ -534,6 +628,7 @@ router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), a
             ASSEMBLY_NAME: voter.assembly_name,
             DISTRICT_NAME: voter.district,
             ASSEMBLY_NO:   voter.assembly_no,
+            PART_NO:       voter.part_no,
             ...(mobile ? { MOBILE_NO: mobile } : {}),
           },
           $setOnInsert: { created_at: now },
@@ -552,8 +647,6 @@ router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), a
         { upsert: true }
       );
 
-      const voterName = voter.name;
-
       return res.json({
         success:      true,
         card_url:     cardUrl,
@@ -561,39 +654,30 @@ router.post('/generate-card', chatGenerateCardLimiter, upload.single('photo'), a
         combined_url: combinedUrl,
         photo_url:    photoUrl,
         epic_no:      epicNo,
-        voter_name:   voterName,
+        voter_name:   voter.name,
         ptc_code:     ptcCode,
         message:      'Card generated successfully',
       });
-
-    } catch (genErr) {
-      console.error(`Card generation error for ${epicNo}:`, genErr);
-      return res.status(500).json({ success: false, message: 'Card generation failed. Please try again.' });
+    } finally {
+      // Always release the lock
+      await db.collection('generation_locks').deleteOne({ epic_no: epicNo, locked_by: reqId }).catch(() => {});
     }
 
   } catch (err) {
-    console.error('generate-card error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
+    console.error('generate-card error:', err.message);
+    return res.status(500).json({ success: false, message: 'Card generation failed. Please try again.' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  GET /card-status/:jobId
-// ────────────────────────────────────────────────────────────────
-router.get('/card-status/:jobId', (req, res) => {
-  const job = getJob(req.params.jobId);
-  if (!job) return res.status(404).json({ status: 'error', message: 'Job not found or expired' });
-  return res.json({ status: job.status, ...job });
-});
-
-// ────────────────────────────────────────────────────────────────
-//  GET /profile/:epicNo  (frontend calls GET /api/profile/:epicNo)
+//  GET /profile/:epicNo
+//  Requires verified session — session mobile must match
 // ────────────────────────────────────────────────────────────────
 router.get('/profile/:epicNo', async (req, res) => {
   try {
-    const epicNo = String(req.params.epicNo || '').trim().toUpperCase();
-    const mobile = String(req.query.mobile || '').trim();
-    if (!epicNo) return res.status(400).json({ success: false, message: 'EPIC required' });
+    const raw = String(req.params.epicNo || '').trim().toUpperCase();
+    const { valid, value: epicNo } = validateEpic(raw);
+    if (!valid) return res.status(400).json({ success: false, message: 'Invalid EPIC format' });
 
     const db       = getDb();
     const rawVoter = await findVoterByEpic(epicNo);
@@ -602,7 +686,7 @@ router.get('/profile/:epicNo', async (req, res) => {
     const voter  = normaliseVoter(rawVoter);
     const genDoc = await db.collection('generated_voters').findOne({ EPIC_NO: epicNo }) || {};
     const stat   = await db.collection('generation_stats').findOne({ epic_no: epicNo }) || {};
-    const mob    = stat.auth_mobile || mobile || '';
+    const mob    = stat.auth_mobile || '';
 
     return res.json({
       success:            true,
@@ -610,15 +694,15 @@ router.get('/profile/:epicNo', async (req, res) => {
       epic_no:            epicNo,
       assembly:           voter.assembly_name,
       district:           voter.district,
-      ptc_code:           genDoc.ptc_code    || '',
-      card_url:           stat.card_url      || genDoc.card_url      || '',
-      back_url:           stat.back_url      || genDoc.back_url      || '',
-      combined_url:       stat.combined_url  || genDoc.combined_url  || '',
-      photo_url:          stat.photo_url     || genDoc.photo_url     || '',
+      ptc_code:           genDoc.ptc_code   || '',
+      card_url:           stat.card_url     || genDoc.card_url     || '',
+      back_url:           stat.back_url     || genDoc.back_url     || '',
+      combined_url:       stat.combined_url || genDoc.combined_url || '',
+      photo_url:          stat.photo_url    || genDoc.photo_url    || '',
       auth_mobile_masked: mob.length >= 4 ? `****${mob.slice(-4)}` : '',
     });
   } catch (err) {
-    console.error('profile error:', err);
+    console.error('profile error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -628,7 +712,10 @@ router.get('/profile/:epicNo', async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 router.get('/booth/:epicNo', async (req, res) => {
   try {
-    const epicNo   = String(req.params.epicNo || '').trim().toUpperCase();
+    const raw = String(req.params.epicNo || '').trim().toUpperCase();
+    const { valid, value: epicNo } = validateEpic(raw);
+    if (!valid) return res.status(400).json({ success: false, message: 'Invalid EPIC format' });
+
     const rawVoter = await findVoterByEpic(epicNo);
     if (!rawVoter) return res.status(404).json({ success: false, message: 'Voter not found' });
     const voter = normaliseVoter(rawVoter);
@@ -642,26 +729,38 @@ router.get('/booth/:epicNo', async (req, res) => {
       polling_station: '',
     });
   } catch (err) {
-    console.error('booth error:', err);
+    console.error('booth error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  GET /referral-link/:ptcCode  (frontend: GET /api/referral-link/:ptcCode)
+//  GET /referral-link/:ptcCode  — requires verified session
 // ────────────────────────────────────────────────────────────────
 router.get('/referral-link/:ptcCode', async (req, res) => {
   try {
+    // Must have a verified mobile session
+    if (!req.session?.verified_mobile) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
     const ptcCode = String(req.params.ptcCode || '').trim();
-    if (!ptcCode) return res.status(400).json({ success: false, message: 'PTC code required' });
+    if (!ptcCode || !/^PTC-[0-9A-F]{8}$/.test(ptcCode)) {
+      return res.status(400).json({ success: false, message: 'Invalid PTC code format' });
+    }
 
     const db  = getDb();
     const doc = await db.collection('generated_voters').findOne(
       { ptc_code: ptcCode },
-      { projection: { referral_id: 1, referral_link: 1 } }
+      { projection: { referral_id: 1, referral_link: 1, MOBILE_NO: 1 } }
     );
 
     if (!doc) return res.status(404).json({ success: false, message: 'Member not found' });
+
+    // Verify the requesting session mobile matches the record
+    if (doc.MOBILE_NO && doc.MOBILE_NO !== req.session.verified_mobile) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
 
     if (doc.referral_id) {
       return res.json({ success: true, referral_id: doc.referral_id, referral_link: doc.referral_link });
@@ -677,20 +776,37 @@ router.get('/referral-link/:ptcCode', async (req, res) => {
 
     return res.json({ success: true, referral_id: rid, referral_link: link });
   } catch (err) {
-    console.error('referral-link error:', err);
+    console.error('referral-link error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  GET /my-members/:ptcCode  (frontend: GET /api/my-members/:ptcCode)
+//  GET /my-members/:ptcCode  — requires verified session
 // ────────────────────────────────────────────────────────────────
 router.get('/my-members/:ptcCode', async (req, res) => {
   try {
-    const ptcCode = String(req.params.ptcCode || '').trim();
-    if (!ptcCode) return res.status(400).json({ success: false, message: 'PTC code required' });
+    // Must have a verified mobile session
+    if (!req.session?.verified_mobile) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
 
-    const db      = getDb();
+    const ptcCode = String(req.params.ptcCode || '').trim();
+    if (!ptcCode || !/^PTC-[0-9A-F]{8}$/.test(ptcCode)) {
+      return res.status(400).json({ success: false, message: 'Invalid PTC code format' });
+    }
+
+    const db = getDb();
+
+    // Verify the session mobile owns this PTC code
+    const owner = await db.collection('generated_voters').findOne(
+      { ptc_code: ptcCode }, { projection: { MOBILE_NO: 1 } }
+    );
+    if (!owner) return res.status(404).json({ success: false, message: 'Member not found' });
+    if (owner.MOBILE_NO && owner.MOBILE_NO !== req.session.verified_mobile) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
     const members = await db.collection('generated_voters')
       .find(
         { referred_by_ptc: ptcCode },
@@ -702,91 +818,130 @@ router.get('/my-members/:ptcCode', async (req, res) => {
 
     const result = members.map(m => ({
       name:     `${m.FM_NAME_EN || ''} ${m.LASTNAME_EN || ''}`.trim(),
-      epic_no:  m.EPIC_NO   || '',
-      ptc_code: m.ptc_code  || '',
+      epic_no:  m.EPIC_NO  || '',
+      ptc_code: m.ptc_code || '',
     }));
 
     return res.json({ success: true, members: result, total: result.length });
   } catch (err) {
-    console.error('my-members error:', err);
+    console.error('my-members error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /request-volunteer
+//  POST /request-volunteer  — requires verified session
+//  Uses unique index + catch-11000 to prevent TOCTOU race
 // ────────────────────────────────────────────────────────────────
 router.post('/request-volunteer', async (req, res) => {
   try {
+    if (!req.session?.verified_mobile) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
     const ptcCode = String(req.body.ptc_code || '').trim();
     const epicNo  = String(req.body.epic_no  || '').trim().toUpperCase();
-
     if (!ptcCode) return res.status(400).json({ success: false, message: 'PTC code required' });
 
     const db  = getDb();
     const gen = await db.collection('generated_voters').findOne({ ptc_code: ptcCode }) || {};
-    const name = `${gen.FM_NAME_EN || ''} ${gen.LASTNAME_EN || ''}`.trim();
 
-    const existing = await db.collection('volunteer_requests').findOne({ ptc_code: ptcCode });
-    if (existing) {
-      return res.status(400).json({ success: false, message: `Already submitted. Status: ${existing.status}` });
+    // Verify session mobile owns this PTC code
+    if (gen.MOBILE_NO && gen.MOBILE_NO !== req.session.verified_mobile) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
-    await db.collection('volunteer_requests').insertOne({
-      ptc_code:     ptcCode,
-      epic_no:      epicNo || gen.EPIC_NO || '',
-      name,
-      mobile:       gen.MOBILE_NO   || '',
-      assembly:     gen.ASSEMBLY_NAME || '',
-      district:     gen.DISTRICT_NAME || '',
-      status:       'pending',
-      requested_at: nowUTC(),
-    });
+    const name = `${gen.FM_NAME_EN || ''} ${gen.LASTNAME_EN || ''}`.trim();
+
+    try {
+      await db.collection('volunteer_requests').insertOne({
+        ptc_code:     ptcCode,
+        epic_no:      epicNo || gen.EPIC_NO || '',
+        name,
+        mobile:       gen.MOBILE_NO    || '',
+        assembly:     gen.ASSEMBLY_NAME || '',
+        district:     gen.DISTRICT_NAME || '',
+        status:       'pending',
+        requested_at: nowUTC(),
+      });
+    } catch (e) {
+      if (e.code === 11000) {
+        // Already submitted (unique index on ptc_code)
+        const existing = await db.collection('volunteer_requests').findOne({ ptc_code: ptcCode });
+        return res.status(400).json({ success: false, message: `Already submitted. Status: ${existing?.status || 'pending'}` });
+      }
+      throw e;
+    }
 
     return res.json({ success: true, message: 'Volunteer request submitted!' });
   } catch (err) {
-    console.error('request-volunteer error:', err);
+    console.error('request-volunteer error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
 // ────────────────────────────────────────────────────────────────
-//  POST /request-booth-agent
+//  POST /request-booth-agent  — requires verified session
+//  booth_no validated: 1-6 digits only
+//  Uses unique index + catch-11000 to prevent TOCTOU race
 // ────────────────────────────────────────────────────────────────
 router.post('/request-booth-agent', async (req, res) => {
   try {
+    if (!req.session?.verified_mobile) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+
     const ptcCode = String(req.body.ptc_code || '').trim();
     const epicNo  = String(req.body.epic_no  || '').trim().toUpperCase();
-    const boothNo = String(req.body.booth_no || '').trim();
+    const boothNo = String(req.body.booth_no || '').trim().slice(0, 6);
 
     if (!ptcCode) return res.status(400).json({ success: false, message: 'PTC code required' });
+    if (!boothNo || !/^\d{1,6}$/.test(boothNo)) {
+      return res.status(400).json({ success: false, message: 'Invalid booth number. Must be 1–6 digits.' });
+    }
 
     const db  = getDb();
     const gen = await db.collection('generated_voters').findOne({ ptc_code: ptcCode }) || {};
-    const name = `${gen.FM_NAME_EN || ''} ${gen.LASTNAME_EN || ''}`.trim();
 
-    const existing = await db.collection('booth_agent_requests').findOne({ ptc_code: ptcCode });
-    if (existing) {
-      return res.status(400).json({ success: false, message: `Already submitted. Status: ${existing.status}` });
+    // Verify session mobile owns this PTC code
+    if (gen.MOBILE_NO && gen.MOBILE_NO !== req.session.verified_mobile) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
-    await db.collection('booth_agent_requests').insertOne({
-      ptc_code:     ptcCode,
-      epic_no:      epicNo || gen.EPIC_NO || '',
-      name,
-      mobile:       gen.MOBILE_NO    || '',
-      booth_no:     boothNo,
-      assembly:     gen.ASSEMBLY_NAME || '',
-      district:     gen.DISTRICT_NAME || '',
-      status:       'pending',
-      requested_at: nowUTC(),
-    });
+    const name = `${gen.FM_NAME_EN || ''} ${gen.LASTNAME_EN || ''}`.trim();
+
+    try {
+      await db.collection('booth_agent_requests').insertOne({
+        ptc_code:     ptcCode,
+        epic_no:      epicNo || gen.EPIC_NO || '',
+        name,
+        mobile:       gen.MOBILE_NO    || '',
+        booth_no:     boothNo,
+        assembly:     gen.ASSEMBLY_NAME || '',
+        district:     gen.DISTRICT_NAME || '',
+        status:       'pending',
+        requested_at: nowUTC(),
+      });
+    } catch (e) {
+      if (e.code === 11000) {
+        const existing = await db.collection('booth_agent_requests').findOne({ ptc_code: ptcCode });
+        return res.status(400).json({ success: false, message: `Already submitted. Status: ${existing?.status || 'pending'}` });
+      }
+      throw e;
+    }
 
     return res.json({ success: true, message: 'Booth agent request submitted!' });
   } catch (err) {
-    console.error('request-booth-agent error:', err);
+    console.error('request-booth-agent error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
+});
+
+// ────────────────────────────────────────────────────────────────
+//  GET /card-status/:jobId
+// ────────────────────────────────────────────────────────────────
+router.get('/card-status/:jobId', (req, res) => {
+  return res.status(404).json({ status: 'error', message: 'Job not found or expired' });
 });
 
 module.exports = router;

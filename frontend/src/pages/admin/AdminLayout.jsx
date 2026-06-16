@@ -19,7 +19,9 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   useEffect(() => {
-    admin.getStats()
+    // Use dedicated session endpoint — not stats — to avoid false redirects
+    // on DB timeout or backend errors unrelated to authentication
+    admin.getSession()
       .then(() => setChecking(false))
       .catch(() => navigate('/admin/login', { replace: true }))
   }, [navigate])

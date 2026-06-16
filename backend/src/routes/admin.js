@@ -71,6 +71,14 @@ router.get('/login', (req, res) => {
   res.json({ message: 'Admin login page — use POST /admin/api/login' });
 });
 
+// ── Dedicated session-check endpoint (used by AdminLayout) ───────
+router.get('/api/session', (req, res) => {
+  if (req.session?.adminLoggedIn) {
+    return res.json({ success: true, username: req.session.adminUsername });
+  }
+  return res.status(401).json({ success: false, message: 'Not authenticated.' });
+});
+
 // ── All routes below require admin auth ──────────────────────────
 router.use(requireAdminAuth);
 
@@ -196,9 +204,11 @@ router.get('/api/voters', async (req, res) => {
     const filt = {};
     if (district) filt.DISTRICT_NAME = district;
     if (search) {
+      // Escape regex special chars to prevent ReDoS
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filt.$or = [
-        { EPIC_NO:    { $regex: search, $options: 'i' } },
-        { VOTER_NAME: { $regex: search, $options: 'i' } },
+        { EPIC_NO:    { $regex: escaped, $options: 'i' } },
+        { VOTER_NAME: { $regex: escaped, $options: 'i' } },
       ];
     }
 
@@ -326,12 +336,14 @@ router.get('/api/generated-voters', async (req, res) => {
 
     if (assembly) filt.ASSEMBLY_NAME = assembly;
     if (search) {
+      // Escape regex special chars to prevent ReDoS
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filt.$or = [
-        { EPIC_NO:    { $regex: search, $options: 'i' } },
-        { FM_NAME_EN: { $regex: search, $options: 'i' } },
-        { LASTNAME_EN:{ $regex: search, $options: 'i' } },
-        { ptc_code:   { $regex: search, $options: 'i' } },
-        { MOBILE_NO:  { $regex: search, $options: 'i' } },
+        { EPIC_NO:    { $regex: escaped, $options: 'i' } },
+        { FM_NAME_EN: { $regex: escaped, $options: 'i' } },
+        { LASTNAME_EN:{ $regex: escaped, $options: 'i' } },
+        { ptc_code:   { $regex: escaped, $options: 'i' } },
+        { MOBILE_NO:  { $regex: escaped, $options: 'i' } },
       ];
     }
 
@@ -411,13 +423,19 @@ router.get('/api/volunteer-requests', async (req, res) => {
 router.post('/api/volunteer-requests/:ptcCode/confirm', async (req, res) => {
   try {
     const db = getDb();
-    const r  = await db.collection('volunteer_requests').updateOne(
+    // Verify the member exists before confirming
+    const member = await db.collection('generated_voters').findOne(
+      { ptc_code: req.params.ptcCode }, { projection: { _id: 1 } }
+    );
+    if (!member) return res.status(404).json({ success: false, message: 'Member not found.' });
+
+    const r = await db.collection('volunteer_requests').updateOne(
       { ptc_code: req.params.ptcCode, status: 'pending' },
       { $set: { status: 'confirmed', reviewed_at: new Date(), reviewed_by: config.admin.username } }
     );
     return res.json({ success: Boolean(r.modifiedCount) });
   } catch (err) {
-    console.error('confirm-volunteer error:', err);
+    console.error('confirm-volunteer error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -434,7 +452,7 @@ router.post('/api/volunteer-requests/:ptcCode/reject', async (req, res) => {
     );
     return res.json({ success: Boolean(r.modifiedCount) });
   } catch (err) {
-    console.error('reject-volunteer error:', err);
+    console.error('reject-volunteer error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -480,13 +498,19 @@ router.get('/api/booth-agent-requests', async (req, res) => {
 router.post('/api/booth-agent-requests/:ptcCode/confirm', async (req, res) => {
   try {
     const db = getDb();
-    const r  = await db.collection('booth_agent_requests').updateOne(
+    // Verify the member exists before confirming
+    const member = await db.collection('generated_voters').findOne(
+      { ptc_code: req.params.ptcCode }, { projection: { _id: 1 } }
+    );
+    if (!member) return res.status(404).json({ success: false, message: 'Member not found.' });
+
+    const r = await db.collection('booth_agent_requests').updateOne(
       { ptc_code: req.params.ptcCode, status: 'pending' },
       { $set: { status: 'confirmed', reviewed_at: new Date(), reviewed_by: config.admin.username } }
     );
     return res.json({ success: Boolean(r.modifiedCount) });
   } catch (err) {
-    console.error('confirm-booth-agent error:', err);
+    console.error('confirm-booth-agent error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -503,7 +527,7 @@ router.post('/api/booth-agent-requests/:ptcCode/reject', async (req, res) => {
     );
     return res.json({ success: Boolean(r.modifiedCount) });
   } catch (err) {
-    console.error('reject-booth-agent error:', err);
+    console.error('reject-booth-agent error:', err.message);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -601,6 +625,10 @@ function serialiseDoc(doc) {
   out._id = String(out._id || '');
   if (out.requested_at) out.requested_at = String(out.requested_at);
   if (out.reviewed_at)  out.reviewed_at  = String(out.reviewed_at);
+  // Never send sensitive fields to the admin client
+  delete out.secret_pin;
+  delete out.otp;
+  delete out.otp_hash;
   return out;
 }
 
@@ -612,11 +640,13 @@ function buildListParams(req) {
   const perPage = Math.min(Math.max(parseInt(req.query.per_page, 10) || 20, 5), 100);
   const filt    = {};
   if (search) {
+    // Escape regex special chars to prevent ReDoS
+    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filt.$or = [
-      { name:     { $regex: search, $options: 'i' } },
-      { ptc_code: { $regex: search, $options: 'i' } },
-      { epic_no:  { $regex: search, $options: 'i' } },
-      { mobile:   { $regex: search, $options: 'i' } },
+      { name:     { $regex: escaped, $options: 'i' } },
+      { ptc_code: { $regex: escaped, $options: 'i' } },
+      { epic_no:  { $regex: escaped, $options: 'i' } },
+      { mobile:   { $regex: escaped, $options: 'i' } },
     ];
   }
   return { search, status, page, perPage, filt };

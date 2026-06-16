@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { admin } from '../../api'
+import { CardPreviewIframe } from '../../components/CardPreviewIframe'
 
 export default function VoterDetailPage() {
   const { epicNo } = useParams()
@@ -69,7 +70,7 @@ export default function VoterDetailPage() {
             {v.card_url && (
               <div>
                 <div className="detail-label" style={{ marginBottom: 6 }}>Generated Card</div>
-                <img src={v.card_url} alt="Card" className="card-preview-img" />
+                <CardPreviewIframe cardData={v} width={280} />
               </div>
             )}
           </div>

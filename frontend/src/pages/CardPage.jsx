@@ -1,13 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { publicApi } from '../api'
-
-const getDownloadUrl = (url, epicNo) => {
-  if (url && url.includes('/upload/')) {
-    return url.replace('/upload/', `/upload/fl_attachment:${epicNo}_WTL_Card/`)
-  }
-  return url
-}
 
 export default function CardPage() {
   const { epicNo } = useParams()
@@ -15,7 +8,9 @@ export default function CardPage() {
   const [card, setCard]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
-  const [isFlipped, setIsFlipped] = useState(false)
+  const iframeRef = useRef(null)
+
+  const [scale, setScale] = useState(0.61)
 
   useEffect(() => {
     if (!epicNo) return
@@ -25,121 +20,210 @@ export default function CardPage() {
       .finally(() => setLoading(false))
   }, [epicNo])
 
+  useEffect(() => {
+    const updateScale = () => {
+      const width = Math.min(window.innerWidth - 32, 1000)
+      setScale(width / 1576)
+    }
+    updateScale()
+    window.addEventListener('resize', updateScale)
+    return () => window.removeEventListener('resize', updateScale)
+  }, [])
+
+  const handleIframeLoad = () => {
+    const iframe = iframeRef.current
+    if (!iframe || !card) return
+
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document
+      if (!doc) return
+
+      // Hide the form panel
+      const formPanel = doc.querySelector('.form-panel')
+      if (formPanel) {
+        formPanel.style.display = 'none'
+      }
+
+      // Format body
+      doc.body.style.background = 'transparent'
+      doc.body.style.padding = '0'
+      doc.body.style.margin = '0'
+      doc.body.style.display = 'block'
+      doc.body.style.overflow = 'hidden'
+
+      const cardWrap = doc.querySelector('.card-wrap')
+      if (cardWrap) {
+        cardWrap.style.transform = 'none'
+        cardWrap.style.margin = '0'
+        cardWrap.style.marginBottom = '0'
+      }
+
+      const cardData = card?.card || card || {}
+
+      // Set input values in the wtl_final_11.html form
+      const nameInput = doc.getElementById('f-name')
+      const epicInput = doc.getElementById('f-epic')
+      const asmInput = doc.getElementById('f-asm')
+      const boothInput = doc.getElementById('f-booth')
+      const distInput = doc.getElementById('f-dist')
+      const midInput = doc.getElementById('f-mid')
+      const photoImg = doc.getElementById('member-photo-img')
+      const qrImg = doc.getElementById('qr-img')
+
+      if (nameInput) nameInput.value = String(cardData.name || '').toUpperCase()
+      if (epicInput) epicInput.value = String(cardData.epic_no || '').toUpperCase()
+      if (asmInput) asmInput.value = String(cardData.assembly_name || '').toUpperCase()
+      if (boothInput) boothInput.value = String(cardData.part_no || '') // USE PART_NO AS BOOTH_NO!
+      if (distInput) distInput.value = String(cardData.district || '').toUpperCase()
+
+      const ptcCode = cardData.ptc_code || ''
+      const midVal = ptcCode || `WTL-${String(cardData.epic_no || '').slice(-6)}`
+      if (midInput) midInput.value = midVal.toUpperCase()
+
+      if (photoImg && cardData.photo_url) {
+        photoImg.src = cardData.photo_url
+        photoImg.style.display = 'block'
+        const photoBox = doc.getElementById('photo-box')
+        if (photoBox) {
+          const svg = photoBox.querySelector('svg')
+          const span = photoBox.querySelector('span')
+          if (svg) svg.style.display = 'none'
+          if (span) span.style.display = 'none'
+        }
+      } else if (photoImg) {
+        photoImg.style.display = 'none'
+        const photoBox = doc.getElementById('photo-box')
+        if (photoBox) {
+          const svg = photoBox.querySelector('svg')
+          const span = photoBox.querySelector('span')
+          if (svg) svg.style.display = 'block'
+          if (span) span.style.display = 'block'
+        }
+      }
+
+      if (qrImg) {
+        const verifyUrl = `${window.location.origin}/verify/${cardData.epic_no}`
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`
+      }
+
+      // Trigger the template's internal generate function to update visual fields
+      if (iframe.contentWindow && typeof iframe.contentWindow.generate === 'function') {
+        iframe.contentWindow.generate()
+      }
+
+      // Hide profile icon, NAME label, and colon for the first field row, and let the name slide left
+      const firstRow = doc.querySelector('.fields .field-row')
+      if (firstRow) {
+        const icon = firstRow.querySelector('.field-icon')
+        const label = firstRow.querySelector('.field-label')
+        const colon = firstRow.querySelector('.field-colon')
+        const val = firstRow.querySelector('.field-value')
+        if (icon) icon.style.display = 'none'
+        if (label) label.style.display = 'none'
+        if (colon) colon.style.display = 'none'
+        if (val) {
+          val.style.maxWidth = '600px'
+        }
+      }
+    } catch (e) {
+      console.error('Error pre-filling iframe:', e)
+    }
+  }
+
   if (loading) {
     return (
       <div className="page-loader">
-        <div className="spinner-border text-danger" role="status" />
+        <div className="spinner-border text-success" role="status" style={{ color: 'var(--color-signal-mint)' }} />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: '#08080C', color: '#e9edef', padding: 24, textAlign: 'center' }}>
-        <i className="bi bi-exclamation-circle" style={{ fontSize: 48, color: '#E53935' }} />
-        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Card Not Found</h2>
-        <p style={{ color: '#8696a0', fontSize: 14 }}>{error}</p>
-        <button onClick={() => navigate('/')} style={{ background: '#E53935', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 20, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'var(--color-abyss)', color: 'var(--color-chalk)', padding: 24, textAlign: 'center', letterSpacing: '0.05em' }}>
+        <i className="bi bi-exclamation-circle" style={{ fontSize: 48, color: 'var(--color-signal-mint)' }} />
+        <h2 style={{ fontSize: 20, fontWeight: 500 }}>Card Not Found</h2>
+        <p style={{ color: 'var(--color-ash)', fontSize: 14 }}>{error}</p>
+        <button onClick={() => navigate('/')} style={{ background: 'var(--color-signal-mint)', color: 'var(--color-abyss)', border: 'none', padding: '12px 24px', borderRadius: '16px', fontFamily: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
           Go Back
         </button>
       </div>
     )
   }
 
-  const cardData = card?.card || card || {}
-  const downloadUrl = getDownloadUrl(cardData.combined_url || cardData.card_url, epicNo)
-
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#08080C',
-      backgroundImage: 'url(/bg.png)',
-      backgroundSize: 'cover',
+      background: 'var(--color-abyss)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px 16px',
-      gap: 20,
+      padding: '24px 16px',
+      gap: 16,
+      letterSpacing: '0.05em',
     }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <img src="/newfavicon.png" alt="WTL" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
+        <img src="/newfavicon.png" alt="WTL" style={{ width: 40, height: 40, borderRadius: '50%', border: '1px solid var(--color-graphite)' }} />
         <div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#e9edef', letterSpacing: 1 }}>WE THE LEADERS</div>
-          <div style={{ fontSize: 11, color: '#43a047' }}>Lead the Change</div>
+          <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-chalk)', letterSpacing: '0.1em' }}>WE THE LEADERS</div>
+          <div style={{ fontSize: 11, color: 'var(--color-signal-mint)' }}>[console: card_viewer]</div>
         </div>
       </div>
 
-      {/* Card viewer */}
-      <div style={{ perspective: '1200px', width: '100%', maxWidth: 340, cursor: 'pointer' }} onClick={() => setIsFlipped((f) => !f)}>
-        <div style={{
-          position: 'relative',
-          width: '100%',
-          paddingBottom: '62%',
-          transition: 'transform 0.65s cubic-bezier(0.4,0.2,0.2,1)',
-          transformStyle: 'preserve-3d',
-          transform: isFlipped ? 'rotateY(180deg)' : 'none',
-        }}>
-          {/* Front */}
-          <div style={{
-            position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            borderRadius: 10, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-          }}>
-            {cardData.card_url
-              ? <img src={cardData.card_url} alt="Card Front" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              : <div style={{ width: '100%', height: '100%', background: '#1f2c34', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0', fontSize: 13 }}>No card image</div>
-            }
-          </div>
-          {/* Back */}
-          <div style={{
-            position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            borderRadius: 10, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-            transform: 'rotateY(180deg)',
-          }}>
-            {cardData.back_url || cardData.card_url
-              ? <img src={cardData.back_url || cardData.card_url} alt="Card Back" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              : <div style={{ width: '100%', height: '100%', background: '#1f2c34', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8696a0', fontSize: 13 }}>Back</div>
-            }
-          </div>
-        </div>
+      {/* Embedded Template Iframe */}
+      <div style={{
+        width: '100%',
+        maxWidth: '1000px',
+        height: `${Math.round(998 * scale)}px`,
+        overflow: 'hidden',
+        borderRadius: '16px',
+        border: '1px solid var(--color-graphite)',
+        background: '#F9F8F6',
+        position: 'relative',
+      }}>
+        <iframe
+          ref={iframeRef}
+          src="/wtl_final_11.html"
+          title="Member Card Template"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '1576px',
+            height: '998px',
+            border: 'none',
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            maxWidth: 'none',
+          }}
+          onLoad={handleIframeLoad}
+        />
       </div>
-
-      <p style={{ fontSize: 11, color: '#8696a0', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-        <i className="bi bi-arrow-repeat" /> Tap card to flip
-      </p>
-
-      {/* EPIC info */}
-      {epicNo && (
-        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, padding: '8px 16px', fontSize: 13, color: '#8696a0' }}>
-          EPIC: <strong style={{ color: '#e9edef' }}>{epicNo}</strong>
-          {cardData.ptc_code && <span style={{ marginLeft: 12 }}>PTC: <strong style={{ color: '#43a047' }}>{cardData.ptc_code}</strong></span>}
-        </div>
-      )}
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <button
+          onClick={() => {
+            if (iframeRef.current && iframeRef.current.contentWindow && typeof iframeRef.current.contentWindow.downloadPNG === 'function') {
+              iframeRef.current.contentWindow.downloadPNG()
+            }
+          }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--color-signal-mint)', color: 'var(--color-abyss)', border: 'none', padding: '10px 20px', borderRadius: '16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}
+        >
+          <i className="bi bi-download" /> Download PNG
+        </button>
         <a
           href={`/verify/${epicNo}`}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(21,101,192,0.15)', border: '1px solid rgba(21,101,192,0.3)', color: '#64b5f6', padding: '8px 18px', borderRadius: 20, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'transparent', border: '1px solid var(--color-graphite)', color: 'var(--color-chalk)', padding: '10px 20px', borderRadius: '16px', fontSize: 14, fontWeight: 500, textDecoration: 'none', transition: 'all 0.15s' }}
         >
-          <i className="bi bi-patch-check-fill" /> Verify
+          <i className="bi bi-patch-check-fill" style={{ color: 'var(--color-signal-mint)' }} /> Verify Report
         </a>
-        {downloadUrl && (
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(229,57,53,0.15)', border: '1px solid rgba(229,57,53,0.3)', color: '#ef9a9a', padding: '8px 18px', borderRadius: 20, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
-          >
-            <i className="bi bi-download" /> Download
-          </a>
-        )}
         <button
           onClick={() => navigate('/')}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e9edef', padding: '8px 18px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'transparent', border: '1px solid var(--color-graphite)', color: 'var(--color-chalk)', padding: '10px 20px', borderRadius: '16px', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}
         >
-          <i className="bi bi-house" /> Home
+          <i className="bi bi-house" /> Return Home
         </button>
       </div>
     </div>

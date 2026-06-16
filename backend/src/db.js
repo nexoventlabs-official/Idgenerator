@@ -24,10 +24,12 @@ const connectDB = async () => {
   // ── DB2: App data (Atlas) — primary read/write connection ──────
   try {
     await appConn.openUri(config.mongoUri, {
-      dbName:                    config.mongoDb,
-      maxPoolSize:               50,
-      minPoolSize:               5,
-      serverSelectionTimeoutMS:  10000,
+      dbName:                   config.mongoDb,
+      tls:                      true,
+      tlsAllowInvalidCertificates: false,
+      maxPoolSize:              50,
+      minPoolSize:              5,
+      serverSelectionTimeoutMS: 10000,
     });
     appConnected = true;
     console.log(`[DB2] App DB connected (db: ${config.mongoDb})`);
@@ -44,11 +46,10 @@ const connectDB = async () => {
   }
   try {
     await voterConn.openUri(config.mongoVoterUrl, {
-      dbName:                    config.mongoVoterDbName,
-      maxPoolSize:               10,
-      minPoolSize:               2,
-      serverSelectionTimeoutMS:  15000,
-      // No writes allowed — enforce via application logic only
+      dbName:                   config.mongoVoterDbName,
+      maxPoolSize:              10,
+      minPoolSize:              2,
+      serverSelectionTimeoutMS: 15000,
     });
     voterConnected = true;
     console.log(`[DB1] Voter DB connected (db: ${config.mongoVoterDbName}) — READ-ONLY`);
@@ -63,19 +64,28 @@ async function ensureAppIndexes() {
   try {
     const db = appConn.db;
 
-    await db.collection('generated_voters').createIndex({ EPIC_NO:  1 }, { unique: true, background: true });
-    await db.collection('generated_voters').createIndex({ MOBILE_NO: 1 }, { background: true });
-    await db.collection('generated_voters').createIndex({ ptc_code:  1 }, { unique: true, sparse: true, background: true });
+    await db.collection('generated_voters').createIndex({ EPIC_NO: 1 },        { unique: true, background: true });
+    await db.collection('generated_voters').createIndex({ MOBILE_NO: 1 },      { background: true });
+    await db.collection('generated_voters').createIndex({ ptc_code: 1 },        { unique: true, sparse: true, background: true });
     await db.collection('generated_voters').createIndex({ referred_by_ptc: 1 }, { background: true });
 
-    await db.collection('generation_stats').createIndex({ epic_no:    1 }, { unique: true, background: true });
+    await db.collection('generation_stats').createIndex({ epic_no: 1 },    { unique: true, background: true });
     await db.collection('generation_stats').createIndex({ auth_mobile: 1 }, { background: true });
 
-    await db.collection('otp_sessions').createIndex({ mobile:     1 }, { unique: true, background: true });
+    await db.collection('otp_sessions').createIndex({ mobile: 1 },     { unique: true, background: true });
     await db.collection('otp_sessions').createIndex({ created_at: 1 }, { expireAfterSeconds: 600, background: true });
 
-    await db.collection('volunteer_requests').createIndex(   { ptc_code: 1 }, { background: true });
-    await db.collection('booth_agent_requests').createIndex( { ptc_code: 1 }, { background: true });
+    // Unique indexes prevent TOCTOU races on volunteer/booth requests
+    await db.collection('volunteer_requests').createIndex(   { ptc_code: 1 }, { unique: true, background: true });
+    await db.collection('booth_agent_requests').createIndex( { ptc_code: 1 }, { unique: true, background: true });
+
+    // Deduplication for processed WhatsApp message IDs (TTL 24 h)
+    await db.collection('processed_wamids').createIndex({ wamid: 1 },  { unique: true, background: true });
+    await db.collection('processed_wamids').createIndex({ ts: 1 },     { expireAfterSeconds: 86400, background: true });
+
+    // Generation locks for card generation race-condition guard (TTL 5 min)
+    await db.collection('generation_locks').createIndex({ epic_no: 1 },     { unique: true, background: true });
+    await db.collection('generation_locks').createIndex({ locked_until: 1 }, { expireAfterSeconds: 300, background: true });
 
     console.log('[DB2] MongoDB indexes ensured.');
   } catch (err) {
@@ -98,8 +108,6 @@ const getDb = () => {
  * for reading voter collections (EPIC validation). Never write.
  *
  * Data is sharded across assembly collections: ass_1 … ass_234
- * There is NO single 'voters' collection — use getVoterCollection()
- * or getVoterTotalCount() helpers instead.
  */
 const getVoterDb = () => {
   if (!voterConnected) throw new Error('[DB1] Voter database not connected');
@@ -112,7 +120,7 @@ const getVoterDb = () => {
  */
 let _voterCountCache = null;
 let _voterCountTime  = 0;
-const VOTER_COUNT_TTL = 10 * 60 * 1000; // 10 minutes
+const VOTER_COUNT_TTL = 10 * 60 * 1000;
 
 const getVoterTotalCount = async () => {
   if (_voterCountCache !== null && Date.now() - _voterCountTime < VOTER_COUNT_TTL) {
@@ -131,7 +139,10 @@ const getVoterTotalCount = async () => {
     );
     _voterCountCache = total;
     _voterCountTime  = Date.now();
-    console.log(`[DB1] Total voter count across ${cols.length} collections: ${total.toLocaleString()}`);
+    // Only log in non-production to avoid leaking DB structure info
+    if (config.nodeEnv !== 'production') {
+      console.log(`[DB1] Total voter count across ${cols.length} collections: ${total.toLocaleString()}`);
+    }
     return total;
   } catch (err) {
     console.warn('[DB1] getVoterTotalCount error:', err.message);
@@ -142,14 +153,20 @@ const getVoterTotalCount = async () => {
 /**
  * findVoterByEpic(epicNo) — search across all ass_* collections for
  * a voter with the given EPIC_NO. Returns the document or null.
+ * Uses parallel fan-out instead of sequential search for performance.
  */
 const findVoterByEpic = async (epicNo) => {
   if (!voterConnected) return null;
   const db   = voterConn.db;
   const cols = await db.listCollections({ name: /^ass_\d+$/ }).toArray();
-  for (const c of cols) {
-    const doc = await db.collection(c.name).findOne({ EPIC_NO: epicNo });
-    if (doc) return doc;
+
+  // Parallel fan-out — all collections queried simultaneously
+  const results = await Promise.allSettled(
+    cols.map(c => db.collection(c.name).findOne({ EPIC_NO: epicNo }))
+  );
+
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) return r.value;
   }
   return null;
 };

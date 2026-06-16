@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { admin } from '../../api'
+import { CardPreviewIframe } from '../../components/CardPreviewIframe'
 
 export default function GeneratedVoterDetailPage() {
   const { ptcCode } = useParams()
@@ -78,8 +79,7 @@ export default function GeneratedVoterDetailPage() {
             {v.card_url && (
               <div>
                 <div className="detail-label" style={{ marginBottom: 8 }}>Generated Card</div>
-                <img src={v.card_url} alt="Card Front" className="card-preview-img" style={{ marginBottom: 8 }} />
-                {v.back_url && <img src={v.back_url} alt="Card Back" className="card-preview-img" />}
+                <CardPreviewIframe cardData={v} width={280} />
               </div>
             )}
 
