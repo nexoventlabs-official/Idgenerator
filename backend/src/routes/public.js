@@ -7,6 +7,24 @@ const config  = require('../config');
 const { getDb, getVoterDb, findVoterByEpic } = require('../db');
 const { publicVerifyLimiter } = require('../middleware/rateLimiter');
 
+// ── Root route — returns API status ────────────────────────────────
+router.get('/', (req, res) => {
+  res.json({
+    success:   true,
+    status:    'active',
+    service:   'We The Leaders API Server',
+    tagline:   'Lead the Change',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health:  '/health',
+      cronjob: '/cronjob',
+      verify:  '/api/verify/:epicNo',
+      card:    '/api/card/:epicNo',
+      whatsapp: '/api/webhook'
+    }
+  });
+});
+
 // ── Health check ─────────────────────────────────────────────────
 router.get('/health', (req, res) => {
   res.json({
