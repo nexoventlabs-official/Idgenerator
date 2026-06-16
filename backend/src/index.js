@@ -131,7 +131,7 @@ app.use('/',      publicRoutes);
 if (config.nodeEnv === 'production' && require('fs').existsSync(frontendDist)) {
   const indexHtml = path.join(frontendDist, 'index.html');
   app.get('*', (req, res) => {
-    if (req.path.startsWith('/api/') || req.path.startsWith('/admin/')) {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/admin/api/')) {
       return res.status(404).json({ success: false, message: 'Not found' });
     }
     res.sendFile(indexHtml);

@@ -1,0 +1,9 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/((?!api/|admin/api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

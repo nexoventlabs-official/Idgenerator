@@ -66,10 +66,6 @@ router.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ success: true, message: 'Logged out.' }));
 });
 
-// GET /admin/login — serve a JSON response in this API-only backend
-router.get('/login', (req, res) => {
-  res.json({ message: 'Admin login page — use POST /admin/api/login' });
-});
 
 // ── Dedicated session-check endpoint (used by AdminLayout) ───────
 router.get('/api/session', (req, res) => {
